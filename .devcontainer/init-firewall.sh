@@ -106,6 +106,37 @@ for domain in \
     done < <(echo "$ips")
 done
 
+# --- GitHub Actions のログ保管先（ベストエフォート） ---
+# CI のログ実体は productionresultssaN.blob.core.windows.net 上にあり、許可しないと
+# `gh run view --log` がタイムアウトする。これが読めないと「CI 失敗 → ログを読む →
+# ローカルで再現」というループの最初の一歩が踏めない（docs/harness/verification-loop.md）。
+#
+# 上のループと分けている理由は、失敗時の扱いが正反対だから:
+#   - 上のループ: 解決できなければ exit 1。開発に必須なので落として気付かせる
+#   - このループ: 解決できなければ黙って skip。ログが読めないだけで開発は続行できる
+#
+# 注: N の採番は GitHub の内部実装であり公開されていない。実測では sa0〜sa25 が存在し、
+#     sa22 のような飛び番もあった。**存在しない番号でエラーにしてはならない。**
+#     ここで exit 1 すると、ログが読めないという些細な問題がコンテナ起動不能に化ける。
+# 注: 解決される IP はすべて GitHub Meta API の actions レンジ内であることを確認済み
+#     （＝GitHub 管理下）。ただし .actions を丸ごと許可する案は約2760万アドレスの
+#     Azure 共有空間を開けることになり、egress 制限という本スクリプトの目的に反する。
+#     そのため必要なホストのみを名指しで許可している（実測でユニーク IP 15個程度）。
+# 注: IP は Azure Storage のフロントエンドであり流動的。postStartCommand で毎回
+#     再実行されるため、起動のたびに解決し直される。
+for i in $(seq 0 39); do
+    blob_domain="productionresultssa${i}.blob.core.windows.net"
+    blob_ips=$(dig +noall +answer A "$blob_domain" 2>/dev/null | awk '$4 == "A" {print $5}' || true)
+    if [ -n "$blob_ips" ]; then
+        while read -r ip; do
+            if [[ "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                ipset add -exist allowed-domains "$ip"
+            fi
+        done < <(echo "$blob_ips")
+    fi
+done
+echo "Added GitHub Actions log storage hosts (best effort)"
+
 # ホストネットワークを検出して許可（ポートフォワード用）
 # 注: IPv6（ip6tables）対応は本スクリプトのスコープ外。本コンテナ環境は IPv4 の
 #     デフォルトルートのみを前提としており、IPv6 経路が存在する場合でも

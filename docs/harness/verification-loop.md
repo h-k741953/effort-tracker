@@ -43,6 +43,18 @@ AIは自分の書いたコードが正しいかを、**自分では判断でき�
 
 Go モジュールの取得のみ、allowlist に `proxy.golang.org` と `sum.golang.org` を追加して対応している。両方を許可することで `GOSUMDB` を有効なまま運用でき、`GOPROXY=direct` + `GOSUMDB=off` という回避策を避けている。チェックサム透明性ログの検証を維持するための判断である。
 
+### CI ログの取得
+
+後述の CI ループは「失敗したらログを読む」から始まる。**この最初の一歩には allowlist の設定が要る。**
+
+`gh run view --log` が返すログの実体は GitHub API 上ではなく `productionresultssaN.blob.core.windows.net`（Azure Storage）にある。既定では遮断されるため、`gh pr checks` の pass/fail は取れてもログ本文が読めず、原因を追えない。
+
+この採番は GitHub の内部実装であり公開されていない。実測では `sa0`〜`sa25` が存在し、`sa22` のような飛び番もあった。そのため `init-firewall.sh` では `sa0`〜`sa39` を**ベストエフォート**で解決し、**存在しない番号は黙って skip する**。必須ドメインのループとは分けており、ここで `exit 1` させない。ログが読めないという些細な問題を、コンテナ起動不能に化けさせないためである。
+
+> **`.actions` を丸ごと許可する案は採らなかった。** GitHub Meta API の `actions` レンジは約2760万アドレスあり、その大半は Azure の共有 IP 空間である。egress 制限というファイアウォールの目的に対して代償が大きすぎる。名指しで許可した場合のユニーク IP は29個で、すべて `actions` レンジ内（＝GitHub 管理下）であることを確認済み。
+>
+> **この方式は壊れうる。** ホストプールが `sa39` を超えて増えた場合、ログが読めなくなる。ただしその失敗は現状復帰であり、悪化はしない。
+
 > **バージョンは `.devcontainer/Dockerfile` と `.github/workflows/ci.yml` の両方で固定し、一致させること。** ずれると「ローカルで通るが CI で落ちる」が発生し、ハーネスの前提そのものが壊れる。Go のバージョンだけは `services/api/go.mod` を単一の情報源とし、CI は `go-version-file` で読む。
 
 ## ドメイン層の依存検査
