@@ -1,0 +1,136 @@
+name: CI
+
+# 【原則】各ジョブはローカルと同一の make ターゲットを呼ぶ。
+#   CI 側にだけ存在する検査を作らない。作った瞬間、ローカルの Green が
+#   信用できなくなる。詳細は docs/harness/verification-loop.md。
+#
+# 【バージョン固定】ツールのバージョンは .devcontainer/Dockerfile と一致させること。
+#   ずれると「ローカルで通るが CI で落ちる」が発生し、ハーネスの前提が壊れる。
+#   Dockerfile 側を上げたら、ここも同時に上げる。
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+# 同一ブランチで新しい push があれば、進行中の実行を打ち切る
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_VERSION: 8.30.1
+  GOLANGCI_LINT_VERSION: 2.12.2
+  TERRAFORM_VERSION: 1.15.8
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Go: Lint / テスト / ドメイン層の依存検査
+  # ---------------------------------------------------------------------------
+  go:
+    name: Go (lint / test / domain-deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # go.mod を単一の情報源にする。ここでバージョンを二重管理しない。
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+
+      # golangci-lint は公式アクションを使わずバイナリを直接入れる。
+      # アクションのメジャーバージョンと golangci-lint 本体のバージョン対応を
+      # 追う必要がなくなり、Dockerfile と同一の固定方法で揃えられる。
+      - name: Install golangci-lint ${{ env.GOLANGCI_LINT_VERSION }}
+        run: |
+          curl -fsSL -o /tmp/golangci-lint.tar.gz \
+            "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz"
+          tar -xzf /tmp/golangci-lint.tar.gz -C /tmp
+          sudo mv "/tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint" /usr/local/bin/
+          golangci-lint --version
+
+      - name: make lint-api
+        run: make lint-api
+
+      - name: make test-api
+        run: make test-api
+
+      # ドメイン層がフレームワーク非依存であることの機械的検査。
+      # この検査があるから「DDD でドメイン層を分離した」が主張ではなく事実になる。
+      - name: make check-domain-deps
+        run: make check-domain-deps
+
+  # ---------------------------------------------------------------------------
+  # Next.js: Lint / 型チェック / テスト
+  # （apps/web 未スキャフォールドの間は make 側が SKIP を出す）
+  # ---------------------------------------------------------------------------
+  web:
+    name: Web (lint / test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: |
+          if [ -f apps/web/package.json ]; then
+            cd apps/web && npm ci
+          else
+            echo "SKIP: apps/web/package.json が無い（Next.js 未スキャフォールド）"
+          fi
+
+      - name: make lint-web
+        run: make lint-web
+
+      - name: make test-web
+        run: make test-web
+
+  # ---------------------------------------------------------------------------
+  # シークレット検出
+  # ---------------------------------------------------------------------------
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # make scan-secrets は履歴も走査する。浅いクローンでは
+          # 過去のコミットに混入したシークレットを見逃す。
+          fetch-depth: 0
+
+      - name: Install gitleaks ${{ env.GITLEAKS_VERSION }}
+        run: |
+          curl -fsSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: make scan-secrets
+        run: make scan-secrets
+
+  # ---------------------------------------------------------------------------
+  # Terraform: 整形チェック / 検証
+  # （infra/terraform に *.tf が無い間は make 側が SKIP を出す）
+  # ---------------------------------------------------------------------------
+  terraform:
+    name: Terraform (fmt / validate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          # make 側が素の terraform を呼ぶため、ラッパーを無効化する
+          terraform_wrapper: false
+
+      - name: make lint-tf
+        run: make lint-tf
