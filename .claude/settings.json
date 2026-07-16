@@ -1,0 +1,51 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(echo *)",
+      "Bash(touch *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Read",
+      "Edit",
+      "Write"
+    ],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(rm -rf *)",
+      "Bash(git reset *)",
+      "Bash(git rebase *)",
+      "Bash(wget *)",
+      "Bash(cat *.env*)",
+      "Bash(cat **/*token*)",
+      "Bash(cat **/*key*)",
+      "Bash(cat **/id_rsa*)",
+      "Bash(cat **/id_ed25519*)",
+      "Bash(cp *.env* *)",
+      "Bash(cp **/id_rsa* *)",
+      "Bash(cp id_rsa* *)",
+      "Bash(cp **/id_ed25519* *)",
+      "Bash(cp id_ed25519* *)",
+      "Bash(echo * > *.env*)",
+      "Bash(echo * >> *.env*)",
+      "Read(**/.env*)",
+      "Read(**/id_rsa*)",
+      "Read(**/id_ed25519*)",
+      "Read(**/*token*)",
+      "Read(**/*key*)",
+      "Read(**/secrets/**)",
+      "Edit(**/.env*)",
+      "Edit(**/secrets/**)"
+    ],
+    "ask": [
+      "Bash(rm *)",
+      "Bash(mv *)",
+      "Bash(curl *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git merge *)"
+    ]
+  }
+}
