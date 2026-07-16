@@ -1,0 +1,46 @@
+name: 実装タスク
+description: 決定済みの仕様を実装するタスク
+title: "[task] "
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **仕様そのものをここに書かないでください。**
+        決定した仕様は `docs/specs/` にあり、Issue はそこを指すだけにします（ADR 0004: レファレンス型運用）。
+        仕様がまだ決まっていない場合は「仕様の議論」テンプレートを使ってください。
+
+  - type: input
+    id: spec
+    attributes:
+      label: 対象の仕様書
+      description: "`docs/specs/` 配下へのリンク。正解のデータは常に docs にあります。"
+      placeholder: docs/specs/0001-xxxx.md
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: やること
+      description: 仕様のうち、この Issue で対応する範囲。仕様の中身は転記せず、範囲だけを書きます。
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: 完了条件
+      description: 仕様書の受け入れ条件のどれを満たせば閉じてよいか。
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: process
+    attributes:
+      label: 進め方の確認
+      options:
+        - label: 仕様書が `docs/specs/` に存在する（無ければ先に議論 Issue を立てる）
+          required: true
+        - label: 「仕様 → テスト → 実装」の順にコミットを分ける
+          required: true

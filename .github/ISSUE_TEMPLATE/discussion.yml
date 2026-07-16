@@ -1,0 +1,46 @@
+name: 仕様の議論
+description: 業務ルール・設計・用語を決めるための議論
+title: "[discuss] "
+labels: ["discussion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **結論が出たら docs に反映し、この Issue にはリンクを残して閉じます。**
+        コメントに結論を書いたままにしないでください。Issue のコメントは docs より優先されません（ADR 0004）。
+
+        業務ルール・ドメイン境界・用語の決定は**人間が行います**。AI は選択肢の整理と論点の提示までです（`docs/ai-collaboration.md`）。
+
+  - type: textarea
+    id: question
+    attributes:
+      label: 決めたいこと
+      description: 一文で。複数あるなら Issue を分けます。
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 背景 / なぜ決める必要があるか
+      description: これが決まらないと何が進まないのか。
+    validations:
+      required: true
+
+  - type: textarea
+    id: options
+    attributes:
+      label: 選択肢と論点
+      description: 分かっている範囲の案とトレードオフ。推測で埋めず、分からない点は分からないと書きます。
+
+  - type: dropdown
+    id: destination
+    attributes:
+      label: 決定後の反映先
+      description: 決まった内容をどこに書くか。ここが「正解のデータ」の置き場所になります。
+      options:
+        - docs/specs/（機能の仕様・受け入れ条件・実装設計）
+        - docs/adr/（アーキテクチャ上の決定）
+        - docs/domain/ubiquitous-language.md（用語）
+    validations:
+      required: true
