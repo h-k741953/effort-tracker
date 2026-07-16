@@ -121,17 +121,29 @@ push → 再実行
 
 ## CI の構成
 
-`.github/workflows/ci.yml` で以下を実行する。ローカルの `make verify` と**同一のコマンド**を呼ぶ。
+`.github/workflows/ci.yml` は**ローカルと同一の make ターゲット**を呼ぶ。
 
-| ジョブ | 内容 |
+| ジョブ | 呼ぶもの |
 |---|---|
-| `lint` | `make lint` |
-| `test` | `make test` |
-| `domain-deps` | `make check-domain-deps` |
-| `gitleaks` | シークレット検出 |
-| `terraform` | `terraform fmt -check` / `validate` |
+| `go` | `make lint-api` / `make test-api` / `make check-domain-deps` |
+| `web` | `make lint-web` / `make test-web` |
+| `secrets` | `make scan-secrets` |
+| `terraform` | `make lint-tf` |
 
-CI 側にだけ存在する検査を作らない。作った瞬間、ローカルの Green が信用できなくなる。
+**コードに対する検査を CI 側にだけ作らない。** 作った瞬間、ローカルの Green が信用できなくなる。
+
+### 例外: プロセス検査
+
+`.github/workflows/spec-link.yml` は上記の原則の**例外**である。この検査は PR の本文とラベルを対象とし、**ローカルには検査対象そのものが存在しない**ため、原理的に `make verify` には入れられない。
+
+「CI と同一」の原則が守ろうとしているのは、**コードの検証結果をローカルで信用できること**である。PR のメタデータに対する検査はこの利益に影響しない。ローカルで `make verify` が通れば、コードについては CI も通る、という関係は保たれる。
+
+この性質の違いを構成上も明示するため、ci.yml とはファイルを分けている。**プロセス検査を ci.yml に混ぜない。** 混ぜると「ローカルで再現できない CI の失敗」が常態化し、原則そのものが形骸化する。
+
+| 種類 | 対象 | ローカル再現 | 置き場所 |
+|---|---|---|---|
+| コード検査 | ソース・設定 | **可能（必須）** | `ci.yml`（`make` 経由） |
+| プロセス検査 | PR 本文・ラベル | 不可能 | `spec-link.yml` |
 
 ## ハーネスの限界
 
