@@ -1,10 +1,81 @@
+# =============================================================================
+# Secrets / Credentials
+#   最優先。ここに漏れがあると git history から消すのは実質不可能なため、
+#   他のどのセクションよりも先に列挙する。
+#   例示用ファイルは *.example として明示的に許可する（中身は必ずダミー値）。
+# =============================================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials
+.aws/
+
+# =============================================================================
+# Terraform
+#   tfstate は平文で機密値（DB接続文字列など）を含みうる。S3 backend を使うため
+#   ローカルに出た時点で事故。tfvars も同様に入力値の実体なので除外する。
+#   .terraform.lock.hcl は「コミットする」。プロバイダのバージョン固定に必要。
+# =============================================================================
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# =============================================================================
+# Go
+# =============================================================================
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/services/api/bootstrap
+/services/api/bin/
+vendor/
+go.work
+go.work.sum
+
+# =============================================================================
+# Node / Next.js
+# =============================================================================
+node_modules/
+.next/
+out/
+build/
+dist/
+.vercel
+.turbo
+*.tsbuildinfo
+next-env.d.ts
+.pnp
+.pnp.*
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# =============================================================================
+# OS / Editor / Tooling
+# =============================================================================
 .DS_Store
 Thumbs.db
 *.log
-.env
-.env.local
-node_modules/
-dist/
-build/
 .vscode/
 .idea/
+.claude/settings.local.json
