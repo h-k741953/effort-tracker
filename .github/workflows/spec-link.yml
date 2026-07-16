@@ -1,0 +1,71 @@
+name: Spec link
+
+# ADR 0004（Issue と docs のレファレンス型運用）を機械的に担保する。
+#
+# 【make verify に入れない理由】
+#   これは PR のメタデータ（本文・ラベル）に対する検査であり、ローカルには
+#   検査対象そのものが存在しない。原理的に make verify には入れられない。
+#   「CI 側にだけ存在する検査を作らない」という原則（verification-loop.md）は
+#   コードに対する検査の話であり、プロセス検査はその対象外として扱う。
+#   ci.yml と分けているのは、この性質の違いを構成上も明示するため。
+
+on:
+  pull_request:
+    branches: [develop, main]
+    # edited / labeled を含めるのは、CI が落ちた後に PR 本文へリンクを追記したり
+    # no-spec ラベルを付けたときに再実行させるため。これが無いと、直しても
+    # 赤いままになり、規約ではなく単なる障害物になる。
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spec-link-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  spec-link:
+    name: PR が docs/ を参照しているか
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 検査
+        env:
+          # ${{ }} を run 内に直接展開しないこと。PR 本文は外部からの入力であり、
+          # シェルスクリプトに直接埋め込むとスクリプトインジェクションになる。
+          # env 経由で渡せば、シェルは中身をコードとして解釈しない。
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HAS_NO_SPEC: ${{ contains(github.event.pull_request.labels.*.name, 'no-spec') }}
+        run: |
+          set -euo pipefail
+
+          if [ "$HAS_NO_SPEC" = "true" ]; then
+            echo "SKIP: no-spec ラベルが付いている（仕様を要さない変更）"
+            exit 0
+          fi
+
+          changed="$(git diff --name-only "$BASE_SHA" HEAD)"
+          if ! grep -qE '^(services|apps)/' <<< "$changed"; then
+            echo "SKIP: プロダクトコード（services/ apps/）の変更なし"
+            exit 0
+          fi
+
+          if grep -qE 'docs/[A-Za-z0-9._/-]+\.md' <<< "$PR_BODY"; then
+            echo "OK: PR 本文が docs/ を参照している"
+            exit 0
+          fi
+
+          echo "NG: PR 本文に docs/ 配下への参照がない"
+          echo ""
+          echo "  レファレンス型運用（ADR 0004）:"
+          echo "    決定した仕様は docs/specs/ にあり、PR はそこを指す。"
+          echo "    Issue や PR 本文に仕様を書き写さない。正解のデータは常に docs にある。"
+          echo ""
+          echo "  仕様を要さない変更なら no-spec ラベルを付けること。"
+          echo "  ラベルという明示的な操作を要求するのは、例外を使った事実を残すため。"
+          exit 1
