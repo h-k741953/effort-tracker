@@ -63,8 +63,24 @@ lint-api: ## Go の Lint（golangci-lint + go vet）
 # 判定には go list の .Standard フラグを使う。パス中のドットの有無で
 # 標準ライブラリを判別する方式は誤り。net/http などが内部で
 # vendor/golang.org/x/... を引き込むため誤検知する。
+#
+# -test を付けること。付けないとテストファイルの import が出力されず、
+# ドメインのテストが任意の外部ライブラリを import しても素通りする（ADR 0007）。
+# テストバリアント（workmonth.test 等）の ImportPath は $(MODULE)/internal/domain/
+# で始まるため、既存のフィルタがそのまま効く。追加の除外は要らない。
+#
+# go-cmp のみ例外として許す。テスト専用ライブラリであり、標準 testing が唯一
+# 苦手とする構造体比較だけを埋めるため（ADR 0007）。2つ目を許す判断には
+# ADR の置換が要る。ここを黙って増やさないこと。
+#
+# go list の終了コードを必ず見ること。パイプに直接繋ぐと、終了コードは grep の
+# ものになり `|| true` が握り潰す。-deps 単体ならエラー時も既知の import パスを
+# 出力するので実害は出ないが、-test はテストパッケージを読めないと
+# 「can't load test package」と言って何も出力せずに落ちる。パイプが空になり、
+# 検査は OK を返す。実測で踏んだ（＝偽の Green）。
+# 検査対象を読めなかったことは、違反が無いことを意味しない。
 .PHONY: check-domain-deps
-check-domain-deps: ## ドメイン層が標準ライブラリのみに依存しているか検査
+check-domain-deps: ## ドメイン層が標準ライブラリのみに依存しているか検査（テスト含む）
 	@echo "==> check-domain-deps"
 	@cd $(API_DIR) && \
 	pkgs="$$(go list ./internal/domain/... 2>/dev/null || true)"; \
@@ -73,16 +89,24 @@ check-domain-deps: ## ドメイン層が標準ライブラリのみに依存し�
 	  echo "      成功として扱わないため、これを失敗とする。"; \
 	  exit 1; \
 	fi; \
-	violations="$$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/domain/... \
+	if ! raw="$$(go list -deps -test -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/domain/... 2>&1)"; then \
+	  echo "  NG: go list がドメイン層の依存を解決できなかった:"; \
+	  echo "$$raw" | sed 's/^/    /'; \
+	  echo "  → 読めなかった状態を成功として扱わないため、これを失敗とする。"; \
+	  exit 1; \
+	fi; \
+	violations="$$(echo "$$raw" \
 	  | grep -v '^$$' \
-	  | grep -v '^$(MODULE)/internal/domain/' || true)"; \
+	  | grep -v '^$(MODULE)/internal/domain/' \
+	  | grep -v '^github.com/google/go-cmp/' || true)"; \
 	if [ -n "$$violations" ]; then \
 	  echo "  NG: ドメイン層が標準ライブラリ以外に依存している:"; \
 	  echo "$$violations" | sed 's/^/    - /'; \
+	  echo "  → 本体は標準ライブラリのみ、テストは標準ライブラリ + go-cmp のみ（ADR 0007）。"; \
 	  echo "  → docs/adr/ と CLAUDE.md を確認すること。緩める判断には人間の承認が要る。"; \
 	  exit 1; \
 	fi; \
-	echo "  OK: $$(echo "$$pkgs" | wc -l) パッケージ、標準ライブラリのみに依存"
+	echo "  OK: $$(echo "$$pkgs" | wc -l) パッケージ、標準ライブラリのみに依存（テスト含む）"
 
 # =============================================================================
 # Next.js / apps/web
