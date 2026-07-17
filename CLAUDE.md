@@ -75,6 +75,18 @@ Issue のコメントは `docs/` より優先されない。古い docs を読�
 
 この規約はレビューでは腐るため、CI で import を機械的に検査する（`docs/harness/verification-loop.md`）。
 
+内部アーキテクチャは**オニオンアーキテクチャ**。詳細は `docs/adr/0006`。
+
+```
+domain/          ← 中心。標準ライブラリのみ。リポジトリ interface もここに置く
+application/     ← アプリケーションサービス（ユースケース）
+infrastructure/  ← 最外周。persistence（Neon 実装）と lambda（ハンドラ・DI 配線）
+```
+
+**依存はすべて内向き。** 内側は外側を一切知らない。層飛ばし（`infrastructure → domain`）は許す。
+
+Domain Services のリングは `domain/` に同居させ、独立させない（集約が WorkMonth 1つのため当面空になる）。`presentation/` も作らない。**層を増やす判断には人間の承認が要る。**
+
 ---
 
 ## 実行必須コマンド
