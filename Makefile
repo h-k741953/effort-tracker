@@ -69,9 +69,15 @@ lint-api: ## Go の Lint（golangci-lint + go vet）
 # テストバリアント（workmonth.test 等）の ImportPath は $(MODULE)/internal/domain/
 # で始まるため、既存のフィルタがそのまま効く。追加の除外は要らない。
 #
-# go-cmp のみ例外として許す。テスト専用ライブラリであり、標準 testing が唯一
-# 苦手とする構造体比較だけを埋めるため（ADR 0007）。2つ目を許す判断には
-# ADR の置換が要る。ここを黙って増やさないこと。
+# go list を2回呼ぶこと。ADR 0007 の主張は2段になっており、1回では表せない。
+#   本体   (-test なし): 標準ライブラリのみ。例外なし
+#   テスト (-test あり): 標準ライブラリ + go-cmp のみ
+# -test 込みの出力に許可リストを1回かけるだけでは、本体の import とテストの
+# import を区別できず、本体が go-cmp を import しても通ってしまう。実測で踏んだ。
+#
+# go-cmp をテストにのみ許すのは、テスト専用ライブラリだからである（ADR 0007）。
+# パッケージドキュメント自身が "It is intended to only be used in tests" と
+# 明示している。2つ目を許す判断には ADR の置換が要る。黙って増やさないこと。
 #
 # go list の終了コードを必ず見ること。パイプに直接繋ぐと、終了コードは grep の
 # ものになり `|| true` が握り潰す。-deps 単体ならエラー時も既知の import パスを
@@ -89,7 +95,7 @@ check-domain-deps: ## ドメイン層が標準ライブラリのみに依存し�
 	  echo "      成功として扱わないため、これを失敗とする。"; \
 	  exit 1; \
 	fi; \
-	if ! raw="$$(go list -deps -test -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/domain/... 2>&1)"; then \
+	if ! raw="$$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/domain/... 2>&1)"; then \
 	  echo "  NG: go list がドメイン層の依存を解決できなかった:"; \
 	  echo "$$raw" | sed 's/^/    /'; \
 	  echo "  → 読めなかった状態を成功として扱わないため、これを失敗とする。"; \
@@ -97,16 +103,32 @@ check-domain-deps: ## ドメイン層が標準ライブラリのみに依存し�
 	fi; \
 	violations="$$(echo "$$raw" \
 	  | grep -v '^$$' \
-	  | grep -v '^$(MODULE)/internal/domain/' \
-	  | grep -v '^github.com/google/go-cmp/' || true)"; \
+	  | grep -v '^$(MODULE)/internal/domain/' || true)"; \
 	if [ -n "$$violations" ]; then \
-	  echo "  NG: ドメイン層が標準ライブラリ以外に依存している:"; \
+	  echo "  NG: ドメイン層の【本体】が標準ライブラリ以外に依存している:"; \
 	  echo "$$violations" | sed 's/^/    - /'; \
-	  echo "  → 本体は標準ライブラリのみ、テストは標準ライブラリ + go-cmp のみ（ADR 0007）。"; \
+	  echo "  → 本体に例外は無い。go-cmp もテスト専用であり本体では使えない（ADR 0007）。"; \
 	  echo "  → docs/adr/ と CLAUDE.md を確認すること。緩める判断には人間の承認が要る。"; \
 	  exit 1; \
 	fi; \
-	echo "  OK: $$(echo "$$pkgs" | wc -l) パッケージ、標準ライブラリのみに依存（テスト含む）"
+	if ! rawtest="$$(go list -deps -test -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/domain/... 2>&1)"; then \
+	  echo "  NG: go list がドメイン層のテストの依存を解決できなかった:"; \
+	  echo "$$rawtest" | sed 's/^/    /'; \
+	  echo "  → 読めなかった状態を成功として扱わないため、これを失敗とする。"; \
+	  exit 1; \
+	fi; \
+	tviolations="$$(echo "$$rawtest" \
+	  | grep -v '^$$' \
+	  | grep -v '^$(MODULE)/internal/domain/' \
+	  | grep -v '^github.com/google/go-cmp/' || true)"; \
+	if [ -n "$$tviolations" ]; then \
+	  echo "  NG: ドメイン層の【テスト】が標準ライブラリ・go-cmp 以外に依存している:"; \
+	  echo "$$tviolations" | sed 's/^/    - /'; \
+	  echo "  → テストに許されるのは go-cmp だけ（ADR 0007）。testify 等は入れない。"; \
+	  echo "  → docs/adr/ と CLAUDE.md を確認すること。緩める判断には人間の承認が要る。"; \
+	  exit 1; \
+	fi; \
+	echo "  OK: $$(echo "$$pkgs" | wc -l) パッケージ（本体=標準ライブラリのみ / テスト=+go-cmp）"
 
 # =============================================================================
 # Next.js / apps/web
