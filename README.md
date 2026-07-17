@@ -88,6 +88,8 @@ Lambda の呼び出しは `apps/web/src/lib/lambda-client.ts` に集約し、署
 | ホスティング | Vercel | **再検討中**（[#1](../../issues/1)） |
 | 認証（AWS） | OIDC — GitHub OIDC / Vercel OIDC Federation | 静的アクセスキーを排除する（[ADR 0005](docs/adr/0005-vercel-aws-oidc-federation.md)） |
 | CI | GitHub Actions | ローカルと同一の `make` ターゲットを呼ぶ |
+| テスト（Go） | 標準 `testing` + `google/go-cmp` | アサーション DSL とモックライブラリを入れない。テストダブルは手書きの Fake（[ADR 0007](docs/adr/0007-testing-with-stdlib-and-go-cmp.md)） |
+| テスト（Web） | Vitest | 導入は `apps/web` のスキャフォールド時（[#9](../../issues/9)） |
 
 **使わないものも技術選定の一部である。** API Gateway / ALB / NAT Gateway / RDS / ECS / Provisioned Concurrency は、いずれも要件に対して過剰かアイドル課金が理由で意図的に外している。却下の経緯は [ADR 0002](docs/adr/0002-serverless-over-ecs.md) の「検討した代替案」にある。
 
@@ -121,6 +123,7 @@ ADR は Nygard 形式。**書き換えず、覆すときは新しい ADR で置�
 | [0004](docs/adr/0004-issue-docs-reference-model.md) | Issue と docs の責務を分け、レファレンス型で運用する | 人間 |
 | [0005](docs/adr/0005-vercel-aws-oidc-federation.md) | Vercel から AWS への認証に OIDC Federation を使う | 人間 |
 | [0006](docs/adr/0006-onion-architecture.md) | 内部アーキテクチャにオニオンアーキテクチャを採用する | 人間 |
+| [0007](docs/adr/0007-testing-with-stdlib-and-go-cmp.md) | テストは標準 testing と go-cmp のみで書く | 人間 |
 
 **すべて人間が決定者である。** これは偶然ではなく、`CLAUDE.md` が「技術選定の変更（ADR が必要な判断）」を人間の責務に置いているためである。AI が単独で「承認済み」の ADR を起票することを禁じている。
 
