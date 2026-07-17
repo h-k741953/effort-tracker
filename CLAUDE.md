@@ -84,17 +84,28 @@ Issue のコメントは `docs/` より優先されない。古い docs を読�
 
 この規約はレビューでは腐るため、CI で import を機械的に検査する（`docs/harness/verification-loop.md`）。
 
-内部アーキテクチャは**オニオンアーキテクチャ**。詳細は `docs/adr/0006`。
+内部アーキテクチャは**クリーンアーキテクチャ**。詳細は `docs/adr/0008`（`0006` はオニオンを採用していたが廃止済み）。
 
 ```
-domain/          ← 中心。標準ライブラリのみ。リポジトリ interface もここに置く
-application/     ← アプリケーションサービス（ユースケース）
-infrastructure/  ← 最外周。persistence（Neon 実装）と lambda（ハンドラ・DI 配線）
+domain/               ← Entities。標準ライブラリのみ
+usecase/
+  port/               ← repository interface、入出力の境界
+  interactor/         ← ユースケースの実装
+adapter/
+  controller/         ← HTTP → input DTO
+  presenter/          ← output DTO → ViewModel
+  gateway/            ← repository の実装
+driver/
+  lambda/             ← ハンドラ・DI 配線
+  persistence/        ← Neon 接続
 ```
 
-**依存はすべて内向き。** 内側は外側を一切知らない。層飛ばし（`infrastructure → domain`）は許す。
+**依存は内側にのみ向かう。** 内側は外側を一切知らない。出力側も `port` の interface を通じて反転させる（interactor は presenter を直接知らない）。
 
-Domain Services のリングは `domain/` に同居させ、独立させない（集約が WorkMonth 1つのため当面空になる）。`presentation/` も作らない。**層を増やす判断には人間の承認が要る。**
+- **repository interface は `usecase/port` に置く。** `domain` には置かない
+- ディレクトリ名は `domain` だが、リングとしては Entities。用語のずれは ADR 0008 で承知のうえ
+- **CI が検査するのは「`domain` が外を向いていないこと」だけ。** `usecase → adapter` や `adapter → driver` の逆流は検査されず、規律で守る
+- **層を増やす・減らす判断には人間の承認が要る**
 
 ---
 
