@@ -65,9 +65,10 @@ CLAUDE.md は「ドメイン層は Go の標準ライブラリのみに依存す
 
 ```bash
 # make check-domain-deps の中核（実装は Makefile を参照）
-go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/domain/... \
+go list -deps -test -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/domain/... \
   | grep -v '^$' \
-  | grep -v '^<module>/internal/domain/'
+  | grep -v '^<module>/internal/domain/' \
+  | grep -v '^github.com/google/go-cmp/'
 # 出力が空でなければ違反 → exit 1
 ```
 
@@ -78,6 +79,35 @@ go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/domain/
 > 自パッケージ（`<module>/internal/domain/...`）のみ除外する。ドメイン層が同じモジュール内の `application` や `infrastructure` を import した場合も**違反として検出される**（依存の向きが逆転しているため）。
 >
 > **この検査はオニオンアーキテクチャの中核をそのまま担保している**（ADR 0006）。「すべての依存が、何にも依存しないドメインへ内向きに向かう」というパターンの主張と、この検査が見ているものは同一である。
+
+### `-test` を付ける — テストも検査対象である
+
+**`-test` が無いと、テストファイルの import は一切検査されない。** `go list -deps` はテスト以外の依存しか出力しないためである。
+
+これは実測で確認した穴である。`domain` に `net/http` を import する `_test.go` を置いても検出は0件で、`-test` を付けたときのみ検出される。**つまり「ドメイン層は標準ライブラリのみ」はテストコードには効いておらず、主張と実態がずれていた**（ADR 0007 で塞いだ）。
+
+テストバリアント（`workmonth.test` および `workmonth [workmonth.test]`）の ImportPath はいずれも `<module>/internal/domain/` で始まるため、既存のフィルタがそのまま効く。追加の除外は要らない。
+
+検査の主張は以下の2段になる。**どちらも CI で強制される。**
+
+| 対象 | 許される依存 |
+|---|---|
+| `domain` の本体 | 標準ライブラリのみ（例外なし） |
+| `domain` のテスト | 標準ライブラリ + go-cmp のみ |
+
+> **go-cmp を許すのは、テスト専用ライブラリだからである**（ADR 0007）。許可リストは一般則ではなく具体名で書いてある。2つ目を許すには ADR の置換が要る。**ここを黙って増やせるなら、検査は意味を失う。**
+
+### `-test` には終了コードの番人が要る
+
+**`go list` の出力をパイプへ直接繋いではならない。** パイプの終了コードは最後のコマンド（`grep`）のものになり、`|| true` がそれを握り潰す。
+
+これは `-test` を入れると実害になる。`go list -deps -test` は、**テストパッケージの import を解決できないとき何も出力せずに落ちる**（`can't load test package`）。`-test` の無い `go list -deps` が、エラーを出しながらも既知の import パスを出力するのとは挙動が違う。
+
+結果、パイプが空になり、握り潰された終了コードと相まって検査は `OK` を返す。**実際に踏んだ。** `domain` のテストが解決できない `testify` を import している状態で、`OK: 1 パッケージ、標準ライブラリのみに依存` が終了コード 0 で返った。**偽の Green である。** 本当は「そのテストが何を import しているか分からない」が正しい答えだった。
+
+そのため出力は一度変数に取り、終了コードを見てから処理する。**検査対象を読めなかったことは、違反が無いことを意味しない。**
+
+> **この検査は構文エラーを見ない。** `go list` は import しか読まないため、パッケージがコンパイルできなくても依存の答えは返す。それは誤りではなく守備範囲の違いであり、構文エラーは `make lint-api`（`go vet` / `go build`）が捕まえる。
 
 ### 検査対象が無い場合は失敗させる
 
