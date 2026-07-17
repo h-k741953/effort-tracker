@@ -82,6 +82,7 @@ Lambda の呼び出しは `apps/web/src/lib/lambda-client.ts` に集約し、署
 |---|---|---|
 | `apps/web` | Next.js (App Router) / TypeScript | Route Handler を BFF として使い、SigV4 署名をサーバー側に閉じ込める。UI と BFF が同一デプロイに収まる |
 | `services/api` | Go / AWS Lambda | コールドスタートを数百ms に抑えられる。標準ライブラリだけでドメイン層を素直に書ける（[ADR 0002](docs/adr/0002-serverless-over-ecs.md)） |
+| — 内部構造 | オニオンアーキテクチャ（`domain` / `application` / `infrastructure`） | 依存がすべて内向きに向かうというパターンの中核を、既存の `make check-domain-deps` がそのまま検査する（[ADR 0006](docs/adr/0006-onion-architecture.md)） |
 | `infra/terraform` | Terraform / AWS | コストガードレールをコードで固定し、レビュー基準にする（[ADR 0002](docs/adr/0002-serverless-over-ecs.md)） |
 | DB | Neon (PostgreSQL) | RDS の常駐課金（~$15/月）を避ける。Lambda が VPC 外にあるためプーラー経由で接続する |
 | ホスティング | Vercel | **再検討中**（[#1](../../issues/1)） |
@@ -119,6 +120,7 @@ ADR は Nygard 形式。**書き換えず、覆すときは新しい ADR で置�
 | [0003](docs/adr/0003-lambda-function-url-iam-auth.md) | Lambda Function URL を IAM 認証で保護する | 人間 |
 | [0004](docs/adr/0004-issue-docs-reference-model.md) | Issue と docs の責務を分け、レファレンス型で運用する | 人間 |
 | [0005](docs/adr/0005-vercel-aws-oidc-federation.md) | Vercel から AWS への認証に OIDC Federation を使う | 人間 |
+| [0006](docs/adr/0006-onion-architecture.md) | 内部アーキテクチャにオニオンアーキテクチャを採用する | 人間 |
 
 **すべて人間が決定者である。** これは偶然ではなく、`CLAUDE.md` が「技術選定の変更（ADR が必要な判断）」を人間の責務に置いているためである。AI が単独で「承認済み」の ADR を起票することを禁じている。
 
