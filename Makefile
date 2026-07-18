@@ -29,7 +29,7 @@ verify: lint test check-domain-deps scan-secrets ## 全検査（コミット前�
 	@echo "==> verify: 全検査を通過"
 
 .PHONY: test
-test: test-api test-web ## 全レイヤーのテスト
+test: test-api test-web test-scripts ## 全レイヤーのテスト
 
 .PHONY: lint
 lint: lint-api lint-web lint-tf ## 全レイヤーの Lint / 型チェック
@@ -170,6 +170,25 @@ lint-tf: ## Terraform の整形チェックと検証
 	  terraform -chdir=$(TF_DIR) init -backend=false -input=false > /dev/null && \
 	  terraform -chdir=$(TF_DIR) validate; \
 	fi
+
+# =============================================================================
+# .github/scripts のロジック
+#
+# プロセス検査（spec-link / review-trail）の *対象* は PR のメタデータで、
+# ローカルには存在しない。だが *チェッカのロジック* は入力を差し替えれば
+# 完全にローカル実行でき、ここは「ローカル再現が必須」の側である。
+# この区別を付けないと、チェッカのバグだけが検査不能地帯に残る。
+#
+# 実際に踏んだ: 往復見出しを `###` ちょうどに限定していたため `## 往復 4` が
+# 黙殺され、上限超過（＝人間へ上げるべき停止条件）が OK で通っていた。
+# さらに `#{1,6}` の ERE 区間指定は mawk（GitHub runner の既定 awk）が解釈せず、
+# 修正が黙って無効化される。どちらも fixture でしか捕まらない。
+# =============================================================================
+
+.PHONY: test-scripts
+test-scripts: ## .github/scripts のチェッカを fixture で検査
+	@echo "==> test-scripts"
+	@bash .github/scripts/test-check-review-trail.sh
 
 # =============================================================================
 # セキュリティ
