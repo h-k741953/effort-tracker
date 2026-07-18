@@ -47,5 +47,18 @@
       "Bash(git push *)",
       "Bash(git merge *)"
     ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/check-prompt-entry.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
   }
 }
