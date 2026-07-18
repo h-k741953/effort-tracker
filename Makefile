@@ -29,7 +29,7 @@ verify: lint test check-domain-deps scan-secrets ## 全検査（コミット前�
 	@echo "==> verify: 全検査を通過"
 
 .PHONY: test
-test: test-api test-web test-scripts ## 全レイヤーのテスト
+test: test-api test-web test-scripts test-hooks ## 全レイヤーのテスト
 
 .PHONY: lint
 lint: lint-api lint-web lint-tf ## 全レイヤーの Lint / 型チェック
@@ -189,6 +189,22 @@ lint-tf: ## Terraform の整形チェックと検証
 test-scripts: ## .github/scripts のチェッカを fixture で検査
 	@echo "==> test-scripts"
 	@bash .github/scripts/test-check-review-trail.sh
+
+# =============================================================================
+# .claude/hooks のロジック
+#
+# .github/scripts と同じ理由（上記コメント参照）でローカル再現が必須の側だが、
+# 対象は CI のスクリプトではなく Claude Code のハーネス資産（UserPromptSubmit
+# hook）であり、置き場所が .github/scripts と異なる（docs/adr/0011,
+# docs/specs/orchestrator-entry-hook.md）。ディレクトリが違うものを
+# test-scripts ターゲットへ合流させると、このコメント区分（「.github/scripts
+# のロジック」）と実体がずれるため、ターゲットを分けた。
+# =============================================================================
+
+.PHONY: test-hooks
+test-hooks: ## .claude/hooks のチェッカを fixture で検査
+	@echo "==> test-hooks"
+	@bash .claude/hooks/test-check-prompt-entry.sh
 
 # =============================================================================
 # セキュリティ
