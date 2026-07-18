@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # 往復証跡（PR コメント）の形式・往復上限を検査する（Issue #25）。
 #
-# review-trail.yml から呼ばれるプロセス検査の本体。PR 本文（環境変数 PR_BODY）に、
+# review-trail.yml から呼ばれるプロセス検査の本体。PR コメント（TRAIL_FILE に連結済み）に、
 # 実装↔レビューの往復が verification-loop.md「実装↔レビューループ」の定型フォーマットで
 # 記録されているか、往復数が「ループの上限値」表の上限内かを機械的に確認する。
+#
+# 【なぜコメントで、本文でないか】
+#   証跡の置き場所を PR コメントと定めているのは verification-loop.md「実装↔レビューループ」。
+#   往復ごとに追記され、その順序自体が経緯の記録になる（本文編集では履歴が残らない）。
+#   検査対象を docs の定義とずらさないこと。ずれると「docs どおりに書くと落ちる」になる。
 #
 # 【この検査の限界 ― 記録しか見ない】
 #   見るのは *PR に記録された* 往復ブロックの形式と往復数であって、実セッションの
@@ -12,9 +17,16 @@
 #   Warning/Info の妥当性）と2段承認ゲートの成立は artifact に残らず、検査できない。
 #
 # 入力:
-#   PR_BODY           … PR 本文（review-trail.yml が env 経由で渡す。injection 回避のため引数にしない）
+#   TRAIL_FILE        … PR コメントを連結したファイルのパス（review-trail.yml が gh api で作る）。
+#                       コメント本文は外部からの入力なので、シェルに展開せずファイル経由で渡す。
 #   REVIEW_LOOP_DOC   … 上限値の単一情報源（既定 docs/harness/verification-loop.md）
 set -euo pipefail
+
+TRAIL_FILE="${TRAIL_FILE:-}"
+if [ -z "$TRAIL_FILE" ] || [ ! -f "$TRAIL_FILE" ]; then
+  echo "NG: 往復証跡の入力（TRAIL_FILE）が渡されていない。review-trail.yml の取得ステップを確認すること。"
+  exit 1
+fi
 
 DOC="${REVIEW_LOOP_DOC:-docs/harness/verification-loop.md}"
 
@@ -37,9 +49,9 @@ if [ -z "${cap:-}" ]; then
   exit 1
 fi
 
-# --- PR 本文の往復ブロックを検証 ---------------------------------------------------
+# --- PR コメントの往復ブロックを検証 -----------------------------------------------
 # CRLF を落として awk へ。ラベルは前後の空白に寛容に一致させる（整形のブレを許す）。
-if printf '%s' "${PR_BODY:-}" | tr -d '\r' | awk -v cap="$cap" '
+if tr -d '\r' < "$TRAIL_FILE" | awk -v cap="$cap" '
   function flush(   miss) {
     if (!in_block) return
     miss=""
@@ -63,6 +75,16 @@ if printf '%s' "${PR_BODY:-}" | tr -d '\r' | awk -v cap="$cap" '
     has_c = has_w = has_i = has_r = has_u = 0
     next
   }
+  # 往復以外の見出しでブロックを閉じる。閉じないと、別章やコメント境界をまたいだ
+  # 「- 未解決 :」を直前の往復のものとして数え、欠落を見逃す（検査が甘くなる）。
+  #
+  # 見出しは `#+` で書く。`#{1,6}` の区間指定は mawk（GitHub runner の既定 awk）が
+  # 解釈せず、条件が常に偽になって修正が無効化される。gawk では通るため気づきにくい。
+  /^[ \t]*#+[ \t]/ {
+    flush()
+    in_block = 0
+    next
+  }
   in_block {
     if ($0 ~ /^[ \t]*[-*][ \t]*Critical[ \t]*:/)  has_c = 1
     else if ($0 ~ /^[ \t]*[-*][ \t]*Warning[ \t]*:/)  has_w = 1
@@ -73,7 +95,7 @@ if printf '%s' "${PR_BODY:-}" | tr -d '\r' | awk -v cap="$cap" '
   END {
     flush()
     if (count == 0) {
-      msgs = msgs "  『### 往復 N』ブロックが本文に1つも無い\n"
+      msgs = msgs "  『### 往復 N』ブロックが PR コメントに1つも無い\n"
       bad = 1
     }
     if (maxn > cap) {

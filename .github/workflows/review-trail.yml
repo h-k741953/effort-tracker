@@ -4,7 +4,7 @@ name: Review trail
 # spec-link.yml と同じ「プロセス検査」であり、ci.yml とは分ける。
 #
 # 【ci.yml に混ぜない理由】
-#   検査対象は PR 本文（外部からの入力）で、ローカルには存在しない。原理的に
+#   検査対象は PR コメント（外部からの入力）で、ローカルには存在しない。原理的に
 #   make verify には入れられない（verification-loop.md「例外: プロセス検査」）。
 #   「CI 側にだけ存在する検査を作らない」原則はコードに対する検査の話であり、
 #   プロセス検査はその対象外。ci.yml と分けているのは、この性質の違いを構成上も明示するため。
@@ -19,12 +19,17 @@ name: Review trail
 on:
   pull_request:
     branches: [develop, main]
-    # edited / labeled を含めるのは、CI が落ちた後に PR 本文へ往復証跡を追記したり
-    # no-spec ラベルを付けたときに再実行させるため。無いと直しても赤いまま残る。
+    # labeled / unlabeled を含めるのは、no-spec ラベルを後から付けたときに再実行させるため。
+    #
+    # 【既知の限界】証跡コメントの追加ではこの検査は再実行されない。コメントは
+    #   pull_request ではなく issue_comment イベントで、そちらは PR head SHA に
+    #   チェック結果が紐づかず必須チェックとして機能しない。落ちた後にコメントを
+    #   足したら、push するか本ジョブを Re-run すること。
     types: [opened, synchronize, reopened, edited, labeled, unlabeled]
 
 permissions:
   contents: read
+  pull-requests: read # 往復証跡のコメントを読む
 
 concurrency:
   group: review-trail-${{ github.ref }}
@@ -41,11 +46,12 @@ jobs:
 
       - name: 検査
         env:
-          # ${{ }} を run 内に直接展開しないこと。PR 本文は外部からの入力であり、
+          # ${{ }} を run 内に直接展開しないこと。PR の入力は外部からの入力であり、
           # シェルに直接埋め込むとスクリプトインジェクションになる。env 経由なら
-          # シェルは中身をコードとして解釈しない。check-review-trail.sh も PR_BODY を
-          # env から読む（引数に渡さない）。
-          PR_BODY: ${{ github.event.pull_request.body }}
+          # シェルは中身をコードとして解釈しない。コメント本文はさらに一段慎重に、
+          # gh api の出力をファイルへ落として check-review-trail.sh へ渡す。
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HAS_NO_SPEC: ${{ contains(github.event.pull_request.labels.*.name, 'no-spec') }}
         run: |
@@ -63,4 +69,11 @@ jobs:
             exit 0
           fi
 
-          bash .github/scripts/check-review-trail.sh
+          # 往復証跡は PR コメントに残す（verification-loop.md「実装↔レビューループ」）。
+          # コメント間の混線を防ぐため、各コメントの区切りに見出しを1本挟む。
+          # 検査側はこの見出しで往復ブロックを閉じる。
+          trail="${RUNNER_TEMP}/review-trail.txt"
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | "\n###### --- comment \(.id) ---\n" + .body' > "$trail"
+
+          TRAIL_FILE="$trail" bash .github/scripts/check-review-trail.sh
