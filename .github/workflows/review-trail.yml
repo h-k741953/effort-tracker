@@ -1,0 +1,66 @@
+name: Review trail
+
+# 実装↔レビューの往復証跡（PR コメント）を定型フォーマットで機械的に検査する（Issue #25）。
+# spec-link.yml と同じ「プロセス検査」であり、ci.yml とは分ける。
+#
+# 【ci.yml に混ぜない理由】
+#   検査対象は PR 本文（外部からの入力）で、ローカルには存在しない。原理的に
+#   make verify には入れられない（verification-loop.md「例外: プロセス検査」）。
+#   「CI 側にだけ存在する検査を作らない」原則はコードに対する検査の話であり、
+#   プロセス検査はその対象外。ci.yml と分けているのは、この性質の違いを構成上も明示するため。
+#
+# 【この検査の限界 ― 記録しか見ない】
+#   見るのは *PR に記録された* 往復ブロックの形式と往復数であって、実セッションの
+#   実装↔レビュー往復そのものではない。記録をごまかせば擦り抜ける（外部が書き込める
+#   場所を正解の置き場所にしない、という ADR 0004 と同じ留意）。指摘レベルの分類
+#   （Critical/Warning/Info の妥当性）と2段承認ゲートの成立は artifact に残らず、
+#   ここでは検査できない（ADR 0010 §F の「止められない側」／スコープ外）。
+
+on:
+  pull_request:
+    branches: [develop, main]
+    # edited / labeled を含めるのは、CI が落ちた後に PR 本文へ往復証跡を追記したり
+    # no-spec ラベルを付けたときに再実行させるため。無いと直しても赤いまま残る。
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: review-trail-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review-trail:
+    name: PR に往復証跡が定型で残っているか
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 検査
+        env:
+          # ${{ }} を run 内に直接展開しないこと。PR 本文は外部からの入力であり、
+          # シェルに直接埋め込むとスクリプトインジェクションになる。env 経由なら
+          # シェルは中身をコードとして解釈しない。check-review-trail.sh も PR_BODY を
+          # env から読む（引数に渡さない）。
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HAS_NO_SPEC: ${{ contains(github.event.pull_request.labels.*.name, 'no-spec') }}
+        run: |
+          set -euo pipefail
+
+          # spec-link と同じ除外軸: no-spec ラベル、またはプロダクトコードの変更なし。
+          if [ "$HAS_NO_SPEC" = "true" ]; then
+            echo "SKIP: no-spec ラベルが付いている（仕様を要さない変更）"
+            exit 0
+          fi
+
+          changed="$(git diff --name-only "$BASE_SHA" HEAD)"
+          if ! grep -qE '^(services|apps)/' <<< "$changed"; then
+            echo "SKIP: プロダクトコード（services/ apps/）の変更なし"
+            exit 0
+          fi
+
+          bash .github/scripts/check-review-trail.sh
