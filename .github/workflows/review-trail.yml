@@ -15,17 +15,29 @@ name: Review trail
 #   場所を正解の置き場所にしない、という ADR 0004 と同じ留意）。指摘レベルの分類
 #   （Critical/Warning/Info の妥当性）と2段承認ゲートの成立は artifact に残らず、
 #   ここでは検査できない（ADR 0010 §F の「止められない側」／スコープ外）。
+#
+# 【信頼境界】検査対象の PR コメントは *コメント権限のある第三者なら誰でも追記できる*。
+#   第三者が必須5行そろいの『### 往復 99』を1つ投稿するだけで必須チェックを恒久的に
+#   赤にできる（復旧はコメント削除のみ）。この検査を第三者に対する防御として数えない。
+#
+# 【チェッカのロジックはローカル検査対象】検査 *対象* はローカルに無いが、
+#   check-review-trail.sh 自体は入力を差し替えれば実行できる。fixture テストは
+#   make test-scripts（ci.yml の scripts ジョブ）が回す。
 
 on:
   pull_request:
     branches: [develop, main]
     # labeled / unlabeled を含めるのは、no-spec ラベルを後から付けたときに再実行させるため。
     #
+    # edited は入れない。spec-link と違い、この検査は PR 本文を一切見ない
+    # （検査対象は PR コメント）。本文・タイトルの編集で再実行しても結果は変わらず、
+    # 「何のために動いているか説明できないトリガ」を残さない。
+    #
     # 【既知の限界】証跡コメントの追加ではこの検査は再実行されない。コメントは
     #   pull_request ではなく issue_comment イベントで、そちらは PR head SHA に
     #   チェック結果が紐づかず必須チェックとして機能しない。落ちた後にコメントを
     #   足したら、push するか本ジョブを Re-run すること。
-    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -64,16 +76,42 @@ jobs:
           fi
 
           changed="$(git diff --name-only "$BASE_SHA" HEAD)"
-          if ! grep -qE '^(services|apps)/' <<< "$changed"; then
+
+          # チェッカ自身（このワークフローと本体スクリプト）を変更する PR では
+          # SKIP しない。この検査は spec-link と同じ除外軸を持つため、
+          # .github/ と docs/ しか触らない PR ―― つまり *チェッカを直す PR そのもの* ――
+          # では構造上いつまでも SKIP になり、gh api を通る経路が一度も実行されないまま
+          # 緑になる。それは「通った」ではなく「素通りした」であり、
+          # verification-loop.md が禁じる偽の Green（自分のルールに自分で反する）。
+          #
+          # パスを直書きすると、改名・移動で静かにマッチしなくなり、除外軸が元の
+          # 「構造上いつまでも SKIP」に戻る（誰も気づかない）。そこで
+          #   (1) 対象パスが実在することを確認して、ずれたら黙らずに落とす
+          #   (2) .github/scripts/ は接頭辞で拾い、スクリプトの改名で外れないようにする
+          for p in .github/scripts/check-review-trail.sh .github/workflows/review-trail.yml; do
+            if [ ! -e "$p" ]; then
+              echo "NG: $p が存在しない。SKIP 除外軸のパスが実態とずれている（除外軸の劣化）。"
+              echo "    移動・改名したなら review-trail.yml のこの分岐も追随させること。"
+              exit 1
+            fi
+          done
+
+          if grep -qE '^\.github/(scripts/|workflows/review-trail\.yml$)' <<< "$changed"; then
+            echo "検査を実行: チェッカ自身の変更を含む PR（SKIP させない）"
+          elif ! grep -qE '^(services|apps)/' <<< "$changed"; then
             echo "SKIP: プロダクトコード（services/ apps/）の変更なし"
             exit 0
           fi
 
-          # 往復証跡は PR コメントに残す（verification-loop.md「実装↔レビューループ」）。
+          # 往復証跡は PR コメント（会話タブ）に残す
+          # （verification-loop.md「実装↔レビューループ」）。
           # コメント間の混線を防ぐため、各コメントの区切りに見出しを1本挟む。
           # 検査側はこの見出しで往復ブロックを閉じる。
+          #
+          # per_page=100 を明示すること。既定は 30 件で、往復証跡が古いコメントに
+          # 埋もれた PR では取り漏らしうる（--paginate は補うが往復が増える）。
           trail="${RUNNER_TEMP}/review-trail.txt"
-          gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
             --jq '.[] | "\n###### --- comment \(.id) ---\n" + .body' > "$trail"
 
           TRAIL_FILE="$trail" bash .github/scripts/check-review-trail.sh
