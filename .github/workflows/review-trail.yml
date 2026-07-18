@@ -66,6 +66,8 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HAS_NO_SPEC: ${{ contains(github.event.pull_request.labels.*.name, 'no-spec') }}
+          # 上限超過を人間が承認したことを記録に残すラベル（no-spec と同じ形）。
+          HAS_LOOP_EXTENDED: ${{ contains(github.event.pull_request.labels.*.name, 'loop-extended') }}
         run: |
           set -euo pipefail
 
@@ -114,4 +116,5 @@ jobs:
           gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
             --jq '.[] | "\n###### --- comment \(.id) ---\n" + .body' > "$trail"
 
-          TRAIL_FILE="$trail" bash .github/scripts/check-review-trail.sh
+          TRAIL_FILE="$trail" HAS_LOOP_EXTENDED="$HAS_LOOP_EXTENDED" \
+            bash .github/scripts/check-review-trail.sh

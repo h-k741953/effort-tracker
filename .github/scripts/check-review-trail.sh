@@ -31,6 +31,15 @@
 #   TRAIL_FILE        … PR コメントを連結したファイルのパス（review-trail.yml が gh api で作る）。
 #                       コメント本文は外部からの入力なので、シェルに展開せずファイル経由で渡す。
 #   REVIEW_LOOP_DOC   … 上限値の単一情報源（既定 docs/harness/verification-loop.md）
+#   HAS_LOOP_EXTENDED … loop-extended ラベルの有無（"true" で上限超過を許容）
+#
+# 【loop-extended ラベルが要る理由】
+#   上限超過の扱いは「握り潰さず人間へ上げる」であって「常に禁止」ではない。人間が
+#   延長を承認することはある。だがその承認は session 内の判断で artifact に残らず、
+#   機械には「承認された延長」と「握り潰し」の区別が付かない（ADR 0010 §F の
+#   止められない側 / Issue #25 でスコープ外とした2段承認ゲート）。
+#   そこで no-spec と同じ形をとる ―― **例外にラベルという明示的な操作を要求し、
+#   例外を使った事実を記録に残す。** ラベルで免除するのは上限だけで、形式は免除しない。
 set -euo pipefail
 
 TRAIL_FILE="${TRAIL_FILE:-}"
@@ -62,7 +71,7 @@ fi
 
 # --- PR コメントの往復ブロックを検証 -----------------------------------------------
 # CRLF を落として awk へ。ラベルは前後の空白に寛容に一致させる（整形のブレを許す）。
-if tr -d '\r' < "$TRAIL_FILE" | awk -v cap="$cap" '
+if tr -d '\r' < "$TRAIL_FILE" | awk -v cap="$cap" -v extended="${HAS_LOOP_EXTENDED:-false}" '
   function flush(   miss) {
     if (!in_block) return
     miss=""
@@ -142,14 +151,28 @@ if tr -d '\r' < "$TRAIL_FILE" | awk -v cap="$cap" '
       msgs = msgs "  『### 往復 N』ブロックが PR コメントに1つも無い\n"
       bad = 1
     }
+    # 上限超過は既定で fail。ただし loop-extended ラベルが付いていれば、
+    # 人間が延長を承認した事実が記録に残っているものとして通す（下の注記も参照）。
+    # 形式（必須5行・ブロックの存在）はラベルでは免除しない。緩めるのは上限だけ。
     if (maxn > cap) {
-      msgs = msgs sprintf("  往復 %d が上限 %d を超えている（収束せず＝握り潰さず人間へ上げる状況）\n", maxn, cap)
-      bad = 1
+      if (extended == "true") {
+        exceeded = 1
+      } else {
+        msgs = msgs sprintf("  往復 %d が上限 %d を超えている（収束せず＝握り潰さず人間へ上げる状況）\n", maxn, cap)
+        msgs = msgs "  人間が延長を承認したのなら loop-extended ラベルを付けること（承認を記録に残すため）。\n"
+        bad = 1
+      }
     }
     if (bad) {
       printf("NG: 往復証跡（PR コメント）の形式・往復数が要件を満たさない\n")
       printf("%s", msgs)
       exit 1
+    }
+    if (exceeded) {
+      # 例外を使った事実は必ず出力に残す。黙って緑にしない。
+      printf("OK（例外）: 往復ブロック %d 個 / 最大 往復 %d > 上限 %d\n", count, maxn, cap)
+      printf("  loop-extended ラベルによる人間承認済みの延長として通した。各ブロックに必須5行そろい。\n")
+      exit 0
     }
     printf("OK: 往復ブロック %d 個 / 最大 往復 %d ≤ 上限 %d / 各ブロックに必須5行そろい\n", count, maxn, cap)
   }
