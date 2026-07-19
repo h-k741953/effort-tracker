@@ -60,13 +60,24 @@ finish() {
 #   混ざれば「番号ではない何か（ゴミ・注入の試み）」＝ INVALID_ARG とする。
 #
 # 【trim と分割を read -a に任せる理由】
-#   `read -r -a tokens <<< "$argstr"` は IFS（空白・タブ・改行）で分割しつつ
-#   前後の空白を自動的に無視する。空文字列・空白のみの入力は tokens が
-#   0個になるため、AC-1-4 / AC-1-5（NO_ARG）を分岐なしで拾える。
+#   `IFS=$' \t\n' read -r -d '' -a tokens <<< "$argstr"` は IFS（空白・タブ・
+#   改行）で分割しつつ前後の空白を自動的に無視する。空文字列・空白のみの
+#   入力は tokens が0個になるため、AC-1-4 / AC-1-5（NO_ARG）を分岐なしで
+#   拾える。
+#
+# 【`read -r -a tokens <<< "$argstr"` ではなく `-d ''` を付ける理由（C-2）】
+#   ヒアストリング（<<<）が渡す内容は "$argstr" + 追加の改行1個。`read`
+#   はデフォルトで改行を「レコードの終端」として扱うため、`-d` を付けない
+#   場合は argstr 自体に含まれる最初の改行で読み取りを打ち切り、2行目以降
+#   を黙って捨てる（fail-open）。`-d ''` は区切り文字を NUL に変え、改行を
+#   ただの IFS フィールド区切りとして扱わせることで、複数行にまたがる
+#   argstr 全体を読み切ってから分割する。NUL が来ないため `read` 自体の
+#   戻り値は非0（EOF）になるが、`tokens` への代入は行われているため
+#   `set -e` を使わないこのスクリプトでは問題にならない。
 do_arg() {
   local argstr="${1:-}"
   local tokens=()
-  read -r -a tokens <<< "$argstr"
+  IFS=$' \t\n' read -r -d '' -a tokens <<< "$argstr"
   local n="${#tokens[@]}"
 
   if [ "$n" -eq 0 ]; then
