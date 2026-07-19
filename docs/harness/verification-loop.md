@@ -20,6 +20,7 @@ AIは自分の書いたコードが正しいかを、**自分では判断でき�
 | `make test` | 全レイヤーのテスト |
 | `make test-scripts` | `.github/scripts` のチェッカを fixture で検査（`make test` に含む） |
 | `make test-hooks` | `.claude/hooks` のチェッカを fixture で検査（`make test` に含む） |
+| `make test-commands` | `.claude/scripts`（スラッシュコマンドの機械判定部）のチェッカを fixture で検査（`make test` に含む） |
 | `make lint` | 全レイヤーの Lint / 型チェック |
 | `make verify` | `lint` + `test` + `check-domain-deps` + `scan-secrets` |
 | `make check-domain-deps` | ドメイン層の依存検査 |
@@ -258,7 +259,7 @@ PR に残すのは*決定した仕様*ではなく*経緯・証跡*であり、A
 | `web` | `Web (lint / test)` | `make lint-web` / `make test-web` |
 | `secrets` | `Secrets (gitleaks)` | `make scan-secrets` |
 | `terraform` | `Terraform (fmt / validate)` | `make lint-tf` |
-| `scripts` | `Scripts (checker logic)` | `make test-scripts`（`.github/scripts` のチェッカを fixture で検査） + `make test-hooks`（`.claude/hooks` のチェッカを fixture で検査） |
+| `scripts` | `Scripts (checker logic)` | `make test-scripts`（`.github/scripts` のチェッカを fixture で検査） + `make test-hooks`（`.claude/hooks` のチェッカを fixture で検査） + `make test-commands`（`.claude/scripts` のチェッカ＝スラッシュコマンドの機械判定部を fixture で検査） |
 
 **コードに対する検査を CI 側にだけ作らない。** 作った瞬間、ローカルの Green が信用できなくなる。
 

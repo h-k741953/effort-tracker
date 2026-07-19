@@ -131,6 +131,13 @@ jobs:
       - name: make test-hooks
         run: make test-hooks
 
+      # test-commands（.claude/scripts のチェッカ = /issue の機械判定部
+      # issue-gate.sh の fixture）も、上と同じ理由で新規ジョブを起こさず
+      # 本ジョブへ step を追加する。docs/specs/issue-command.md「対象」節
+      # 「なぜ make ターゲットを分け、CI は既存ジョブへ相乗りさせるのか」参照。
+      - name: make test-commands
+        run: make test-commands
+
   # ---------------------------------------------------------------------------
   # シークレット検出
   # ---------------------------------------------------------------------------
