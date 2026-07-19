@@ -319,6 +319,27 @@ else
 fi
 
 # ==============================================================================
+# C-2（Critical・実装バグの検知漏れ / 往復1でのレビュー指摘）:
+# 改行区切りの複数引数を do_arg が黙って切り捨てる
+# ==============================================================================
+# 【往復1の経緯】
+#   do_arg は `read -r -a tokens <<< "$argstr"` でトークン化している。
+#   ヒアストリング（<<<）は "1行しか読まない" ため、改行を含む argstr は
+#   2行目以降が黙って捨てられ、1行目だけを見て判定してしまう。
+#   これは表に新しい行を足すものではなく、AC-1-8「1コマンド1 Issue」と
+#   AC-1-4/AC-1-6/AC-6-1「番号を推測しない」の実現形が壊れている
+#   （曖昧な入力を着手側へ倒す fail-open。ADR 0010 §A に反する）ことを
+#   検知する fixture である。80件時点ではこの2件を検知できず、
+#   実装は `31\n32` を単一引数 `31` として OK/0 を返していた。
+ARG_NEWLINE_MULTI=$'31\n32'
+expect_arg "C-2-a: 改行区切りの複数Issue番号（AC-1-8 の実現形。ヒアストリングは1行しか読まないため fail-open していた）" \
+  "$ARG_NEWLINE_MULTI" "MULTIPLE_ARG" "3"
+
+ARG_NEWLINE_INVALID=$'31\nabc'
+expect_arg "C-2-b: 改行区切りで2行目が無効トークン（AC-1-6 の実現形。同上の fail-open）" \
+  "$ARG_NEWLINE_INVALID" "INVALID_ARG" "3"
+
+# ==============================================================================
 # AC-4-4: 停止系 verdict では stderr に説明があること（stdout 半分は check_verdict
 # が全ケース共通で検査済みなので、ここでは stderr 半分を代表ケースで確認する）
 # ==============================================================================
@@ -448,6 +469,27 @@ expect_gate "AC-3-7: labels=[Task]（大文字小文字を区別する）" "$REP
 
 expect_gate "AC-3-8: labels=[discussion,no-spec]" "$REPO" \
   "$(gate_json 31 't' "$BODY_VALID" "$LBL_DISCUSSION_NOSPEC" 'OPEN')" "DISCUSSION" "4"
+
+# ==============================================================================
+# W-1（Warning・ミューテーション被覆の穴 / 往復1でのレビュー指摘）:
+# AC-3「部分一致を行わない」を固定する
+# ==============================================================================
+# 【往復1の経緯】
+#   grep -qxF 'task' の -x（行全体一致）を落とし grep -qF 'task' に緩める
+#   ミューテーションが、既存80件では1件も Red にならず生存していた。
+#   AC-3 本文は「部分一致・大文字小文字の吸収を行わない」の両方を明示するが、
+#   AC-3-7（labels=[Task]）は大文字小文字側しか固定していない。実装自体は
+#   正しい（labels=[subtask] は現行実装で LABEL_UNKNOWN を返す）ため、
+#   以下2件は追加した時点で Green になる。これは表に新しい行を足すものでは
+#   なく、AC-3 本文がすでに要求している性質のミューテーション被覆を埋める。
+LBL_SUBTASK='[{"name":"subtask"}]'
+LBL_DISCUSSIONS='[{"name":"discussions"}]'
+
+expect_gate "W-1-a: labels=[subtask]（'task' への部分一致を許さない。AC-3 本文）" "$REPO" \
+  "$(gate_json 31 't' "$BODY_VALID" "$LBL_SUBTASK" 'OPEN')" "LABEL_UNKNOWN" "3"
+
+expect_gate "W-1-b: labels=[discussions]（'discussion' への部分一致を許さない。AC-3 本文）" "$REPO" \
+  "$(gate_json 31 't' "$BODY_VALID" "$LBL_DISCUSSIONS" 'OPEN')" "LABEL_UNKNOWN" "3"
 
 # ==============================================================================
 # AC-10: 入力の頑健性
@@ -582,6 +624,19 @@ expect_progress "AC-7-5: 節内に #<数字> が無い（範囲外の #31 を拾
 PROGRESS_EMPTY="${WORK}/progress-empty.md"
 : > "$PROGRESS_EMPTY"
 expect_progress "AC-7-6: 空ファイル → INDETERMINATE" "31" "$PROGRESS_EMPTY" "INDETERMINATE" "1"
+
+# I-1（任意・ミューテーション被覆の穴 / 往復1でのレビュー指摘）:
+# AC-7 の節スコープの前方境界を固定する。
+# 【往復1の経緯】
+#   in_section 条件を落とす（節の外にある #<数字> も拾ってしまう）
+#   ミューテーションが既存 fixture では生存していた。AC-7-5 は「節の後」に
+#   ある #31 を拾わないことは検査済みだが、「節の前」に別の #<数字> がある
+#   場合を検査していなかった。'## 対象タスク' より前に無関係の見出しと
+#   #99 を置き、節内の #31 だけが拾われることを固定する。
+PROGRESS_BEFORE_SECTION="${WORK}/progress-before-section.md"
+printf '%s' $'## 何か関係ない見出し\n\n- 前タスクの名残: #99\n\n## 対象タスク\n\n- Issue / 依頼: #31\n\n## いま何をしているか\n' > "$PROGRESS_BEFORE_SECTION"
+expect_progress "I-1: '## 対象タスク' より前の #99 を拾わず節内の #31 を拾う → RESUME" \
+  "31" "$PROGRESS_BEFORE_SECTION" "RESUME" "0"
 
 # AC-10-7: CRLF 改行でも '## 対象タスク' の判定を壊さない。
 PROGRESS_CRLF="${WORK}/progress-crlf.md"
