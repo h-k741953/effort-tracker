@@ -3,7 +3,7 @@
 #
 # 【この対象・fixture について】
 #   単一情報源は docs/specs/issue-command.md。判定条件（AC-1〜AC-3, AC-6-b, AC-7,
-#   AC-10）はそちらに書いてあり、このファイルはそれを実装したものであって
+#   AC-10, AC-12）はそちらに書いてあり、このファイルはそれを実装したものであって
 #   条件を書き写さない。fixture は .claude/scripts/test-issue-gate.sh。
 #
 # 【純粋なフィルタであること（仕様「対象」節）】
@@ -361,6 +361,106 @@ do_progress() {
 }
 
 # ==============================================================================
+# mode command-lint: issue-gate.sh command-lint <コマンド定義のパス>  ― AC-12
+# ==============================================================================
+#
+# コマンド定義のテキストを**行単位**で読み、「素の $ARGUMENTS がシェル文字列へ
+# 連結されている形」が無いことを検査する（AC-12-a）。判定は次の順で行う。
+#
+#   1. 行から \$ARGUMENTS（直前1文字がバックスラッシュの出現）をすべて
+#      取り除いた残りに、$ARGUMENTS が1つ以上残るか（＝「素の $ARGUMENTS」）
+#   2. 残らない行はそれ以上何も見ない（適合。偽陽性を塞ぐ要。AC-12-a 冒頭の
+#      説明どおり、コマンド定義には「`` !`...` `` へ埋め込むな」という散文
+#      そのものが `` !`...` `` を含み、説明用の \$ARGUMENTS が同一行に "
+#      を伴って現れる。素朴に「$ARGUMENTS かバッククォートを含む行」を
+#      弾く実装はこれらを偽陽性で落とす）
+#   3. 素の $ARGUMENTS を含む行が、二重引用符 / バッククォート / `$(` /
+#      単語としての bash・sh のいずれかを同一行に持てば違反
+#
+# 【\$ARGUMENTS の除去に sed を使う理由（bash パターンマッチではなく）】
+#   bash の ${var//pattern/} はグロブパターンであり、パターン中の `\` は
+#   「次の1文字をリテラル扱いにする」エスケープとして働く。したがって
+#   パターンに `\$ARGUMENTS` をそのまま渡すと、`\` は消費されて `$` を
+#   リテラル化するだけになり、**入力側にバックスラッシュが無くても**
+#   `$ARGUMENTS`（素のもの）に一致してしまう。これは検出したい区別を
+#   壊す。sed の正規表現では `\\` はリテラルなバックスラッシュ1文字を、
+#   続く `\$` はリテラルな `$` を表すため、入力に実際のバックスラッシュ
+#   文字がある場合にのみ一致する。この違いを避けるため sed で処理する。
+#
+# 【危険トークンの判定を素の $ARGUMENTS が残った後の行ではなく元の行に
+#   対して行う理由】
+#   除去処理は「素の $ARGUMENTS を含む行かどうか」を判定するためだけの
+#   ものであり、危険トークンの有無は元の行全体（\$ARGUMENTS を含めた
+#   もの）に対して見る。仕様が要求するのは「同一行に同居しているか」
+#   であって、除去後のテキストではない。
+#
+# 【sh の起動語判定から拡張子を除く理由（AC-12-a 3 の但し書き）】
+#   `issue-gate.sh` のような拡張子の `sh` を起動語とみなすと、このスクリプト
+#   自身のファイル名を含む行（AC-12-8）を誤検知する。直前の1文字が
+#   `.`（ドット）である出現は起動語から除外する。bash 側（`bash` という語）
+#   には同種の拡張子は存在しないため、この除外は sh のみに適用する。
+do_command_lint() {
+  local path="${1:-}"
+
+  # 【12-9/12-10: 読めなかったことを「違反が無い」に倒さない】
+  #   引数が無い／パスが存在しない／読めない、いずれも INDETERMINATE。
+  #   OK に倒すと「検査していないのに合格」を作ることになる。
+  if [ -z "$path" ]; then
+    finish INDETERMINATE 1 "コマンド定義のパスが指定されていない（仕様 AC-12-10）。"
+  fi
+  if [ ! -r "$path" ]; then
+    finish INDETERMINATE 1 "コマンド定義 '${path}' が存在しない、または読めない（仕様 AC-12-9）。読めなかったことを違反が無いことの証明にしない。"
+  fi
+
+  # 単語としての bash / sh。前後が英数字・アンダースコア以外、または行端。
+  # sh のみ、直前が「.」（拡張子）の出現を起動語から除外する。
+  local RE_BASH_WORD='(^|[^A-Za-z0-9_])bash([^A-Za-z0-9_]|$)'
+  local RE_SH_WORD='(^|[^A-Za-z0-9_.])sh([^A-Za-z0-9_]|$)'
+
+  local lineno=0 line stripped danger
+  local violations=()
+  while IFS= read -r line || [ -n "$line" ]; do
+    lineno=$((lineno + 1))
+
+    # --- 1: \$ARGUMENTS（エスケープ済み）をすべて取り除く -------------------
+    stripped="$(printf '%s' "$line" | sed 's/\\\$ARGUMENTS//g')"
+
+    # --- 2: 残りに素の $ARGUMENTS が無ければこの行はここで終わり ------------
+    case "$stripped" in
+      *'$ARGUMENTS'*) : ;;
+      *) continue ;;
+    esac
+
+    # --- 3: 危険トークンの検査（元の行に対して行う） ------------------------
+    danger=0
+    case "$line" in
+      *'"'*) danger=1 ;;
+    esac
+    case "$line" in
+      *'`'*) danger=1 ;;
+    esac
+    case "$line" in
+      *'$('*) danger=1 ;;
+    esac
+    if [[ "$line" =~ $RE_BASH_WORD ]] || [[ "$line" =~ $RE_SH_WORD ]]; then
+      danger=1
+    fi
+
+    if [ "$danger" -eq 1 ]; then
+      violations+=("LINE: ${lineno}")
+    fi
+  done < "$path"
+
+  if [ "${#violations[@]}" -gt 0 ]; then
+    finish ARGUMENTS_IN_SHELL_STRING 3 \
+      "素の \$ARGUMENTS が危険トークン（二重引用符 / バッククォート / \$( / 単語としての bash・sh）と同一行に同居している（仕様 AC-12）。シェル注入が成立しうる形を検出した。" \
+      "${violations[@]}"
+  fi
+
+  finish OK 0 ""
+}
+
+# ==============================================================================
 # エントリポイント
 # ==============================================================================
 
@@ -372,8 +472,9 @@ case "$MODE" in
   gate) do_gate "$@" ;;
   branch) do_branch "$@" ;;
   progress) do_progress "$@" ;;
+  command-lint) do_command_lint "$@" ;;
   *)
-    echo "[issue-gate] 未知の mode '${MODE}'（arg / gate / branch / progress のいずれかを指定すること）" >&2
+    echo "[issue-gate] 未知の mode '${MODE}'（arg / gate / branch / progress / command-lint のいずれかを指定すること）" >&2
     exit 1
     ;;
 esac
