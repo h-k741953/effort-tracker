@@ -94,7 +94,7 @@ jobs:
         run: make test-web
 
   # ---------------------------------------------------------------------------
-  # .github/scripts のチェッカのロジック（fixture テスト）
+  # .github/scripts / .claude/hooks のチェッカのロジック（fixture テスト）
   #
   # プロセス検査（spec-link / review-trail）の対象は PR のメタデータでローカルに
   # 存在しないが、チェッカのロジック自体は入力を差し替えればローカル実行できる。
@@ -102,6 +102,22 @@ jobs:
   #
   # runner の既定 awk は mawk。ここが devcontainer と一致していることが前提で、
   # `#{1,6}` のような mawk が解釈しない ERE を入れた瞬間このジョブが落ちる。
+  #
+  # 【test-hooks を新規ジョブにせず本ジョブへ step 追加した理由（Issue #30 往復1
+  #  C-2）】
+  #   .claude/hooks は .github/scripts と対象種別が異なるため Makefile の
+  #   ターゲットは test-scripts と test-hooks に分けている
+  #   （docs/specs/orchestrator-entry-hook.md「対象」節）。しかし CI ジョブまで
+  #   分けると、新規ジョブの `name:` を ruleset `protect-main` の必須チェックへ
+  #   追加登録するブラウザ操作が人間に発生する（docs/harness/verification-loop.md
+  #   「必須チェックへの登録」）。登録漏れがあると「実行され緑になるがマージ
+  #   条件ではない」状態が生まれ、C-2 が問題視した「fixture が一度も走らない」
+  #   状態より発見しにくい失敗モードになる。
+  #   本ジョブは「fixture でチェッカのロジックを検査する」という性質が
+  #   test-scripts と共通であり、make ターゲットは分けたまま同じジョブの
+  #   step として追加すれば、既存の必須チェック名 `Scripts (checker logic)`
+  #   を変更せずに済み、人間のブラウザ操作を発生させない。この判断により
+  #   ruleset の追加登録は不要である。
   # ---------------------------------------------------------------------------
   scripts:
     name: Scripts (checker logic)
@@ -111,6 +127,9 @@ jobs:
 
       - name: make test-scripts
         run: make test-scripts
+
+      - name: make test-hooks
+        run: make test-hooks
 
   # ---------------------------------------------------------------------------
   # シークレット検出

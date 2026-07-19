@@ -19,6 +19,7 @@ AIは自分の書いたコードが正しいかを、**自分では判断でき�
 | `make help` | ターゲット一覧 |
 | `make test` | 全レイヤーのテスト |
 | `make test-scripts` | `.github/scripts` のチェッカを fixture で検査（`make test` に含む） |
+| `make test-hooks` | `.claude/hooks` のチェッカを fixture で検査（`make test` に含む） |
 | `make lint` | 全レイヤーの Lint / 型チェック |
 | `make verify` | `lint` + `test` + `check-domain-deps` + `scan-secrets` |
 | `make check-domain-deps` | ドメイン層の依存検査 |
@@ -240,9 +241,11 @@ PR に残すのは*決定した仕様*ではなく*経緯・証跡*であり、A
 | `web` | `Web (lint / test)` | `make lint-web` / `make test-web` |
 | `secrets` | `Secrets (gitleaks)` | `make scan-secrets` |
 | `terraform` | `Terraform (fmt / validate)` | `make lint-tf` |
-| `scripts` | `Scripts (checker logic)` | `make test-scripts`（`.github/scripts` のチェッカを fixture で検査） |
+| `scripts` | `Scripts (checker logic)` | `make test-scripts`（`.github/scripts` のチェッカを fixture で検査） + `make test-hooks`（`.claude/hooks` のチェッカを fixture で検査） |
 
 **コードに対する検査を CI 側にだけ作らない。** 作った瞬間、ローカルの Green が信用できなくなる。
+
+> **実際に踏んだ。** `make test-hooks`（`.claude/hooks` の fixture、111件）は `make test` の依存に足されていたが、`ci.yml` のどのジョブからも呼ばれておらず、**hook 本体を壊す変更が CI 緑のままマージできる状態が生じていた**（Issue #30 往復1 C-2）。`scripts` ジョブへ `make test-hooks` の step を追加して解消したが、**新規ジョブを起こす選択も可能だった**。新規ジョブは ruleset `protect-main` の必須チェックへの追加登録（ブラウザ操作。下記「必須チェックへの登録」参照）を人間に要求し、登録漏れは「実行され緑になるがマージ条件ではない」という発見しにくい状態を生む。`.claude/hooks` と `.github/scripts` は対象種別が異なるため make ターゲットは分けたまま（`test-hooks` / `test-scripts`）、CI ジョブは `scripts`（`Scripts (checker logic)`）に相乗りさせることで、この人間作業を発生させずに済ませた。
 
 ### 必須チェックへの登録 — ジョブIDではなく表示名で登録する
 
@@ -288,7 +291,7 @@ gh api repos/h-k741953/effort-tracker/rulesets/19056534 \
 |---|---|---|---|
 | コード検査 | ソース・設定 | **可能（必須）** | `ci.yml`（`make` 経由） |
 | プロセス検査 | PR 本文・コメント・ラベル | 不可能 | `spec-link.yml` / `review-trail.yml` |
-| チェッカのロジック | fixture（入力を差し替えた検査本体） | **可能（必須）** | `ci.yml`（`make test-scripts`） |
+| チェッカのロジック | fixture（入力を差し替えた検査本体） | **可能（必須）** | `ci.yml`（`scripts` ジョブの `make test-scripts` / `make test-hooks`） |
 
 ## ハーネスの限界
 
