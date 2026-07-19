@@ -29,7 +29,7 @@ verify: lint test check-domain-deps scan-secrets ## 全検査（コミット前�
 	@echo "==> verify: 全検査を通過"
 
 .PHONY: test
-test: test-api test-web test-scripts test-hooks ## 全レイヤーのテスト
+test: test-api test-web test-scripts test-hooks test-commands ## 全レイヤーのテスト
 
 .PHONY: lint
 lint: lint-api lint-web lint-tf ## 全レイヤーの Lint / 型チェック
@@ -205,6 +205,24 @@ test-scripts: ## .github/scripts のチェッカを fixture で検査
 test-hooks: ## .claude/hooks のチェッカを fixture で検査
 	@echo "==> test-hooks"
 	@bash .claude/hooks/test-check-prompt-entry.sh
+
+# =============================================================================
+# .claude/scripts のロジック
+#
+# .github/scripts / .claude/hooks と同じ理由（上記コメント参照）でローカル
+# 再現が必須の側だが、対象はスラッシュコマンドの機械判定部（`/issue` の
+# issue-gate.sh）であり、置き場所が .github/scripts とも .claude/hooks とも
+# 異なる（docs/specs/issue-command.md「対象」節「なぜ make ターゲットを
+# 分け〜」）。.github/scripts（CI スクリプト）・.claude/hooks（hook）・
+# .claude/scripts（スラッシュコマンドの機械判定部）は対象種別が異なるため、
+# Makefile のコメント区分と実体をずらさないよう test-scripts / test-hooks へ
+# 合流させず test-commands を新設する。
+# =============================================================================
+
+.PHONY: test-commands
+test-commands: ## .claude/scripts のチェッカ（スラッシュコマンドの機械判定部）を fixture で検査
+	@echo "==> test-commands"
+	@bash .claude/scripts/test-issue-gate.sh
 
 # =============================================================================
 # セキュリティ
