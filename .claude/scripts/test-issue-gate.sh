@@ -107,6 +107,22 @@ run_progress() {
   rm -f "$outf" "$errf"
 }
 
+# command-lint は「引数が無い」（AC-12-10）を独立に検査する必要があるため、
+# 呼び出し時の実引数の個数（$#）で分岐する。空文字列パスと「引数を渡さない」
+# は別の入力であり、混同すると AC-12-10 が検査できなくなる。
+run_command_lint() {
+  local outf errf
+  outf="$(mktemp -p "$WORK")"; errf="$(mktemp -p "$WORK")"
+  if [ "$#" -ge 1 ]; then
+    bash "$TARGET" command-lint "$1" > "$outf" 2> "$errf"
+  else
+    bash "$TARGET" command-lint > "$outf" 2> "$errf"
+  fi
+  RC=$?
+  OUT="$(cat "$outf")"; ERR="$(cat "$errf")"
+  rm -f "$outf" "$errf"
+}
+
 report() {
   local name="$1" ok="$2" want_verdict="$3" want_rc="$4"
   if [ "$ok" = 1 ]; then
@@ -203,6 +219,19 @@ expect_branch() {
 expect_progress() {
   local name="$1" num="$2" path="$3" want_verdict="$4" want_rc="$5"
   run_progress "$num" "$path"
+  check_verdict "$name" "$want_verdict" "$want_rc"
+}
+
+expect_command_lint() {
+  local name="$1" path="$2" want_verdict="$3" want_rc="$4" want_value="${5:-}"
+  run_command_lint "$path"
+  check_verdict "$name" "$want_verdict" "$want_rc" "$want_value"
+}
+
+# AC-12-10 専用: 引数そのものを渡さない呼び出し。
+expect_command_lint_no_arg() {
+  local name="$1" want_verdict="$2" want_rc="$3"
+  run_command_lint
   check_verdict "$name" "$want_verdict" "$want_rc"
 }
 
@@ -696,6 +725,120 @@ if [ -f "$CMD_FILE" ] && ! grep -qE 'feat\|fix\|docs\|refactor\|chore\|ci' "$CMD
 else
   fail=$((fail + 1)); echo "  FAIL AC-8-11: issue.md がブランチ名の正規表現（type 列挙）を含んでいる、またはファイルが無い"
 fi
+
+# ==============================================================================
+# AC-12: コマンド定義の静的検査（mode command-lint）― AC-12-b の 12-1〜12-10
+# ==============================================================================
+# 【この mode は未実装（次の implementer 工程の担当）】
+#   issue-gate.sh に command-lint mode はまだ無い。エントリポイントの case 文は
+#   未知の mode を「VERDICT: 行を出さずに stderr へエラーを書いて exit 1」で
+#   処理するため、以下は全件この時点で Red になる。それが正しい状態である。
+#
+# 【8-13（最重要）: 通る側だけでなく落ちる側を固定する】
+#   12-2 は往復1 の C-1 で実際に混入していた形（`arg "$ARGUMENTS"`）そのものを
+#   fixture にする。「通る入力だけを検査する fixture」は、command-lint が
+#   何も見ていない実装（常に OK を返すだけ）でも緑になってしまう。8-13 が
+#   要求するのはこの穴を塞ぐことである。
+#
+# 【偽陽性を固定する意味（12-3/12-4/12-8）】
+#   「$ARGUMENTS を含む行は全部違反」という乱暴な実装にしても 12-2/12-5/12-6/12-7
+#   は通ってしまう。12-3・12-4・12-8 が無いと、そうした過剰検知の実装が
+#   現行のコマンド定義（説明用のエスケープ・拡張子の .sh・散文中のバッククォート）
+#   を壊しても気づけない。
+
+CMDLINT_DIR="${WORK}/cmdlint"
+mkdir -p "$CMDLINT_DIR"
+
+# 12-1: 現行の .claude/commands/issue.md そのもの（AC-8-12 が対象を指定する）。
+# 素の $ARGUMENTS は49行目に独立した1行として1回だけあり、その行に危険トークンは無い。
+expect_command_lint "AC-12-1(8-12): 現行の .claude/commands/issue.md は OK" \
+  "$CMD_FILE" "OK" "0"
+
+# 12-2: arg "$ARGUMENTS" を含む行がある（往復1 の C-1 で実在した形。8-13 の固定）。
+# 危険トークンは複数同居する（二重引用符 / 単語としての bash）。
+CMD_12_2="${CMDLINT_DIR}/12-2-arg-in-shell-string.md"
+cat > "$CMD_12_2" <<'CMDEOF'
+# コマンド定義（fixture・12-2）
+
+引数を取得する:
+
+bash .claude/scripts/issue-gate.sh arg "$ARGUMENTS" の中身
+CMDEOF
+expect_command_lint 'AC-12-2(8-13): arg "$ARGUMENTS" を含む行がある（往復1のC-1で実在した形。違反側の固定）' \
+  "$CMD_12_2" "ARGUMENTS_IN_SHELL_STRING" "3" "5"
+
+# 12-3: \$ARGUMENTS（エスケープ済み）のみを含み、素の $ARGUMENTS は1つも無い。
+# 同一行に二重引用符・バッククォートがあってよい（AC-12-a の1・2）。
+CMD_12_3="${CMDLINT_DIR}/12-3-escaped-only.md"
+cat > "$CMD_12_3" <<'CMDEOF'
+# コマンド定義（fixture・12-3）
+
+`\$ARGUMENTS` の値は "変数名の説明" にすぎず、実値ではない。
+CMDEOF
+expect_command_lint 'AC-12-3: \$ARGUMENTS（エスケープ済み）のみ。同一行に " や ` があってよい' \
+  "$CMD_12_3" "OK" "0"
+
+# 12-4: !`...` を語として含む散文の行がある（素の $ARGUMENTS は含まない）。
+# ファイル全体に素の $ARGUMENTS が無いことも条件（他の行に紛れ込ませない）。
+CMD_12_4="${CMDLINT_DIR}/12-4-prose-backtick-directive.md"
+cat > "$CMD_12_4" <<'CMDEOF'
+# コマンド定義（fixture・12-4）
+
+bash 前処理（!`...`）へ埋め込まないこと。
+CMDEOF
+expect_command_lint 'AC-12-4: !`...` を語として含む散文の行（素の $ARGUMENTS を含まない）' \
+  "$CMD_12_4" "OK" "0"
+
+# 12-5: 素の $ARGUMENTS と同一行に $( がある。
+CMD_12_5="${CMDLINT_DIR}/12-5-command-substitution.md"
+cat > "$CMD_12_5" <<'CMDEOF'
+# コマンド定義（fixture・12-5）
+
+result=$(process $ARGUMENTS)
+CMDEOF
+expect_command_lint 'AC-12-5: 素の $ARGUMENTS と同一行に $( がある' \
+  "$CMD_12_5" "ARGUMENTS_IN_SHELL_STRING" "3" "3"
+
+# 12-6: 素の $ARGUMENTS と同一行にバッククォートがある（!`... $ARGUMENTS ...` を含む）。
+CMD_12_6="${CMDLINT_DIR}/12-6-backtick-preprocessing.md"
+cat > "$CMD_12_6" <<'CMDEOF'
+# コマンド定義（fixture・12-6）
+
+!`echo $ARGUMENTS`
+CMDEOF
+expect_command_lint 'AC-12-6: 素の $ARGUMENTS と同一行にバッククォートがある（bash前処理への埋め込み）' \
+  "$CMD_12_6" "ARGUMENTS_IN_SHELL_STRING" "3" "3"
+
+# 12-7: 素の $ARGUMENTS と同一行に単語としての bash / sh がある（他の危険トークンは無い）。
+CMD_12_7="${CMDLINT_DIR}/12-7-shell-launch-word.md"
+cat > "$CMD_12_7" <<'CMDEOF'
+# コマンド定義（fixture・12-7）
+
+sh $ARGUMENTS
+CMDEOF
+expect_command_lint 'AC-12-7: 素の $ARGUMENTS と同一行に単語としての sh がある' \
+  "$CMD_12_7" "ARGUMENTS_IN_SHELL_STRING" "3" "3"
+
+# 12-8: 素の $ARGUMENTS と同一行に issue-gate.sh があるが、危険トークンは他に無い。
+# 拡張子の .sh（直前がドット）は起動語とみなさない。
+CMD_12_8="${CMDLINT_DIR}/12-8-sh-extension-not-launch-word.md"
+cat > "$CMD_12_8" <<'CMDEOF'
+# コマンド定義（fixture・12-8）
+
+.claude/scripts/issue-gate.sh の引数として $ARGUMENTS を渡す
+CMDEOF
+expect_command_lint 'AC-12-8: 同一行に issue-gate.sh があっても拡張子の sh は起動語とみなさない' \
+  "$CMD_12_8" "OK" "0"
+
+# 12-9: 引数のパスが存在しない/読めない → INDETERMINATE。読めなかったことを
+# 「違反が無い」と倒さない（12-9/12-10 の注記）。
+CMD_12_9="${CMDLINT_DIR}/does-not-exist.md"
+expect_command_lint "AC-12-9: 引数のパスが存在しない → INDETERMINATE" \
+  "$CMD_12_9" "INDETERMINATE" "1"
+
+# 12-10: 引数が無い → INDETERMINATE。
+expect_command_lint_no_arg "AC-12-10: 引数が無い → INDETERMINATE" \
+  "INDETERMINATE" "1"
 
 # ==============================================================================
 echo ""
