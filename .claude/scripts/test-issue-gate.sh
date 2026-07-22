@@ -902,10 +902,34 @@ run_spec_index() {
   rm -f "$outf" "$errf"
 }
 
+# detail 行（2行目以降の "<キー>: <値>"）に、want_detail と厳密一致する行が
+# あるか。verdict/rc だけでなく差分ラベル（MISSING_IN_INDEX / MISSING_IN_HEADINGS
+# / DUPLICATE_IN_INDEX と N）まで pin することで、comm の -23/-13 取り違えや
+# ラベル取り違えの変異を単一原因で殺す（往復1 W-1。value だけ見る
+# value_present_in_out ではキー部分を弁別できないため、行全体で照合する）。
+detail_line_present() {
+  local want="$1" line first=1
+  while IFS= read -r line; do
+    if [ "$first" = 1 ]; then first=0; continue; fi
+    [ "$line" = "$want" ] && return 0
+  done <<< "$OUT"
+  return 1
+}
+
 expect_spec_index() {
-  local name="$1" path="$2" want_verdict="$3" want_rc="$4"
+  local name="$1" path="$2" want_verdict="$3" want_rc="$4" want_detail="${5:-}"
   run_spec_index "$path"
   check_verdict "$name" "$want_verdict" "$want_rc"
+  if [ -n "$want_detail" ]; then
+    if detail_line_present "$want_detail"; then
+      pass=$((pass + 1))
+      printf '  ok   %s [detail: %s]\n' "$name" "$want_detail"
+    else
+      fail=$((fail + 1))
+      printf '  FAIL %s [detail 行 "%s" が出力に無い]\n' "$name" "$want_detail"
+      printf '       stdout | %s\n' "$OUT" | sed 's/^/       | /'
+    fi
+  fi
 }
 
 # AC-13-7 専用: 引数そのものを渡さない呼び出し。
@@ -944,7 +968,7 @@ make_spec "$SPEC_13_2" \
 ### AC-2. bar
 '
 expect_spec_index "AC-13-2: 見出し AC-2 が索引に無い → INDEX_DRIFT" \
-  "$SPEC_13_2" "INDEX_DRIFT" "3"
+  "$SPEC_13_2" "INDEX_DRIFT" "3" "MISSING_IN_INDEX: 2"
 
 # 13-3: 索引に AC-2 行があるのに対応する見出しが無い（見出し欠け）。
 SPEC_13_3="${SPECIDX_DIR}/13-3-missing-in-headings.md"
@@ -955,7 +979,7 @@ make_spec "$SPEC_13_3" \
   '### AC-1. foo
 '
 expect_spec_index "AC-13-3: 索引 AC-2 に対応する見出しが無い → INDEX_DRIFT" \
-  "$SPEC_13_3" "INDEX_DRIFT" "3"
+  "$SPEC_13_3" "INDEX_DRIFT" "3" "MISSING_IN_HEADINGS: 2"
 
 # 13-4: 索引に同じ AC-1 行が重複している（番号集合は一致するが重複）。
 SPEC_13_4="${SPECIDX_DIR}/13-4-duplicate-in-index.md"
@@ -966,7 +990,7 @@ make_spec "$SPEC_13_4" \
   '### AC-1. foo
 '
 expect_spec_index "AC-13-4: 索引に AC-1 が重複 → INDEX_DRIFT" \
-  "$SPEC_13_4" "INDEX_DRIFT" "3"
+  "$SPEC_13_4" "INDEX_DRIFT" "3" "DUPLICATE_IN_INDEX: 1"
 
 # 13-5: 索引表に AC-N 行が1つも無い（見出しは存在する）。索引が丸ごと消えた状態を
 # INDETERMINATE でなく INDEX_DRIFT に倒すこと（AC-13-b 末尾）。
@@ -976,7 +1000,7 @@ make_spec "$SPEC_13_5" \
   '### AC-1. foo
 '
 expect_spec_index "AC-13-5: 索引に AC-N 行が0個（見出しは在る） → INDEX_DRIFT" \
-  "$SPEC_13_5" "INDEX_DRIFT" "3"
+  "$SPEC_13_5" "INDEX_DRIFT" "3" "MISSING_IN_INDEX: 1"
 
 # 13-6: 引数のパスが存在しない/読めない → INDETERMINATE。読めなかったことを
 # 「ドリフトが無い」と倒さない。
