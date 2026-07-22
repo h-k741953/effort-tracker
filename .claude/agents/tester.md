@@ -28,7 +28,7 @@ tools: Read, Write, Edit, Grep, Glob, Bash
 
 ## 受け渡し
 
-- 前工程（specifier）からの受け取り: `docs/specs/` の受け入れ条件。
+- 前工程（specifier）からの受け取り: `docs/specs/` の受け入れ条件。**オーケストレーターが指定した AC 番号のスライスだけを spec から読む**（`Read` の offset/limit。`### AC-N` が安定アンカー）。全文は読まない。渡された要約ではなく本文を正とする。
 - 次工程（implementer）へ: **Red 済みの `_test.go`**（同一作業ツリー上の未コミット変更として渡す。worktree で分離しない ― ADR 0010 §E）。
 - コミットは `test:` type（この時点で Red）。実装を混ぜない。
 
