@@ -867,6 +867,128 @@ expect_command_lint_no_arg "AC-12-10: 引数が無い → INDETERMINATE" \
   "INDETERMINATE" "1"
 
 # ==============================================================================
+# AC-13: AC 索引のドリフト検査（mode spec-index）― AC-13-b の 13-1〜13-7
+# ==============================================================================
+# 【この mode は未実装（次の implementer 工程の担当）】
+#   issue-gate.sh に spec-index mode はまだ無い。エントリポイントの case 文は
+#   未知の mode を「VERDICT: 行を出さずに stderr へエラーを書いて exit 1」で
+#   処理するため、以下は全件この時点で Red になる。それが正しい状態である。
+#
+# 【8-14（最重要）: 通る側だけでなく落ちる側を固定する】
+#   13-1 は実リポジトリの docs/specs/issue-command.md そのものを入力にし、索引と
+#   見出しが 1:1 対応していること（OK）を固定する。だが「常に OK を返すだけ」の
+#   実装でも 13-1 は緑になる。13-2〜13-5 が、ドリフトした本文に対して INDEX_DRIFT
+#   が返ることを固定し、この穴を塞ぐ（command-lint の 8-13 と同じ論理）。
+#
+# 【各ドリフト種別を単独化する（AC-8-2 の判定基準）】
+#   13-2（索引欠け）/ 13-3（見出し欠け）/ 13-4（索引重複）/ 13-5（索引全欠）は
+#   それぞれ別の判定枝を殺すためのもの。1つの fixture に複数のドリフトを混ぜると、
+#   対象の枝を実装から削っても別の枝で同じ INDEX_DRIFT が成立し、ミューテーションを
+#   検知できない。
+
+SPECIDX_DIR="${WORK}/specidx"
+mkdir -p "$SPECIDX_DIR"
+
+run_spec_index() {
+  local outf errf
+  outf="$(mktemp -p "$WORK")"; errf="$(mktemp -p "$WORK")"
+  if [ "$#" -ge 1 ]; then
+    bash "$TARGET" spec-index "$1" > "$outf" 2> "$errf"
+  else
+    bash "$TARGET" spec-index > "$outf" 2> "$errf"
+  fi
+  RC=$?
+  OUT="$(cat "$outf")"; ERR="$(cat "$errf")"
+  rm -f "$outf" "$errf"
+}
+
+expect_spec_index() {
+  local name="$1" path="$2" want_verdict="$3" want_rc="$4"
+  run_spec_index "$path"
+  check_verdict "$name" "$want_verdict" "$want_rc"
+}
+
+# AC-13-7 専用: 引数そのものを渡さない呼び出し。
+expect_spec_index_no_arg() {
+  local name="$1" want_verdict="$2" want_rc="$3"
+  run_spec_index
+  check_verdict "$name" "$want_verdict" "$want_rc"
+}
+
+# 最小の仕様書 fixture を組み立てるヘルパ。$1 に索引行群、$2 に見出し群を渡す。
+# spec-index が見るのは「AC 索引」表の `AC-<N>` 行と `### AC-N` 見出しだけなので、
+# それ以外は現実の仕様書の骨格を最小限だけ模す。
+make_spec() {
+  local dst="$1" index_rows="$2" headings="$3"
+  {
+    printf '# fixture spec\n\n## AC 索引\n\n'
+    printf '| AC | 一行趣旨 | 主に読む工程 |\n|---|---|---|\n'
+    printf '%s' "$index_rows"
+    printf '\n## 受け入れ条件\n\n'
+    printf '%s' "$headings"
+  } > "$dst"
+}
+
+# 13-1: 実リポジトリの docs/specs/issue-command.md そのもの（8-14 が対象を指定する）。
+# 索引 AC-1..AC-13 と見出し ### AC-1..### AC-13 が 1:1 対応する。
+expect_spec_index "AC-13-1(8-14): 現行の docs/specs/issue-command.md は OK" \
+  "${REAL_ROOT}/docs/specs/issue-command.md" "OK" "0"
+
+# 13-2: 見出しに AC-2 があるのに索引に対応行が無い（索引欠け）。
+SPEC_13_2="${SPECIDX_DIR}/13-2-missing-in-index.md"
+make_spec "$SPEC_13_2" \
+  '| AC-1 | x | tester |
+' \
+  '### AC-1. foo
+
+### AC-2. bar
+'
+expect_spec_index "AC-13-2: 見出し AC-2 が索引に無い → INDEX_DRIFT" \
+  "$SPEC_13_2" "INDEX_DRIFT" "3"
+
+# 13-3: 索引に AC-2 行があるのに対応する見出しが無い（見出し欠け）。
+SPEC_13_3="${SPECIDX_DIR}/13-3-missing-in-headings.md"
+make_spec "$SPEC_13_3" \
+  '| AC-1 | x | tester |
+| AC-2 | x | tester |
+' \
+  '### AC-1. foo
+'
+expect_spec_index "AC-13-3: 索引 AC-2 に対応する見出しが無い → INDEX_DRIFT" \
+  "$SPEC_13_3" "INDEX_DRIFT" "3"
+
+# 13-4: 索引に同じ AC-1 行が重複している（番号集合は一致するが重複）。
+SPEC_13_4="${SPECIDX_DIR}/13-4-duplicate-in-index.md"
+make_spec "$SPEC_13_4" \
+  '| AC-1 | x | tester |
+| AC-1 | x | tester |
+' \
+  '### AC-1. foo
+'
+expect_spec_index "AC-13-4: 索引に AC-1 が重複 → INDEX_DRIFT" \
+  "$SPEC_13_4" "INDEX_DRIFT" "3"
+
+# 13-5: 索引表に AC-N 行が1つも無い（見出しは存在する）。索引が丸ごと消えた状態を
+# INDETERMINATE でなく INDEX_DRIFT に倒すこと（AC-13-b 末尾）。
+SPEC_13_5="${SPECIDX_DIR}/13-5-index-empty.md"
+make_spec "$SPEC_13_5" \
+  '' \
+  '### AC-1. foo
+'
+expect_spec_index "AC-13-5: 索引に AC-N 行が0個（見出しは在る） → INDEX_DRIFT" \
+  "$SPEC_13_5" "INDEX_DRIFT" "3"
+
+# 13-6: 引数のパスが存在しない/読めない → INDETERMINATE。読めなかったことを
+# 「ドリフトが無い」と倒さない。
+SPEC_13_6="${SPECIDX_DIR}/does-not-exist.md"
+expect_spec_index "AC-13-6: 引数のパスが存在しない → INDETERMINATE" \
+  "$SPEC_13_6" "INDETERMINATE" "1"
+
+# 13-7: 引数が無い → INDETERMINATE。
+expect_spec_index_no_arg "AC-13-7: 引数が無い → INDETERMINATE" \
+  "INDETERMINATE" "1"
+
+# ==============================================================================
 echo ""
 if [ "$fail" -ne 0 ]; then
   echo "  NG: $fail 件失敗 / $((pass + fail)) 件中"
