@@ -461,6 +461,90 @@ do_command_lint() {
 }
 
 # ==============================================================================
+# mode spec-index: issue-gate.sh spec-index <本仕様書のパス>  ― AC-13
+# ==============================================================================
+#
+# 仕様書を読み、冒頭「AC 索引」表の行と本文の `### AC-N` 見出しが 1:1 で
+# 対応していることを検査する（AC-13-a）。判定は解釈の余地なく決まる構文上の
+# 対応関係だけを見る（一行趣旨の内容一致は見ない。AC-9-10）。
+#
+# 【見出しの抽出（# ちょうど3個に限る理由）】
+#   `#### AC-8-a` のような下位見出しは索引の対象ではない。`^###[[:space:]]` は
+#   `####`（4個目が `#` で空白でない）に一致しないため、下位見出しを構造的に
+#   除外できる。`### P-1` は `AC-` を要求することで除外される。
+#
+# 【索引行の抽出（先頭セルが厳密に AC-<N> の行）】
+#   「AC 索引」表の各行は先頭セルを `AC-<N>` とする（AC-13-a）。他の表
+#   （`| 8-1 |` 等の下位番号）は先頭セルの形が異なるため衝突しない。ヘッダ行
+#   （`| AC | ... |`）は `AC-[0-9]` を要求することで除外される。
+#
+# 【awk でなく bash の while/=~ で書く理由】
+#   do_progress と同じ（docs/harness/verification-loop.md「mawk の事故」）。CI と
+#   ローカルで同じ bash 組み込みの正規表現を使い、awk 実装差の影響を受けない。
+do_spec_index() {
+  local path="${1:-}"
+
+  # 【13-7/13-6: 読めなかったことを「ドリフトが無い」に倒さない】
+  if [ -z "$path" ]; then
+    finish INDETERMINATE 1 "仕様書のパスが指定されていない（仕様 AC-13-7）。"
+  fi
+  if [ ! -r "$path" ]; then
+    finish INDETERMINATE 1 "仕様書 '${path}' が存在しない、または読めない（仕様 AC-13-6）。読めなかったことをドリフトが無いことの証明にしない。"
+  fi
+
+  local heads_file="${WORK}/spec-heads.txt"
+  local index_file="${WORK}/spec-index.txt"
+  : > "$heads_file"
+  : > "$index_file"
+
+  local RE_HEAD='^###[[:space:]]+AC-([0-9]+)([^0-9]|$)'
+  local RE_INDEX='^\|[[:space:]]*AC-([0-9]+)[[:space:]]*\|'
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ "$line" =~ $RE_HEAD ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}" >> "$heads_file"
+    elif [[ "$line" =~ $RE_INDEX ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}" >> "$index_file"
+    fi
+  done < "$path"
+
+  # --- ドリフトの3種を集める。出力キーは check_verdict が要求する
+  #     「<キー>: <値>」（キーに空白を含まない）形にする（AC-4-4）。 -------------
+  local violations=() n
+  local dup
+  dup="$(sort "$index_file" | uniq -d)"
+  if [ -n "$dup" ]; then
+    while IFS= read -r n; do
+      [ -n "$n" ] && violations+=("DUPLICATE_IN_INDEX: ${n}")
+    done <<< "$dup"
+  fi
+
+  local miss_index
+  miss_index="$(comm -23 <(sort -u "$heads_file") <(sort -u "$index_file"))"
+  if [ -n "$miss_index" ]; then
+    while IFS= read -r n; do
+      [ -n "$n" ] && violations+=("MISSING_IN_INDEX: ${n}")
+    done <<< "$miss_index"
+  fi
+
+  local miss_head
+  miss_head="$(comm -13 <(sort -u "$heads_file") <(sort -u "$index_file"))"
+  if [ -n "$miss_head" ]; then
+    while IFS= read -r n; do
+      [ -n "$n" ] && violations+=("MISSING_IN_HEADINGS: ${n}")
+    done <<< "$miss_head"
+  fi
+
+  if [ "${#violations[@]}" -gt 0 ]; then
+    finish INDEX_DRIFT 3 \
+      "AC 索引の行と本文の ### AC-N 見出しがドリフトしている（仕様 AC-13）。索引を本文に同期すること。" \
+      "${violations[@]}"
+  fi
+
+  finish OK 0 ""
+}
+
+# ==============================================================================
 # エントリポイント
 # ==============================================================================
 
@@ -473,8 +557,9 @@ case "$MODE" in
   branch) do_branch "$@" ;;
   progress) do_progress "$@" ;;
   command-lint) do_command_lint "$@" ;;
+  spec-index) do_spec_index "$@" ;;
   *)
-    echo "[issue-gate] 未知の mode '${MODE}'（arg / gate / branch / progress / command-lint のいずれかを指定すること）" >&2
+    echo "[issue-gate] 未知の mode '${MODE}'（arg / gate / branch / progress / command-lint / spec-index のいずれかを指定すること）" >&2
     exit 1
     ;;
 esac
