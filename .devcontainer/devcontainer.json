@@ -21,7 +21,11 @@
     "DISABLE_BUG_COMMAND": "1",
     "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
     "DO_NOT_TRACK": "1",
-    "RTK_TELEMETRY_DISABLED": "1"
+    "RTK_TELEMETRY_DISABLED": "1",
+    "HEADROOM_TELEMETRY": "off",
+    "HEADROOM_TELEMETRY_WARN": "off",
+    "HEADROOM_OTEL_METRICS_ENABLED": "false",
+    "HEADROOM_LANGFUSE_ENABLED": "false"
   },
   "postCreateCommand": "sudo /usr/local/bin/init-firewall.sh",
   "postStartCommand": "sudo /usr/local/bin/init-firewall.sh"

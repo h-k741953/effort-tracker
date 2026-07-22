@@ -15,6 +15,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     git \
     sudo \
+    python3-pip \
+    python3-venv \
+    pipx \
     && rm -rf /var/lib/apt/lists/*
 
 # --- GitHub CLI（gh）のインストール ---
@@ -141,3 +144,20 @@ RUN set -eux; \
     rm -f "/tmp/${asset}" /tmp/checksums.txt
 
 ENV PATH=/home/node/.local/bin:$PATH
+
+# --- headroom（コンテキスト圧縮プロキシ）のインストール ---
+# rtk と併用する。レイヤーが異なるため二重に効く:
+#   rtk      : Claude Code のツール出力を CLI レベルで削る
+#   headroom : Claude Code ↔ Anthropic 間の API リクエスト全体をプロキシで圧縮
+# 使い方は `headroom wrap claude`（proxy を内部起動し claude を localhost:8787 へ向ける）。
+#
+# ※ CLI は Python 版のみ提供。npm 版（headroom-ai）は TS SDK のみで
+#    `headroom` コマンドが入らないため、ここでは pipx で Python CLI を入れる。
+# ※ proxy モードで使うため [proxy] extra を明示する。
+# ※ pipx で隔離インストールされ、~/.local/bin/headroom に配置される（PATH は上で通済み）。
+# ※ ビルド時インストールなのでファイアウォール未適用。pypi.org 等の実行時許可は不要。
+# ※ バージョンは再現性のため固定する（rtk と同じ方針）。
+ARG HEADROOM_VERSION=0.6.1
+ENV PIPX_HOME=/home/node/.local/pipx
+ENV PIPX_BIN_DIR=/home/node/.local/bin
+RUN pipx install "headroom-ai[proxy]==${HEADROOM_VERSION}"
