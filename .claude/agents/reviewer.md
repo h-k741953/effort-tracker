@@ -35,7 +35,7 @@ tools: Read, Grep, Glob, Bash
 
 - **Critical / Warning があれば実装工程へ差し戻す**（Info は往復を強制しない）。implementer→reviewer→implementer の**往復が上限（`docs/harness/verification-loop.md`「ループの上限値」で定義する単一の情報源）を超えたら停止条件に該当**し、オーケストレーター経由で人間へ上げる。**上限値をここに書き写さない**（DRY）。
 - これは AI 単独の「同一失敗の再試行上限」（同じく `verification-loop.md`）とは**別の規則**（主語も数える対象も異なる）。混同・統合しない。
-- 往復の**経緯は PR にコメントで残す**（証跡であって仕様ではない。ADR 0004 と衝突しない）。フォーマットは `docs/harness/verification-loop.md`（各往復を Critical / Warning / Info の内訳付きで残す）。
+- 往復の**経緯は PR にコメントで残す**（証跡であって仕様ではない。ADR 0004 と衝突しない）。フォーマットは `docs/harness/verification-loop.md`の「実装↔レビューループ」節（各往復を Critical / Warning / Info の内訳付きで残す。この節だけ読めばよく、全文は要らない）。
 
 ## 停止条件
 
@@ -46,7 +46,7 @@ tools: Read, Grep, Glob, Bash
 
 ## 受け渡し
 
-- 前工程（implementer）からの受け取り: 実装差分。
+- 前工程（implementer）からの受け取り: 実装差分。受け入れ条件と突き合わせるときは**オーケストレーターが指定した AC 番号のスライスだけを spec から読む**（`Read` の offset/limit。`### AC-N` が安定アンカー）。全文は読まない。
 - 差し戻しは implementer へ（**各指摘に Critical / Warning / Info のレベルを付して渡す**）。Critical / Warning が無く Info だけなら合格として工程完了をオーケストレーターへ返す。
 - リファクタリング提案（Info）は `refactor:` として別コミットにできる（振る舞いを変えないことをテストで担保する）。
 

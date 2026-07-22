@@ -39,7 +39,7 @@ tools: Read, Write, Edit, Grep, Glob, Bash
 
 ## 受け渡し
 
-- 前工程（tester）からの受け取り: Red 済みのテスト（同一作業ツリー上の未コミット変更）。
+- 前工程（tester）からの受け取り: Red 済みのテスト（同一作業ツリー上の未コミット変更）。仕様を確認するときは**オーケストレーターが指定した AC 番号のスライスだけを spec から読む**（`Read` の offset/limit。`### AC-N` が安定アンカー）。全文は読まない。
 - 次工程（reviewer）へ: 実装差分。レビュー指摘があれば戻される（**往復上限は `docs/harness/verification-loop.md`「ループの上限値」。超えたら人間へ**）。
 - コミットは `feat:` type（この時点で Green）。仕様・テストと混在させない。
 
