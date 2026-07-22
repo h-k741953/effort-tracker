@@ -755,7 +755,9 @@ expect_command_lint "AC-12-1(8-12): 現行の .claude/commands/issue.md は OK" 
   "$CMD_FILE" "OK" "0"
 
 # 12-2: arg "$ARGUMENTS" を含む行がある（往復1 の C-1 で実在した形。8-13 の固定）。
-# 危険トークンは複数同居する（二重引用符 / 単語としての bash）。
+# この行には危険トークンが複数（二重引用符 / 単語としての bash）同居するため、
+# 単独では「二重引用符の検出」と「bash 語の検出」のどちらのミューテーションも
+# 殺せない（往復2 の W-2）。単一原因での固定は 12-2b・12-2c に分離する。
 CMD_12_2="${CMDLINT_DIR}/12-2-arg-in-shell-string.md"
 cat > "$CMD_12_2" <<'CMDEOF'
 # コマンド定義（fixture・12-2）
@@ -766,6 +768,30 @@ bash .claude/scripts/issue-gate.sh arg "$ARGUMENTS" の中身
 CMDEOF
 expect_command_lint 'AC-12-2(8-13): arg "$ARGUMENTS" を含む行がある（往復1のC-1で実在した形。違反側の固定）' \
   "$CMD_12_2" "ARGUMENTS_IN_SHELL_STRING" "3" "5"
+
+# 12-2b: 素の $ARGUMENTS と同一行に二重引用符「のみ」がある（bash/sh 語・バッククォート・
+# $( は無い）。二重引用符の検出（case "$line" in *'"'*) danger=1）を単独で kill する
+# fixture（往復2 の W-2 の是正）。
+CMD_12_2B="${CMDLINT_DIR}/12-2b-double-quote-only.md"
+cat > "$CMD_12_2B" <<'CMDEOF'
+# コマンド定義（fixture・12-2b）
+
+emit "$ARGUMENTS"
+CMDEOF
+expect_command_lint 'AC-12-2b: 素の $ARGUMENTS と同一行に二重引用符のみがある（単一原因固定）' \
+  "$CMD_12_2B" "ARGUMENTS_IN_SHELL_STRING" "3" "3"
+
+# 12-2c: 素の $ARGUMENTS と同一行に単語としての bash「のみ」がある（二重引用符・
+# バッククォート・$( は無い）。単語 bash の検出（RE_BASH_WORD）を単独で kill する
+# fixture（往復2 の W-2 の是正）。12-7 の sh 版と対になる bash 版。
+CMD_12_2C="${CMDLINT_DIR}/12-2c-bash-word-only.md"
+cat > "$CMD_12_2C" <<'CMDEOF'
+# コマンド定義（fixture・12-2c）
+
+bash $ARGUMENTS
+CMDEOF
+expect_command_lint 'AC-12-2c: 素の $ARGUMENTS と同一行に単語としての bash のみがある（単一原因固定）' \
+  "$CMD_12_2C" "ARGUMENTS_IN_SHELL_STRING" "3" "3"
 
 # 12-3: \$ARGUMENTS（エスケープ済み）のみを含み、素の $ARGUMENTS は1つも無い。
 # 同一行に二重引用符・バッククォートがあってよい（AC-12-a の1・2）。
