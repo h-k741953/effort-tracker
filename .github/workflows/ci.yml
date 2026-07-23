@@ -138,6 +138,17 @@ jobs:
       - name: make test-commands
         run: make test-commands
 
+      # test-skills（.claude/scripts/check-skills.sh の fixture）と check-skills
+      # （実 .claude/skills/*/SKILL.md の形式検査）も、上と同じ理由で新規ジョブを
+      # 起こさず本ジョブへ step を追加する。ジョブ名 `Scripts (checker logic)` を
+      # 変えないことで ruleset protect-main の必須チェック追加登録（ブラウザ操作）を
+      # 発生させない。docs/specs/skills.md AC-5 / docs/harness/commands-and-skills.md。
+      - name: make test-skills
+        run: make test-skills
+
+      - name: make check-skills
+        run: make check-skills
+
   # ---------------------------------------------------------------------------
   # シークレット検出
   # ---------------------------------------------------------------------------

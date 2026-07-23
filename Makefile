@@ -24,12 +24,12 @@ help: ## このヘルプを表示
 # =============================================================================
 
 .PHONY: verify
-verify: lint test check-domain-deps scan-secrets ## 全検査（コミット前・PR前に実行）
+verify: lint test check-domain-deps check-skills scan-secrets ## 全検査（コミット前・PR前に実行）
 	@echo ""
 	@echo "==> verify: 全検査を通過"
 
 .PHONY: test
-test: test-api test-web test-scripts test-hooks test-commands ## 全レイヤーのテスト
+test: test-api test-web test-scripts test-hooks test-commands test-skills ## 全レイヤーのテスト
 
 .PHONY: lint
 lint: lint-api lint-web lint-tf ## 全レイヤーの Lint / 型チェック
@@ -223,6 +223,31 @@ test-hooks: ## .claude/hooks のチェッカを fixture で検査
 test-commands: ## .claude/scripts のチェッカ（スラッシュコマンドの機械判定部）を fixture で検査
 	@echo "==> test-commands"
 	@bash .claude/scripts/test-issue-gate.sh
+
+# =============================================================================
+# .claude/skills のチェッカ（Skill 資産の形式検査）
+#
+# check-skills は .claude/skills/*/SKILL.md が (1) frontmatter に name/description を
+# 持ち (2) 本文に docs/ 参照を1つ以上持つ、を機械検査する（docs/specs/skills.md
+# AC-5）。プロンプト資産で機械検査できるのは「参照が張られているか」までである
+# （docs/harness/commands-and-skills.md 軸3）。
+#
+# check-domain-deps のように Makefile へ直書きせずスクリプトへ切り出したのは、
+# AC-5 が fixture でのローカル再現を要求するため（Issue #30 の穴を踏まない）。
+# .claude/skills は他の .claude/ 資産と対象種別が異なるため、Makefile の
+# コメント区分と実体をずらさないよう test-scripts / test-hooks / test-commands へ
+# 合流させず、専用の check-skills / test-skills を新設する。
+# =============================================================================
+
+.PHONY: check-skills
+check-skills: ## .claude/skills/*/SKILL.md の形式（frontmatter + docs/ 参照）を検査
+	@echo "==> check-skills"
+	@bash .claude/scripts/check-skills.sh .claude/skills
+
+.PHONY: test-skills
+test-skills: ## check-skills.sh のロジックを fixture で検査
+	@echo "==> test-skills"
+	@bash .claude/scripts/test-check-skills.sh
 
 # =============================================================================
 # セキュリティ
