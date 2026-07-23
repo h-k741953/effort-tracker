@@ -1,10 +1,10 @@
 # 0013. デモの公開ホスティングを Vercel から AWS ネイティブ（S3 + CloudFront + Lambda）へ移す
 
-- **ステータス**: 提案中
+- **ステータス**: 承認済み
 - **日付**: 2026-07-23
 - **決定者**: 人間（プロジェクトオーナー）
 
-> **本 ADR は Issue #1「[discuss] デモ公開のホスティングをどう選ぶか」の結論を記録する。** 調査とトレードオフ整理は AI が担い、ホスティングの選定そのものは人間が決定した（`docs/ai-collaboration.md` の責務分界）。承認時に ADR 0002 のステータスを「廃止（0013 により置換）」へ変更する（ADR 0001 運用ルール3）。
+> **本 ADR は Issue #1「[discuss] デモ公開のホスティングをどう選ぶか」の結論を記録する。** 調査とトレードオフ整理は AI が担い、ホスティングの選定そのものは人間が決定した（`docs/ai-collaboration.md` の責務分界）。本決定に伴い、同一 PR で ADR 0002 を「廃止（0013 により置換）」とし、ADR 0005 は ADR 0014 で置換した（ADR 0001 運用ルール3）。
 
 ## コンテキスト
 
@@ -50,7 +50,7 @@ Next.js（App Router）を Lambda + CloudFront + S3 の形へパッケージす�
 
 ドメイン API の Lambda Function URL は `authorization_type = "AWS_IAM"` のまま（ADR 0003）。BFF（Next.js サーバーの Lambda）は**自身の実行ロール**で SigV4 署名し、ドメイン API を呼ぶ。実行ロールの権限は `lambda:InvokeFunctionUrl` を**当該関数のみ**に限定する（ADR 0005 の権限最小化を実行ロールへ引き継ぐ）。
 
-**これにより ADR 0005 の Vercel OIDC Federation は不要になる。** ただし ADR 0005 の書き換えは本 ADR では行わない。認証機構の置換は独立した判断であり、**別途 ADR を起こして 0005 を廃止・置換する**（ADR 0001 運用ルール3。追記・書き換えをしない）。
+**これにより ADR 0005 の Vercel OIDC Federation は不要になる。** ただし ADR 0005 の本文は書き換えない。認証機構の置換は独立した判断として **ADR 0014** に切り出し、0005 を廃止・置換する（ADR 0001 運用ルール3。追記・書き換えをしない）。
 
 ### 使用禁止リストは維持する
 
@@ -95,13 +95,14 @@ WAF のレートベースルールは緩和策になるが、**WAF は ACL 基�
 - **Terraform が増える。** CloudFront ディストリビューション・OAC・S3・SSR Lambda の配線が加わり、ADR 0002 が誇った「Terraform が小さい」利点を一部相殺する
 - **これは本番設計ではない。** 前提は「収益のないデモを $5/月で無期限公開する」であり、SLA が要求される文脈へ流用してはならない（ADR 0002 と同じ但し書きを引き継ぐ）
 
-### 承認時に反映する先
+### 反映した範囲（本決定と同一 PR で実施）
 
-本 ADR が承認されたら、同時に以下を更新する（提案中の段階では行わない）。
+本決定の承認に伴い、同一 PR で以下を反映した。
 
-- **ADR 0002** のステータスを「廃止（0013 により置換）」に変更する（本文は書き換えない）
-- **`docs/rules/cost-guardrails.md`** に、両 Lambda への予約同時実行数・Budget Actions・CloudFront の従量遮断回路（遅延ありの限界を含む）を追記する
-- **ADR 0005** の置換 ADR を別途起こす（本 ADR では扱わない）
+- **ADR 0002** のステータスを「廃止（0013 により置換）」に変更（本文は書き換えない）
+- **`docs/rules/cost-guardrails.md`** に、両 Lambda への予約同時実行数・Budget Actions・CloudFront の従量遮断回路（遅延ありの限界を含む）を追記
+- **ADR 0005** の置換として **ADR 0014** を起こし、0005 を廃止・置換
+- **Issue #1** を PR マージ時にクローズし、本 ADR へのリンクを残す（ADR 0004 レファレンス型運用）
 
 ## 検討した代替案
 
@@ -116,9 +117,10 @@ WAF のレートベースルールは緩和策になるが、**WAF は ACL 基�
 
 ## 関連
 
-- ADR 0002: サーバーレス構成の採用（**本 ADR が承認時に置換する**。Vercel Hobby を選んだ判断）
+- ADR 0002: サーバーレス構成の採用（**本 ADR が置換する**。Vercel Hobby を選んだ判断）
 - ADR 0003: Lambda Function URL の IAM 認証（**維持**。BFF は実行ロールで SigV4 署名する）
-- ADR 0005: Vercel → AWS の OIDC Federation（本構成では不要になる。**別途 ADR で置換予定**）
+- ADR 0005: Vercel → AWS の OIDC Federation（本構成では不要。**ADR 0014 で置換**）
+- ADR 0014: OIDC Federation を廃止し実行ロールで AWS を呼ぶ（本 ADR の帰結）
 - ADR 0001: ADR の運用ルール（廃止・置換の手順）
 - `docs/rules/cost-guardrails.md`: コストガードレールの規約本文（承認時に追記）
 - `docs/rules/architecture.md`: BFF 経由の一方通行（維持される）
