@@ -23,3 +23,4 @@ SES/受託向けの勤怠・工数管理 SaaS。
 @docs/rules/security.md
 @docs/rules/cost-guardrails.md
 @docs/rules/architecture.md
+@docs/rules/notation.md

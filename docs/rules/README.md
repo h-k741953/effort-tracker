@@ -18,3 +18,4 @@
 | [security.md](security.md) | セキュリティ |
 | [cost-guardrails.md](cost-guardrails.md) | コストガードレール |
 | [architecture.md](architecture.md) | アーキテクチャの制約 |
+| [notation.md](notation.md) | 表記ルール（応答は日本語 / 図は mermaid） |
