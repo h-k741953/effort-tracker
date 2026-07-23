@@ -97,7 +97,7 @@ AC-2 で確定先が **Skill** の候補についてのみ、以下を満たす 
 ## 関連
 
 - `docs/adr/0010-harness-engineering.md`: 5構成要素の Skills（実装 Issue 3）／自己改善の境界 §A（Skill の手順は改変してよいが、サブエージェント構成は承認事項）
-- `docs/adr/0004-issue-docs-reference-operation.md`: 正解は docs、参照で張る（AC-1 / AC-4）
+- `docs/adr/0004-issue-docs-reference-model.md`: 正解は docs、参照で張る（AC-1 / AC-4）
 - `docs/adr/0001-record-architecture-decisions.md`: ADR の構成・不可変・粒度・AI 非自己承認（AC-3 が参照させる正解）
 - `docs/harness/commands-and-skills.md`: Skill / コマンド / サブエージェント / hook の使い分けの判断木（AC-1 / AC-2 / AC-5 の正解）
 - `docs/harness/verification-loop.md`: 切り出したスクリプトへの make + CI + test の3点要求（AC-5）
