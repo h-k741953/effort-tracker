@@ -23,9 +23,7 @@ SES／受託向けの勤怠・工数管理 SaaS。
 | ドメイン層（`services/api`） | パッケージの骨のみ。ロジック未実装 |
 | Web（`apps/web`） | 未スキャフォールド（ハーネスは `SKIP` を明示） |
 | インフラ（`infra/terraform`） | 未着手 |
-| **デモURL** | **未公開。** ホスティングの選定が未決（[#1](../../issues/1)） |
-
-デモの公開先は Vercel Hobby を前提に設計していたが、**Hobby の商用利用制限が本プロジェクトの位置づけと抵触しうる**ことが後から判明した。ADR 0005 の「未解決のリスク」に記録し、独立した判断として切り出してある。前提が崩れたことを隠さず、判断を保留している状態である。
+| **デモURL** | **未公開。** インフラ（`infra/terraform`）が未着手のため |
 
 ---
 
@@ -54,21 +52,16 @@ MVP のユースケースは3つに限定する。**これ以外を実装しな�
 
 ## アーキテクチャ
 
-```
-ブラウザ
-   │  HTTPS
-   ▼
-Next.js Route Handler (BFF)          ← Vercel
-   │  SigV4 署名
-   │  （Vercel OIDC → AssumeRoleWithWebIdentity で取得した短命の認証情報）
-   ▼
-Lambda Function URL (IAM 認証)        ← AWS
-   │
-   ▼
-Neon (PostgreSQL)
+```mermaid
+graph LR
+    B[ブラウザ] --> CF[CloudFront]
+    CF -->|静的アセット| S3[(S3)]
+    CF -->|SSR / Route Handler| BFF["BFF Lambda<br/>(Next.js サーバー)"]
+    BFF -->|SigV4 署名<br/>（実行ロール）| API["ドメイン API の Lambda<br/>Function URL（IAM 認証）"]
+    API --> N[(Neon)]
 ```
 
-**ブラウザから Lambda を直接叩けない。** Function URL が IAM 認証なので、SigV4 署名できるサーバー側（BFF）以外は到達できない。この一方通行は運用ルールではなく、構造として担保されている。
+**ブラウザからドメイン API の Lambda を直接叩けない。** Function URL が IAM 認証なので、SigV4 署名できるサーバー側（BFF Lambda）以外は到達できない。この一方通行は運用ルールではなく、構造として担保されている。
 
 Lambda の呼び出しは `apps/web/src/lib/lambda-client.ts` に集約し、署名の実装を分散させない。
 
@@ -81,12 +74,12 @@ Lambda の呼び出しは `apps/web/src/lib/lambda-client.ts` に集約し、署
 | 層 | 技術 | 選定の理由 |
 |---|---|---|
 | `apps/web` | Next.js (App Router) / TypeScript | Route Handler を BFF として使い、SigV4 署名をサーバー側に閉じ込める。UI と BFF が同一デプロイに収まる |
-| `services/api` | Go / AWS Lambda | コールドスタートを数百ms に抑えられる。標準ライブラリだけでドメイン層を素直に書ける（[ADR 0002](docs/adr/0002-serverless-over-ecs.md)） |
+| `services/api` | Go / AWS Lambda | コールドスタートを数百ms に抑えられる。標準ライブラリだけでドメイン層を素直に書ける（[ADR 0013](docs/adr/0013-aws-native-hosting-over-vercel.md)） |
 | — 内部構造 | クリーンアーキテクチャ（`domain` / `usecase` / `adapter` / `driver`） | 依存は内側にのみ向かう。最内周の `domain` が何にも依存しないことを `make check-domain-deps` が検査する（[ADR 0008](docs/adr/0008-clean-architecture.md)） |
-| `infra/terraform` | Terraform / AWS | コストガードレールをコードで固定し、レビュー基準にする（[ADR 0002](docs/adr/0002-serverless-over-ecs.md)） |
+| `infra/terraform` | Terraform / AWS | コストガードレールをコードで固定し、レビュー基準にする（[ADR 0013](docs/adr/0013-aws-native-hosting-over-vercel.md)） |
 | DB | Neon (PostgreSQL) | RDS の常駐課金（~$15/月）を避ける。Lambda が VPC 外にあるためプーラー経由で接続する |
-| ホスティング | Vercel | **再検討中**（[#1](../../issues/1)） |
-| 認証（AWS） | OIDC — GitHub OIDC / Vercel OIDC Federation | 静的アクセスキーを排除する（[ADR 0005](docs/adr/0005-vercel-aws-oidc-federation.md)） |
+| ホスティング | AWS ネイティブ（S3 + CloudFront + Lambda） | OpenNext アダプタで Next.js を Lambda 上へ載せ、ホスティング全体を AWS 内で完結させる（[ADR 0013](docs/adr/0013-aws-native-hosting-over-vercel.md)） |
+| 認証（AWS） | CI: GitHub OIDC ／ ランタイム: BFF Lambda の実行ロール（SigV4 署名） | 静的アクセスキーを排除する（[ADR 0014](docs/adr/0014-execution-role-over-vercel-oidc.md)） |
 | CI | GitHub Actions | ローカルと同一の `make` ターゲットを呼ぶ |
 | テスト（Go） | 標準 `testing` + `google/go-cmp` | アサーション DSL とモックライブラリを入れない。テストダブルは手書きの Fake（[ADR 0007](docs/adr/0007-testing-with-stdlib-and-go-cmp.md)） |
 | テスト（Web） | Vitest | 導入は `apps/web` のスキャフォールド時（[#9](../../issues/9)） |
@@ -134,22 +127,26 @@ ADR は Nygard 形式。**書き換えず、覆すときは新しい ADR で置�
 
 デモを無期限に公開し続ける前提から、**機能要件と同格**として扱う。「後で入れる」ことを許容しない。
 
-### コスト — 月 $5 が上限（[ADR 0002](docs/adr/0002-serverless-over-ecs.md)）
+### コスト — 月 $5 が上限（[ADR 0013](docs/adr/0013-aws-native-hosting-over-vercel.md)）
 
 一般的なリファレンス構成（ALB + ECS Fargate + RDS）は、**リクエストがゼロでも月 ~$87** かかる（概算）。NAT Gateway だけで予算の9倍になる。単一要素の削減では届かないため、構成ごと変えている。
 
+**AWS には口座全体を止める真のハード課金上限が存在しない。** 構造的に固定できるのは Lambda の同時実行数であり、それ以外は検知＋半自動遮断による近似にとどまる。
+
 | 項目 | 設定 |
 |---|---|
-| Lambda 予約同時実行数 | `5`（課金の最悪値を構造的に固定する） |
+| Lambda 予約同時実行数 | `5`（**BFF / SSR・ドメイン API の両 Lambda** に効く。課金の最悪値を構造的に固定する） |
 | AWS Budgets | 月 $5 で2本（実績80% / 予測100%） |
+| Budget Actions | 閾値到達で IAM / SCP の deny を適用し、新規リソース作成を凍結（翌予算期に自動リバート） |
+| CloudFront | ディストリビューション単位のハード上限は無い（**最弱点**）。従量遮断は Budget → SNS → Lambda によるカスタム回路で、**数時間の遅延**がある。`docs/rules/cost-guardrails.md` の Route Handler レート制限が CloudFront 帯域への一次防御（WAF は $5 予算と二律背反のため非必須） |
 | 使用禁止 | NAT Gateway / ALB / RDS / ECS |
 | デモデータ | 日次リセット |
 
 ### セキュリティ
 
-- **静的アクセスキーがどこにも存在しない。** CI（GitHub OIDC）もランタイム（Vercel OIDC Federation）も OIDC で統一している。漏洩させる対象がないので、鍵のローテーション運用も要らない
+- **静的アクセスキーがどこにも存在しない。** CI は GitHub OIDC、ランタイムは BFF Lambda 自身の実行ロールによる SigV4 署名で、長期認証情報を使わない方針に統一している。漏洩させる対象がないので、鍵のローテーション運用も要らない
 - **Function URL は `AWS_IAM`。`NONE` を禁じる**（[ADR 0003](docs/adr/0003-lambda-function-url-iam-auth.md)）。`NONE` は認証と到達可能性を混同している
-- **信頼ポリシーで `sub` 条件を省かない**（[ADR 0005](docs/adr/0005-vercel-aws-oidc-federation.md)）。省くと Vercel にサインアップした任意の第三者が IAM ロールを引き受けられる。OIDC プロバイダは Vercel 利用者全体で共有されているため、「Vercel が発行したトークンであること」は本人性を何ら保証しない
+- **信頼ポリシーで `sub` 条件を省かない**（GitHub OIDC の信頼ポリシー。詳細は `docs/rules/security.md`）。GitHub Actions の OIDC プロバイダは GitHub 利用者全体で共有されており、`sub` を省くと任意のリポジトリのワークフローが当該 IAM ロールを引き受けられる
 - `gitleaks` を `make verify` と CI の両方で実行する（作業ツリー + 履歴）
 - `docs/` 内の AWS アカウントID・接続文字列・URL は**すべて架空の値**である
 
@@ -246,13 +243,14 @@ Go / Terraform / gitleaks / golangci-lint は **devcontainer のビルド時に�
 
 ## 受け入れたトレードオフ
 
-いずれも [ADR 0002](docs/adr/0002-serverless-over-ecs.md) / [0003](docs/adr/0003-lambda-function-url-iam-auth.md) で意図して選んだ結果であり、バグではない。
+いずれも [ADR 0013](docs/adr/0013-aws-native-hosting-over-vercel.md) / [0003](docs/adr/0003-lambda-function-url-iam-auth.md) で意図して選んだ結果であり、バグではない。
 
-- **コールドスタートが発生する。** デモ初回アクセスの体感が悪化する。Go を選ぶことで数百ms程度に収まる見込みだが、ゼロにはならない。Provisioned Concurrency は常駐課金なので**使わない**
-- **同時アクセスが集中すると 429 が返る。** 予約同時実行数 5 が上限。コスト保護のための意図的な挙動である
+- **コールドスタートが発生する。** SSR Lambda（BFF）とドメイン API Lambda の2段で起こりうる。デモ初回アクセスの体感が悪化する。Go を選ぶことで数百ms程度に収まる見込みだが、ゼロにはならない。Provisioned Concurrency は常駐課金なので**使わない**
+- **同時アクセスが集中すると 429 が返る。** 予約同時実行数 5 が上限で、SSR Lambda にも効くため画面ロード自体が 429 になりうる。コスト保護のための意図的な挙動である
 - **Lambda が VPC 外にあり、DB 接続はインターネット経由になる。** NAT Gateway を避けるための判断。Neon の TLS と接続文字列に依存する
-- **ローカルから Lambda を curl できない。** IAM 認証のため SigV4 署名が要る
-- **Vercel への依存が増えた。** ホスティングを変更する場合、OIDC の認証機構ごと作り直しになる（[#1](../../issues/1) が現に効いている）
+- **ローカルからドメイン API の Lambda を curl できない。** IAM 認証のため SigV4 署名が要る
+- **CloudFront の帯域課金の請求主体が自分になる。** ディストリビューション単位のハード上限が無く、遮断は遅延ありのカスタム回路に頼る
+- **OpenNext というサードパーティ・アダプタへの依存が増える。** Next.js の版追従で互換が崩れうる
 
 > **これは本番設計ではない。** 前提は「収益のないデモを $5/月で無期限公開する」であって、SLA が要求される実案件に流用してはならない。前提が変われば結論も変わる。
 
