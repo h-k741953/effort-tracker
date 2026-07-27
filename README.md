@@ -111,13 +111,21 @@ ADR は Nygard 形式。**書き換えず、覆すときは新しい ADR で置�
 | ADR | 決定 | 決定者 |
 |---|---|---|
 | [0001](docs/adr/0001-record-architecture-decisions.md) | アーキテクチャ決定を記録する | 人間 |
-| [0002](docs/adr/0002-serverless-over-ecs.md) | コンテナ常駐構成ではなくサーバーレスを採用する | 人間 |
+| [0002](docs/adr/0002-serverless-over-ecs.md) | ~~コンテナ常駐構成ではなくサーバーレスを採用する~~（0013 により置換） | 人間 |
 | [0003](docs/adr/0003-lambda-function-url-iam-auth.md) | Lambda Function URL を IAM 認証で保護する | 人間 |
 | [0004](docs/adr/0004-issue-docs-reference-model.md) | Issue と docs の責務を分け、レファレンス型で運用する | 人間 |
-| [0005](docs/adr/0005-vercel-aws-oidc-federation.md) | Vercel から AWS への認証に OIDC Federation を使う | 人間 |
+| [0005](docs/adr/0005-vercel-aws-oidc-federation.md) | ~~Vercel から AWS への認証に OIDC Federation を使う~~（0014 により置換） | 人間 |
 | [0006](docs/adr/0006-onion-architecture.md) | ~~内部アーキテクチャにオニオンアーキテクチャを採用する~~（0008 により置換） | 人間 |
 | [0007](docs/adr/0007-testing-with-stdlib-and-go-cmp.md) | テストは標準 testing と go-cmp のみで書く | 人間 |
 | [0008](docs/adr/0008-clean-architecture.md) | 内部アーキテクチャにクリーンアーキテクチャを採用する | 人間 |
+| [0009](docs/adr/0009-branch-protection-via-ruleset.md) | ブランチ保護を ruleset に一本化し、承認必須をやめる | 人間 |
+| [0010](docs/adr/0010-harness-engineering.md) | ハーネスエンジニアリングの5構成要素を導入する | 人間 |
+| [0011](docs/adr/0011-orchestrator-required-entry.md) | オーケストレーターを必須の入口とし、main エージェントの直接処理を禁じる | 人間 |
+| [0012](docs/adr/0012-issue-command-as-slash-command.md) | `/issue` をスラッシュコマンドとして実装し、機械判定部をプロンプトから切り出す | 人間 |
+| [0013](docs/adr/0013-aws-native-hosting-over-vercel.md) | デモの公開ホスティングを Vercel から AWS ネイティブ（S3 + CloudFront + Lambda）へ移す | 人間 |
+| [0014](docs/adr/0014-execution-role-over-vercel-oidc.md) | Vercel OIDC Federation を廃止し、BFF Lambda の実行ロールで AWS を呼ぶ | 人間 |
+| [0015](docs/adr/0015-claude-design-for-design-system.md) | フロントエンドのデザインシステムに Claude Design を採用する | 人間 |
+| [0016](docs/adr/0016-cognito-end-user-authentication.md) | エンドユーザー認証に Amazon Cognito を採用する | 人間 |
 
 **すべて人間が決定者である。** これは偶然ではなく、`CLAUDE.md` が「技術選定の変更（ADR が必要な判断）」を人間の責務に置いているためである。AI が単独で「承認済み」の ADR を起票することを禁じている。
 
