@@ -22,6 +22,7 @@ SES／受託向けの勤怠・工数管理 SaaS。
 | 検証ハーネス（`make verify` / CI） | 動作する |
 | ドメイン層（`services/api`） | パッケージの骨のみ。ロジック未実装 |
 | Web（`apps/web`） | 未スキャフォールド（ハーネスは `SKIP` を明示） |
+| エンドユーザー認証（Amazon Cognito） | 未実装（[#52](../../issues/52)） |
 | インフラ（`infra/terraform`） | 未着手 |
 | **デモURL** | **未公開。** インフラ（`infra/terraform`）が未着手のため |
 
@@ -34,6 +35,8 @@ MVP のユースケースは3つに限定する。**これ以外を実装しな�
 1. 稼働実績の入力・編集（[#5](../../issues/5)）
 2. 月次締め（[#6](../../issues/6)）
 3. 承認申請・承認（[#7](../../issues/7)）
+
+**認証基盤（後述の Amazon Cognito）は、この3ユースケースを支える横断的なインフラであり、4つ目の業務ユースケースを追加するものではない**（[ADR 0016](docs/adr/0016-cognito-end-user-authentication.md)、`docs/rules/scope.md`）。ロール（`Engineer` / `Approver`）は認可の判断であり、ユーザー・ロール管理画面は非スコープのまま — ロールはデモ用に切替可能とするに留め、割り当ての管理 UI は作らない。
 
 集約は **勤務月 (`WorkMonth`) の1つだけ**を厳密にモデリングする。勤務月は **契約 × 年月**によって一意に決まる（技術者 × 年月ではない。掛け持ちという業務実態に基づく判断）。
 
@@ -80,6 +83,7 @@ Lambda の呼び出しは `apps/web/src/lib/lambda-client.ts` に集約し、署
 | DB | Neon (PostgreSQL) | RDS の常駐課金（~$15/月）を避ける。Lambda が VPC 外にあるためプーラー経由で接続する |
 | ホスティング | AWS ネイティブ（S3 + CloudFront + Lambda） | OpenNext アダプタで Next.js を Lambda 上へ載せ、ホスティング全体を AWS 内で完結させる（[ADR 0013](docs/adr/0013-aws-native-hosting-over-vercel.md)） |
 | 認証（AWS） | CI: GitHub OIDC ／ ランタイム: BFF Lambda の実行ロール（SigV4 署名） | 静的アクセスキーを排除する（[ADR 0014](docs/adr/0014-execution-role-over-vercel-oidc.md)） |
+| 認証（エンドユーザー） | Amazon Cognito（User Pool） | ログイン3方式（ゲスト＝閲覧のみ／メール+パスワード+MFA(TOTP)／Google OIDC）を提供し、BFF（Route Handler）でトークン検証を終端する。そこから先のドメイン API 呼び出しは従来どおり実行ロールの SigV4 署名（[ADR 0003](docs/adr/0003-lambda-function-url-iam-auth.md) / [ADR 0014](docs/adr/0014-execution-role-over-vercel-oidc.md) のサービス間認証）であり、Cognito はこれを置換せず別レイヤーとして併存する（[ADR 0016](docs/adr/0016-cognito-end-user-authentication.md)） |
 | CI | GitHub Actions | ローカルと同一の `make` ターゲットを呼ぶ |
 | テスト（Go） | 標準 `testing` + `google/go-cmp` | アサーション DSL とモックライブラリを入れない。テストダブルは手書きの Fake（[ADR 0007](docs/adr/0007-testing-with-stdlib-and-go-cmp.md)） |
 | テスト（Web） | Vitest | 導入は `apps/web` のスキャフォールド時（[#9](../../issues/9)） |
