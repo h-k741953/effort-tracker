@@ -1,0 +1,22 @@
+package workmonth
+
+import "errors"
+
+// ドメインのエラーは番兵値として公開し、errors.Is で判別できるようにする。
+// 定義の根拠は docs/specs/workmonth-implementation-design.md AC-11。
+var (
+	// ErrNotEditable は Draft 以外の状態で稼働実績を入力・編集・削除しようとしたことを表す。
+	ErrNotEditable = errors.New("workmonth: work month is not editable")
+
+	// ErrDateOutOfMonth は対象日が当該勤務月の年月に属さないことを表す。
+	ErrDateOutOfMonth = errors.New("workmonth: date is out of the work month")
+
+	// ErrFutureDate は対象日が「当日」より後であることを表す。
+	ErrFutureDate = errors.New("workmonth: date is in the future")
+
+	// ErrWorkingHoursOutOfRange は稼働時間が値域外であることを表す。
+	ErrWorkingHoursOutOfRange = errors.New("workmonth: working hours out of range")
+
+	// ErrInvalidValue は値オブジェクトの構築に失敗したことを表す。
+	ErrInvalidValue = errors.New("workmonth: invalid value")
+)
