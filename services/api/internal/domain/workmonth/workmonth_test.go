@@ -693,6 +693,32 @@ func TestReconstruct_OrdersAndCopiesRecords(t *testing.T) {
 	}
 }
 
+// TestWorkMonth_DailyRecords_ReturnsCopy は DailyRecords() が内部のスライスを
+// そのまま渡さないこと（AC-2-3。不変条件を集約の内側に閉じる）を検証する。
+// TestReconstruct_OrdersAndCopiesRecords は「入力」スライスの複製を固定したもので、
+// ここで固定するのは「出力」スライスの複製という別の主張である。
+func TestWorkMonth_DailyRecords_ReturnsCopy(t *testing.T) {
+	target := mustReconstructWorkMonth(t, workmonth.StateDraft, []workmonth.DailyRecord{
+		mustDailyRecord(t, 2026, 7, 3, 7, 0),
+		mustDailyRecord(t, 2026, 7, 11, 6, 0),
+	})
+
+	got := target.DailyRecords()
+	// 集約の外から返却スライスの要素を差し替える。
+	got[0] = mustDailyRecord(t, 2026, 7, 3, 1, 0)
+
+	want := []recordView{
+		{Date: "2026-07-03", Hours: 7, Minutes: 0},
+		{Date: "2026-07-11", Hours: 6, Minutes: 0},
+	}
+	if diff := cmp.Diff(want, viewOfRecords(target.DailyRecords())); diff != "" {
+		t.Errorf("返却スライスへの書き換えが集約の状態に及んでいる (-want +got):\n%s（AC-2-3）", diff)
+	}
+	if diff := cmp.Diff(hoursView{Hours: 13, Minutes: 0}, viewOfHours(target.TotalHours())); diff != "" {
+		t.Errorf("返却スライスへの書き換えが総稼働時間に及んでいる (-want +got):\n%s（AC-2-3）", diff)
+	}
+}
+
 // ---- AC-6 ----------------------------------------------------------------
 
 // TestWorkMonth_TotalHours は総稼働時間の算出を検証する。

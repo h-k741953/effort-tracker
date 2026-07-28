@@ -325,9 +325,12 @@ func TestDeleteDailyRecord_SaveFailure(t *testing.T) {
 	if f.workMonths.saveCount != 1 {
 		t.Errorf("Save の呼び出し回数 = %d, want 1（保存は試みられる）", f.workMonths.saveCount)
 	}
+	// 以下は Fake の忠実性を守るためのアサーション（検証対象は interactor ではない）。
+	// Save がエラーを返したのに Fake 側へ反映されていると、後続のテストが
+	// 「保存されたこと」を偽って観測できてしまう。
 	saved := f.workMonths.saved(t, f.contractID, f.yearMonth)
 	if len(saved.DailyRecords()) != 1 {
-		t.Errorf("保存に失敗したのに削除が反映されている（件数 = %d, want 1）", len(saved.DailyRecords()))
+		t.Errorf("Fake が保存失敗時に削除を反映している（件数 = %d, want 1）", len(saved.DailyRecords()))
 	}
 }
 

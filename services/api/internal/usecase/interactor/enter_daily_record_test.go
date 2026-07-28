@@ -761,8 +761,11 @@ func TestEnterDailyRecord_SaveFailure(t *testing.T) {
 	if f.workMonths.saveCount != 1 {
 		t.Errorf("Save の呼び出し回数 = %d, want 1（保存は試みられる）", f.workMonths.saveCount)
 	}
+	// 以下は Fake の忠実性を守るためのアサーション（検証対象は interactor ではない）。
+	// Save がエラーを返したのに Fake 側に書き込まれていると、後続のテストが
+	// 「保存されたこと」を偽って観測できてしまう。
 	if len(f.workMonths.stored) != 0 {
-		t.Errorf("保存に失敗したのに勤務月が残っている（件数 = %d, want 0）", len(f.workMonths.stored))
+		t.Errorf("Fake が保存失敗時に勤務月を残している（件数 = %d, want 0）", len(f.workMonths.stored))
 	}
 }
 
