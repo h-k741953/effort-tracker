@@ -58,9 +58,15 @@ func (ym YearMonth) Year() int { return ym.year }
 // Month は月（1〜12）を返す。
 func (ym YearMonth) Month() int { return ym.month }
 
-// contains は暦日が当該年月に属するかを返す
-// （docs/specs/daily-record-entry.md AC-2-4 の判定に使う）。
-func (ym YearMonth) contains(d Date) bool {
+// Contains は暦日が当該年月に属するかを返す
+// （docs/specs/daily-record-entry.md AC-2-4・AC-5-5・D-9 の判定に使う）。
+//
+// 「対象日が当該年月に属するか」の判定はここ1箇所に置き、規則を複数箇所へ
+// 実装しない（実装設計 AC-3-11）。利用者は集約の EnterDailyRecord・
+// DeleteDailyRecord、Reconstruct、未生成の勤務月に対する削除の interactor の4つ。
+// 返すエラーは利用者側で使い分ける（利用者の要求に対しては ErrDateOutOfMonth、
+// Reconstruct は ErrInvalidValue）。
+func (ym YearMonth) Contains(d Date) bool {
 	return ym.year == d.year && ym.month == d.month
 }
 

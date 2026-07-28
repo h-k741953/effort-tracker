@@ -39,21 +39,13 @@ func New(contractID ContractID, yearMonth YearMonth, settlementRange SettlementR
 }
 
 // Reconstruct は永続化された勤務月を再構築する（AC-2-5）。
-// 状態遷移の検査は行わず、値オブジェクトの妥当性のみ検査する。
+// 状態遷移の検査は行わず、値オブジェクトの妥当性と集約の不変条件のみ検査する。
 //
-// 検査の非対称性について。ここでは「対象日で一意」（AC-2-6）は検査するが、
-// 「対象日が当該年月に属すること」は検査しない。この非対称性をどう解消するか
-// （当該年月に属さない対象日を持つ行の復元と、そのような対象日への削除の扱い）は
-// **人間の決定を要する業務ルールであり、現時点では未決**である。
-// 決定の材料として、現在の挙動を事実として記録しておく。
-//
-//   - 当該年月に属さない対象日を持つ行は、そのまま復元される（ここでは弾かない）。
-//   - 当該年月に属さない対象日への削除は、一致するレコードが無いため何も起きず、
-//     成功（HTTP 200）を返す（no-op）。「レコードのない日への削除は成功」
-//     （docs/specs/daily-record-entry.md D-5）と観測上は区別が付かない。
-//   - 入力側は集約が ErrDateOutOfMonth で弾く（AC-2-4）。削除側に対応する判定は無い。
-//
-// 決定が出るまで、この振る舞いを前提にした業務ルールを実装側で足さない。
+// 検査する不変条件は「対象日で一意」（AC-2-6）と「すべての対象日が当該年月に属する」
+// （AC-2-1・AC-2-6）の2つ。後者の違反は、正常な経路（EnterDailyRecord・
+// DeleteDailyRecord）では作られない行に対する防御であり、利用者の要求の不正では
+// ないため、`ErrDateOutOfMonth` ではなく `ErrInvalidValue` で失敗させる
+// （AC-3-11。Issue #51、2026-07-28 に人間が確定）。
 func Reconstruct(
 	contractID ContractID,
 	yearMonth YearMonth,
@@ -71,6 +63,18 @@ func Reconstruct(
 	records := make([]DailyRecord, len(dailyRecords))
 	copy(records, dailyRecords)
 	sortRecords(records)
+	for _, record := range records {
+		// すべての対象日が当該年月に属する（AC-2-1・AC-2-6）は集約の不変条件であり、
+		// 復元によっても壊さない。番兵は ErrInvalidValue（AC-2-5・AC-3-11）。
+		if !yearMonth.Contains(record.Date()) {
+			return nil, fmt.Errorf(
+				"%w: daily record for %04d-%02d-%02d does not belong to %04d-%02d",
+				ErrInvalidValue,
+				record.Date().Year(), record.Date().Month(), record.Date().Day(),
+				yearMonth.Year(), yearMonth.Month(),
+			)
+		}
+	}
 	for i := 1; i < len(records); i++ {
 		// 対象日で一意（1日最大1件。AC-2-6）は集約の不変条件であり、
 		// 復元によっても壊さない。
@@ -168,7 +172,7 @@ func (w *WorkMonth) EnterDailyRecord(record DailyRecord, today Date) error {
 	if err := w.EnsureEditable(); err != nil {
 		return err
 	}
-	if !w.yearMonth.contains(record.Date()) {
+	if !w.yearMonth.Contains(record.Date()) {
 		return fmt.Errorf(
 			"%w: %04d-%02d-%02d does not belong to %04d-%02d",
 			ErrDateOutOfMonth,
@@ -197,11 +201,25 @@ func (w *WorkMonth) EnterDailyRecord(record DailyRecord, today Date) error {
 
 // DeleteDailyRecord は対象日の稼働実績を取り除く（AC-4-2）。
 //
-// レコードが無い日への削除は成功として扱う。「レコードのない日＝稼働なし」と
-// 区別しないため（docs/specs/daily-record-entry.md D-5・AC-5-4）。
+// 検査順は ①状態（Draft か） → ②当該年月に属するか、とする
+// （docs/specs/domain-api-http-contract.md AC-9 の順5→順6と一致させる）。
+// 当該年月に属さない対象日への削除は、当該日にレコードがあるか否か・
+// 他の日にレコードがあるか否かを問わず弾く（docs/specs/daily-record-entry.md
+// AC-5-5・D-9。Issue #51、2026-07-28 に人間が確定）。
+//
+// 当該年月に属する対象日で、レコードが無い日への削除は成功として扱う。
+// 「レコードのない日＝稼働なし」と区別しないため（同 D-5・AC-5-4）。
 func (w *WorkMonth) DeleteDailyRecord(date Date) error {
 	if err := w.EnsureEditable(); err != nil {
 		return err
+	}
+	if !w.yearMonth.Contains(date) {
+		return fmt.Errorf(
+			"%w: %04d-%02d-%02d does not belong to %04d-%02d",
+			ErrDateOutOfMonth,
+			date.Year(), date.Month(), date.Day(),
+			w.yearMonth.Year(), w.yearMonth.Month(),
+		)
 	}
 	w.dailyRecords = slices.DeleteFunc(w.dailyRecords, func(record DailyRecord) bool {
 		return record.Date().compare(date) == 0
