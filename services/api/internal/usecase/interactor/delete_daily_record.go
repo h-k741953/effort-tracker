@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/h-k741953/effort-tracker/services/api/internal/domain/workmonth"
 	"github.com/h-k741953/effort-tracker/services/api/internal/usecase/port"
 )
 
@@ -67,6 +68,12 @@ func (i *DeleteDailyRecord) Execute(ctx context.Context, input port.DeleteDailyR
 	}
 
 	if !generated {
+		// 未生成でも、対象日が当該年月に属さない場合は no-op（AC-5-3）より優先して弾く
+		// （HTTP 契約 AC-5-8・AC-5-9・D-13／実装設計 AC-7-9）。
+		if !input.YearMonth.Contains(input.Date) {
+			i.output.PresentError(workmonth.ErrDateOutOfMonth)
+			return
+		}
 		i.output.Present(newEmptyWorkMonthOutput(contract, input.YearMonth))
 		return
 	}
