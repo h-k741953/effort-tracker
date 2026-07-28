@@ -6,8 +6,11 @@ import (
 	"github.com/h-k741953/effort-tracker/services/api/internal/domain/workmonth"
 )
 
-// 【スタブ】本ファイルは tester 工程が置いた境界の定義であり、
-// 実装（gateway / presenter / driver）は implementer 工程が用意する。
+// 本ファイルはユースケースの境界そのもの（AC-6 の repository・参照ポート・時計と、
+// AC-7 の入出力ポート・DTO）を定義する。
+//
+// これらの interface を実装する側（adapter/gateway・adapter/presenter・driver）は
+// 別パッケージに置き、interactor は具体型を知らない（ADR 0008 の依存性反転）。
 
 // Role は操作者のロール（AC-7-2・D-9）。値はユビキタス言語の英語名と一致させる。
 // ゲストは未認証の操作者として表し、Guest というロール値は設けない。

@@ -36,7 +36,7 @@ HTTP の契約（パス・DTO・ステータスコード）は `docs/specs/domai
 | P-7 | テストは標準 `testing` + go-cmp のみ。モックライブラリを使わず、テストダブルは**手書きのインメモリ Fake** | ADR 0007 |
 | P-8 | 実行基盤は Lambda（Function URL・`AWS_IAM`）と Neon。ドメイン API を呼べるのは SigV4 署名できる BFF のみ | ADR 0003・0013・0014 |
 | P-9 | エンドユーザー認証は **BFF で終端**する。ドメイン API は BFF が付与した操作者・ロールを受け取る（受け渡しの形は `domain-api-http-contract.md` AC-1） | ADR 0016 |
-| P-10 | module は `github.com/h-k741953/effort-tracker/services/api`、Go 1.26。既存の Go ファイルは `internal/domain/workmonth/doc.go` のみ | `services/api/go.mod`・`doc.go` |
+| P-10 | module は `github.com/h-k741953/effort-tracker/services/api`、Go 1.26（**本仕様の起草時点で既存の Go ファイルは `internal/domain/workmonth/doc.go` のみ**。以降の実装で増える） | `services/api/go.mod` |
 
 ---
 
@@ -142,15 +142,15 @@ graph TD
 | 3-1 | `ContractID` | 契約の識別子 | 空文字は不可 | P-4 |
 | 3-2 | `YearMonth` | 勤務月の対象年月 | 月が 1〜12 | P-5 |
 | 3-3 | `Date` | 暦日 | 暦上実在する日付であること（例: 2月30日は不可） | — |
-| 3-4 | `WorkingHours` | 稼働の量（1日・1ヶ月の双方に使う） | 時が 0 以上／**分が 0〜59**／全体が負でないこと | `daily-record-entry.md` AC-3-4・AC-3-5、ユビキタス言語「稼働時間」 |
-| 3-5 | `DailyRecord` | 1日分の稼働の記録（対象日 + 稼働時間） | 稼働時間が **0時間0分以上 24時間0分以下**（上限を含む） | `daily-record-entry.md` AC-3-1〜AC-3-3・D-7 |
+| 3-4 | `WorkingHours` | 稼働の量（1日・1ヶ月の双方に使う） | 時・分それぞれの値域を検査する。**境界の正解は出典が持つ**（本仕様は値を書かない。AC-13-1） | `daily-record-entry.md` AC-3-4・AC-3-5、ユビキタス言語「稼働時間」 |
+| 3-5 | `DailyRecord` | 1日分の稼働の記録（対象日 + 稼働時間） | 1日の稼働時間の下限・上限を検査する。**境界の正解と上限を含むか否かは出典が持つ**（AC-13-1） | `daily-record-entry.md` AC-3-1〜AC-3-3・D-7 |
 | 3-6 | `SettlementRange` | 精算幅（下限・上限） | 下限 ≤ 上限 | ユビキタス言語「精算」 |
 | 3-7 | `State` | 勤務月の状態 | `Draft` / `PendingApproval` / `Approved` の3値のみ。**文字列表現はユビキタス言語の英語名と一致**させる | ユビキタス言語「状態と操作」 |
 
 | # | 条件 | 期待 |
 |---|---|---|
 | 3-8 | 1日の上限（24時間）の検査位置 | **`DailyRecord` の構築時**に行う。`WorkingHours` 自体は上限を持たない（精算幅の下限・上限が 24 時間を超えるため。`monthly-closing.md` AC-4 の例は 140/180 時間） |
-| 3-9 | 15分切り捨て | `WorkingHours` のメソッドとして提供する（例: `TruncateTo15Minutes()`）。**日次の値に対して適用**し、合計に対しては適用しない（`daily-record-entry.md` AC-6-1） |
+| 3-9 | 丸めの置き場所と適用位置 | 丸めは `WorkingHours` のメソッドとして提供する。**日次の値に対して適用**し、合計に対しては適用しない（`daily-record-entry.md` AC-6-1）。**丸めの単位と方向はユビキタス言語「丸め規則」が持つ**（本仕様は値を書かない。AC-13-1） |
 | 3-10 | 内部表現 | 稼働の量は**分の整数**で保持し、浮動小数点を使わない（丸め・比較・減算をすべて分単位で行う。`monthly-closing.md` AC-4 注記） |
 
 ### AC-4. 状態と遷移メソッド
@@ -188,7 +188,7 @@ interface はすべて `usecase/port` に置く（P-3）。**`domain` に置か�
 | 6-2 | `ContractRepository` | `Find(ctx, ContractID) (Contract, error)` | 契約は**与件・読み取り専用**（`docs/rules/scope.md`）。作成・更新のメソッドを設けない |
 | 6-3 | `Contract`（リードモデル） | 契約の識別子／**契約表示名**／**技術者識別子**／精算幅 | D-1 の帰結。`usecase/port` に置き、**`domain` に `contract` パッケージを新設しない** |
 | 6-4 | `WorkMonthQuery`（参照系） | 条件（技術者識別子・状態・並び・件数・開始位置）を受け取り、**行のリードモデル**（契約識別子／契約表示名／年月／状態）と総件数を返す | D-7。一覧の並び順・ページングの要求は `work-month-listing-ui.md` AC-4 |
-| 6-5 | `Clock` | `Today() workmonth.Date` | **JST（`Asia/Tokyo`）の当日**を返す（UC1 D-8）。実装は `driver`。interactor はこれを AC-4-7 の引数として渡す |
+| 6-5 | `Clock` | `Today() workmonth.Date` | **「当日」を返す**。基準タイムゾーンは `daily-record-entry.md` D-8 が持ち、本仕様は書き写さない（AC-13-1）。実装は `driver`。interactor はこれを AC-4-7 の引数として渡す |
 | 6-6 | ポートの数 | 上記4つ + 出力ポート（AC-7）に限る。**新しいポートの追加は設計変更**として扱い、本仕様を更新してから行う | ADR 0007「Fake の保守が手作業になる」 |
 
 ### AC-7. 入出力ポートと interactor
