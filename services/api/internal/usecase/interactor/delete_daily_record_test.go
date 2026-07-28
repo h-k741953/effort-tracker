@@ -336,6 +336,177 @@ func TestDeleteDailyRecord_SaveFailure(t *testing.T) {
 
 // ---- AC-5-2・AC-5-3 ------------------------------------------------------
 
+// ---- daily-record-entry.md AC-5-5・D-9／HTTP 契約 AC-5-8・AC-5-9・D-13（Issue #51） --
+
+// TestDeleteDailyRecord_RejectsDateOutOfMonth は、当該勤務月の年月に属さない対象日への
+// 削除が、勤務月の生成有無を問わず弾かれることを検証する
+// （daily-record-entry.md AC-5-5・D-9／HTTP 契約 AC-5-8・D-13／実装設計 AC-7-9）。
+//
+// 未生成の年月への削除は本来 200 no-op（HTTP 契約 AC-5-3・実装設計 AC-7-9 前段）だが、
+// 対象日が当該年月に属さない場合はその扱いより優先して弾く（HTTP 契約 D-13
+// 「未生成の年月への削除を 200 とする AC-5-3 の扱いより優先する」）。
+func TestDeleteDailyRecord_RejectsDateOutOfMonth(t *testing.T) {
+	tests := []struct {
+		name       string
+		generated  bool
+		deleteDate [3]int
+	}{
+		{name: "生成済みの勤務月で翌月初日は弾く（AC-5-5・D-9）", generated: true, deleteDate: [3]int{2026, 8, 1}},
+		{name: "生成済みの勤務月で前月末日は弾く（AC-5-5・D-9）", generated: true, deleteDate: [3]int{2026, 6, 30}},
+		{
+			name:       "未生成の年月でも翌月初日は弾く（生成有無によらない。AC-7-9・D-13）",
+			generated:  false,
+			deleteDate: [3]int{2026, 8, 1},
+		},
+		{
+			name:       "未生成の年月でも前月末日は弾く（生成有無によらない。AC-7-9・D-13）",
+			generated:  false,
+			deleteDate: [3]int{2026, 6, 30},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t, mustDate(t, 2026, 8, 15))
+			if tt.generated {
+				f.workMonths.put(reconstructWorkMonth(
+					t,
+					f.contractID,
+					f.yearMonth,
+					mustSettlementRange(t, 140, 180),
+					workmonth.StateDraft,
+					[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+				))
+			}
+
+			f.delete().Execute(context.Background(), port.DeleteDailyRecordInput{
+				Actor:      f.actor,
+				ContractID: f.contractID,
+				YearMonth:  f.yearMonth,
+				Date:       mustDate(t, tt.deleteDate[0], tt.deleteDate[1], tt.deleteDate[2]),
+			})
+
+			if err := f.output.onlyPresentedError(t); !errors.Is(err, workmonth.ErrDateOutOfMonth) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, workmonth.ErrDateOutOfMonth)", err)
+			}
+			if f.workMonths.saveCount != 0 {
+				t.Errorf("弾かれたのに Save が呼ばれた（回数 = %d, want 0）", f.workMonths.saveCount)
+			}
+			if tt.generated {
+				saved := f.workMonths.saved(t, f.contractID, f.yearMonth)
+				if len(saved.DailyRecords()) != 1 {
+					t.Errorf("弾かれたのに稼働実績が変化している（件数 = %d, want 1）", len(saved.DailyRecords()))
+				}
+			}
+		})
+	}
+}
+
+// TestDeleteDailyRecord_DateOutOfMonthJudgedLast は、当該年月外への削除（400 相当。
+// HTTP 契約 AC-9 の順 6「業務バリデーション」）が、認証・存在・認可・状態の判定より
+// 後に判定されることを検証する（HTTP 契約 AC-5-9・AC-9 判定順序表）。
+//
+// いずれのケースも削除対象日は当該年月外（2026-08-01）に固定し、他の条件が
+// ErrDateOutOfMonth より先に返ることを確認する。
+func TestDeleteDailyRecord_DateOutOfMonthJudgedLast(t *testing.T) {
+	dateOutOfMonth := [3]int{2026, 8, 1}
+
+	tests := []struct {
+		name                 string
+		actor                port.Actor
+		useUnknownContractID bool
+		generated            bool
+		state                workmonth.State
+		wantErr              error
+	}{
+		{
+			name:      "ゲストは 401 相当（ErrUnauthenticated）が先（AC-9 順1）",
+			actor:     guestActor(),
+			generated: true,
+			state:     workmonth.StateDraft,
+			wantErr:   port.ErrUnauthenticated,
+		},
+		{
+			name:      "未生成でもゲストは 401 相当が先（AC-9 順1）",
+			actor:     guestActor(),
+			generated: false,
+			wantErr:   port.ErrUnauthenticated,
+		},
+		{
+			name:                 "実在しない契約は 404 相当（ErrContractNotFound）が先（AC-9 順3）",
+			actor:                ownerActor(port.RoleEngineer),
+			useUnknownContractID: true,
+			wantErr:              port.ErrContractNotFound,
+		},
+		{
+			name:      "本人でなければ 403 相当（ErrNotOwner）が先（AC-9 順4）",
+			actor:     foreignActor(port.RoleEngineer),
+			generated: true,
+			state:     workmonth.StateDraft,
+			wantErr:   port.ErrNotOwner,
+		},
+		{
+			name:      "未生成でも本人でなければ 403 相当が先（AC-9 順4）",
+			actor:     foreignActor(port.RoleEngineer),
+			generated: false,
+			wantErr:   port.ErrNotOwner,
+		},
+		{
+			name:      "締め済（PendingApproval）は 409 相当（ErrNotEditable）が先（AC-9 順5）",
+			actor:     ownerActor(port.RoleEngineer),
+			generated: true,
+			state:     workmonth.StatePendingApproval,
+			wantErr:   workmonth.ErrNotEditable,
+		},
+		{
+			name:      "承認済（Approved）は 409 相当が先（AC-9 順5）",
+			actor:     ownerActor(port.RoleEngineer),
+			generated: true,
+			state:     workmonth.StateApproved,
+			wantErr:   workmonth.ErrNotEditable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t, mustDate(t, 2026, 8, 15))
+			contractID := f.contractID
+			if tt.useUnknownContractID {
+				contractID = mustContractID(t, "ctr-unknown")
+			}
+			if tt.generated {
+				f.workMonths.put(reconstructWorkMonth(
+					t,
+					f.contractID,
+					f.yearMonth,
+					mustSettlementRange(t, 140, 180),
+					tt.state,
+					[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+				))
+			}
+
+			f.delete().Execute(context.Background(), port.DeleteDailyRecordInput{
+				Actor:      tt.actor,
+				ContractID: contractID,
+				YearMonth:  f.yearMonth,
+				Date:       mustDate(t, dateOutOfMonth[0], dateOutOfMonth[1], dateOutOfMonth[2]),
+			})
+
+			err := f.output.onlyPresentedError(t)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, %v)", err, tt.wantErr)
+			}
+			if errors.Is(err, workmonth.ErrDateOutOfMonth) {
+				t.Fatalf("PresentError に渡されたエラー = %v が ErrDateOutOfMonth にも該当している。"+
+					"業務バリデーション（順6）より優先度の高い判定が先に返るべき（HTTP 契約 AC-9）", err)
+			}
+			if f.workMonths.saveCount != 0 {
+				t.Errorf("弾かれたのに Save が呼ばれた（回数 = %d, want 0）", f.workMonths.saveCount)
+			}
+		})
+	}
+}
+
 // TestDeleteDailyRecord_RejectsNotEditableState は Draft 以外の状態で削除を弾くことを検証する
 // （AC-5-2 締め済・AC-5-3 承認済）。
 func TestDeleteDailyRecord_RejectsNotEditableState(t *testing.T) {
