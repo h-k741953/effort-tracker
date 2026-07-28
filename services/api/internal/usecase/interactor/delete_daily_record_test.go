@@ -143,6 +143,194 @@ func TestDeleteDailyRecord_DoesNotGenerateWorkMonth(t *testing.T) {
 	}
 }
 
+// ---- 実装設計 AC-8-7（認証） ---------------------------------------------
+
+// TestDeleteDailyRecord_RejectsUnauthenticated は未認証（ゲスト）の削除を弾くことを検証する。
+// 実装設計 AC-8-7（更新操作はすべて弾く）／HTTP 契約 AC-1-6（401 UNAUTHENTICATED）。
+func TestDeleteDailyRecord_RejectsUnauthenticated(t *testing.T) {
+	tests := []struct {
+		name      string
+		actor     port.Actor
+		generated bool
+	}{
+		{name: "操作者ヘッダを持たないゲストは弾く（AC-8-7）", actor: guestActor(), generated: true},
+		{
+			name:      "識別子が本人と一致していても未認証なら弾く（AC-8-7）",
+			actor:     port.Actor{ID: testEngineerID, Role: port.RoleEngineer, Authenticated: false},
+			generated: true,
+		},
+		{name: "未生成の年月でも未認証は弾く（AC-8-7）", actor: guestActor(), generated: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t, mustDate(t, 2026, 8, 15))
+			if tt.generated {
+				f.workMonths.put(reconstructWorkMonth(
+					t,
+					f.contractID,
+					f.yearMonth,
+					mustSettlementRange(t, 140, 180),
+					workmonth.StateDraft,
+					[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+				))
+			}
+
+			f.delete().Execute(context.Background(), port.DeleteDailyRecordInput{
+				Actor:      tt.actor,
+				ContractID: f.contractID,
+				YearMonth:  f.yearMonth,
+				Date:       mustDate(t, 2026, 7, 1),
+			})
+
+			if err := f.output.onlyPresentedError(t); !errors.Is(err, port.ErrUnauthenticated) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrUnauthenticated)", err)
+			}
+			if f.workMonths.saveCount != 0 {
+				t.Errorf("未認証なのに Save が呼ばれた（回数 = %d, want 0）", f.workMonths.saveCount)
+			}
+			if tt.generated {
+				saved := f.workMonths.saved(t, f.contractID, f.yearMonth)
+				if len(saved.DailyRecords()) != 1 {
+					t.Errorf("未認証なのに稼働実績が削除されている（件数 = %d, want 1）", len(saved.DailyRecords()))
+				}
+			}
+		})
+	}
+}
+
+// ---- 実装設計 AC-8-1（認可） ---------------------------------------------
+
+// TestDeleteDailyRecord_Authorization は削除の認可を検証する。
+// 実装設計 AC-8-1（本人のみ。ロールは問わない）／HTTP 契約 AC-5-4（403 FORBIDDEN_NOT_OWNER）。
+//
+// **未生成の年月でも認可を判定する**（HTTP 契約 AC-5-4）。未生成判定より先に認可を置くのは、
+// 本人以外に「その年月が未生成である」ことを 200 で教えないためであり、
+// この順序が崩れると他人へ成功が返る。
+func TestDeleteDailyRecord_Authorization(t *testing.T) {
+	actors := []struct {
+		name    string
+		actor   port.Actor
+		wantErr error // nil なら許可
+	}{
+		{name: "本人（技術者ロール）は許可（AC-8-1）", actor: ownerActor(port.RoleEngineer)},
+		{name: "本人なら承認者ロールでも許可（AC-8-1）", actor: ownerActor(port.RoleApprover)},
+		{name: "他の技術者は弾く（HTTP AC-5-4）", actor: foreignActor(port.RoleEngineer), wantErr: port.ErrNotOwner},
+		{name: "他人が承認者ロールでも弾く（ロールは問わない。AC-8-1）", actor: foreignActor(port.RoleApprover), wantErr: port.ErrNotOwner},
+	}
+	states := []struct {
+		name      string
+		generated bool
+	}{
+		{name: "生成済みの勤務月", generated: true},
+		{name: "未生成の年月（HTTP AC-5-3・AC-5-4）", generated: false},
+	}
+
+	for _, ac := range actors {
+		for _, st := range states {
+			t.Run(ac.name+"/"+st.name, func(t *testing.T) {
+				f := newFixture(t, mustDate(t, 2026, 8, 15))
+				if st.generated {
+					f.workMonths.put(reconstructWorkMonth(
+						t,
+						f.contractID,
+						f.yearMonth,
+						mustSettlementRange(t, 140, 180),
+						workmonth.StateDraft,
+						[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+					))
+				}
+
+				f.delete().Execute(context.Background(), port.DeleteDailyRecordInput{
+					Actor:      ac.actor,
+					ContractID: f.contractID,
+					YearMonth:  f.yearMonth,
+					Date:       mustDate(t, 2026, 7, 1),
+				})
+
+				if ac.wantErr != nil {
+					if err := f.output.onlyPresentedError(t); !errors.Is(err, ac.wantErr) {
+						t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, %v)", err, ac.wantErr)
+					}
+					if f.workMonths.saveCount != 0 {
+						t.Errorf("認可で弾かれたのに Save が呼ばれた（回数 = %d, want 0）", f.workMonths.saveCount)
+					}
+					if st.generated {
+						saved := f.workMonths.saved(t, f.contractID, f.yearMonth)
+						if len(saved.DailyRecords()) != 1 {
+							t.Errorf("認可で弾かれたのに稼働実績が削除されている（件数 = %d, want 1）", len(saved.DailyRecords()))
+						}
+					}
+					return
+				}
+
+				output := f.output.onlyPresented(t)
+				if diff := cmp.Diff([]port.DailyRecordOutput{}, output.DailyRecords); diff != "" {
+					t.Errorf("削除後の稼働実績が不一致 (-want +got):\n%s", diff)
+				}
+				if output.Generated != st.generated {
+					t.Errorf("Generated = %v, want %v", output.Generated, st.generated)
+				}
+			})
+		}
+	}
+}
+
+// ---- 実装設計 AC-11-7・AC-11-11（対象の実在・想定外のエラー） -------------
+
+// TestDeleteDailyRecord_ContractNotFound は実在しない契約への削除を検証する
+// （HTTP 契約 AC-5-6。404 CONTRACT_NOT_FOUND）。
+func TestDeleteDailyRecord_ContractNotFound(t *testing.T) {
+	f := newFixture(t, mustDate(t, 2026, 8, 15))
+
+	f.delete().Execute(context.Background(), port.DeleteDailyRecordInput{
+		Actor:      f.actor,
+		ContractID: mustContractID(t, "ctr-unknown"),
+		YearMonth:  f.yearMonth,
+		Date:       mustDate(t, 2026, 7, 1),
+	})
+
+	if err := f.output.onlyPresentedError(t); !errors.Is(err, port.ErrContractNotFound) {
+		t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrContractNotFound)", err)
+	}
+	if f.workMonths.saveCount != 0 {
+		t.Errorf("契約が実在しないのに Save が呼ばれた（回数 = %d, want 0）", f.workMonths.saveCount)
+	}
+}
+
+// TestDeleteDailyRecord_SaveFailure は保存の失敗が出力ポートへ渡ることを検証する
+// （実装設計 AC-11-11／HTTP 契約 AC-9 の INTERNAL_ERROR）。
+func TestDeleteDailyRecord_SaveFailure(t *testing.T) {
+	f := newFixture(t, mustDate(t, 2026, 8, 15))
+	f.workMonths.put(reconstructWorkMonth(
+		t,
+		f.contractID,
+		f.yearMonth,
+		mustSettlementRange(t, 140, 180),
+		workmonth.StateDraft,
+		[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+	))
+	f.workMonths.saveErr = errSaveFailed
+
+	f.delete().Execute(context.Background(), port.DeleteDailyRecordInput{
+		Actor:      f.actor,
+		ContractID: f.contractID,
+		YearMonth:  f.yearMonth,
+		Date:       mustDate(t, 2026, 7, 1),
+	})
+
+	if err := f.output.onlyPresentedError(t); !errors.Is(err, errSaveFailed) {
+		t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, errSaveFailed)", err)
+	}
+	if f.workMonths.saveCount != 1 {
+		t.Errorf("Save の呼び出し回数 = %d, want 1（保存は試みられる）", f.workMonths.saveCount)
+	}
+	saved := f.workMonths.saved(t, f.contractID, f.yearMonth)
+	if len(saved.DailyRecords()) != 1 {
+		t.Errorf("保存に失敗したのに削除が反映されている（件数 = %d, want 1）", len(saved.DailyRecords()))
+	}
+}
+
 // ---- AC-5-2・AC-5-3 ------------------------------------------------------
 
 // TestDeleteDailyRecord_RejectsNotEditableState は Draft 以外の状態で削除を弾くことを検証する

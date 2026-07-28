@@ -29,19 +29,30 @@ func workMonthKey(contractID workmonth.ContractID, yearMonth workmonth.YearMonth
 	return fmt.Sprintf("%s|%04d-%02d", contractID.String(), yearMonth.Year(), yearMonth.Month())
 }
 
+// Find は保存済みの勤務月の**複製**を返す。実装（gateway）は行から集約を組み立てるため、
+// 呼び出し側が受け取った集約を変更しても Save を経ない限り保存済みの状態は変わらない。
+// 同じ性質を Fake でも再現しないと、「Save を呼ばずに反映されている」誤りを検知できない。
 func (f *fakeWorkMonthRepository) Find(_ context.Context, contractID workmonth.ContractID, yearMonth workmonth.YearMonth) (*workmonth.WorkMonth, error) {
 	target, ok := f.stored[workMonthKey(contractID, yearMonth)]
 	if !ok {
 		return nil, port.ErrWorkMonthNotFound
 	}
-	return target, nil
+	return workmonth.Reconstruct(
+		target.ContractID(),
+		target.YearMonth(),
+		target.SettlementRange(),
+		target.State(),
+		target.DailyRecords(),
+	)
 }
 
+// Save は保存を記録する。saveCount は「Save が呼ばれた回数」であり、
+// 失敗を注入した場合も回数に数える（呼ばれたか否かと成否を混同しないため）。
 func (f *fakeWorkMonthRepository) Save(_ context.Context, target *workmonth.WorkMonth) error {
+	f.saveCount++
 	if f.saveErr != nil {
 		return f.saveErr
 	}
-	f.saveCount++
 	f.stored[workMonthKey(target.ContractID(), target.YearMonth())] = target
 	return nil
 }
