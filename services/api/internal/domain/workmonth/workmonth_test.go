@@ -478,6 +478,221 @@ func TestWorkMonth_DeleteDailyRecord(t *testing.T) {
 	}
 }
 
+// ---- 実装設計 AC-2-4・AC-3-1・AC-3-2・AC-11-5 -----------------------------
+
+// TestNew_Invariants は新規生成時の不変条件を検証する。
+// 勤務月を一意にする値（契約 × 年月。実装設計 P-5）が不正なら生成させない
+// （AC-3-1 契約識別子／AC-3-2 対象年月／AC-11-5 ErrInvalidValue）。
+func TestNew_Invariants(t *testing.T) {
+	tests := []struct {
+		name       string
+		contractID workmonth.ContractID
+		yearMonth  workmonth.YearMonth
+		wantErr    error
+	}{
+		{
+			name:       "契約識別子と対象年月が妥当なら生成できる",
+			contractID: mustContractID(t, "ctr-0001"),
+			yearMonth:  mustYearMonth(t, 2026, 7),
+		},
+		{
+			name:       "ゼロ値の契約識別子（空文字）は弾く（AC-3-1）",
+			contractID: workmonth.ContractID{},
+			yearMonth:  mustYearMonth(t, 2026, 7),
+			wantErr:    workmonth.ErrInvalidValue,
+		},
+		{
+			name:       "ゼロ値の対象年月（月が範囲外）は弾く（AC-3-2）",
+			contractID: mustContractID(t, "ctr-0001"),
+			yearMonth:  workmonth.YearMonth{},
+			wantErr:    workmonth.ErrInvalidValue,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := workmonth.New(tt.contractID, tt.yearMonth, mustSettlementRange(t, 140, 180))
+
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("New のエラー = %v, want errors.Is(err, %v)", err, tt.wantErr)
+				}
+				if got != nil {
+					t.Errorf("不正な値から勤務月が生成されている: %+v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("New が予期しないエラーを返した: %v", err)
+			}
+			if got == nil {
+				t.Fatal("New が nil を返した")
+			}
+		})
+	}
+}
+
+// ---- 実装設計 AC-2-5・AC-2-6・AC-3-7・AC-11-5 -----------------------------
+
+// TestReconstruct_Invariants は永続化からの再構築時の不変条件を検証する（AC-2-5）。
+//
+// Reconstruct は adapter/gateway が集約を組み立てる唯一の入口であり、
+// ここを通り抜けた不正な値はそのまま集約の不変条件の破れになる。
+// 状態遷移の検査は行わない（保存済みの事実の復元であり遷移ではない。AC-2-5）が、
+// 値オブジェクトの妥当性（AC-3-1・AC-3-2・AC-3-7）と
+// 「対象日で一意」（AC-2-6）は検査する。
+func TestReconstruct_Invariants(t *testing.T) {
+	validContractID := mustContractID(t, "ctr-0001")
+	validYearMonth := mustYearMonth(t, 2026, 7)
+
+	tests := []struct {
+		name       string
+		contractID workmonth.ContractID
+		yearMonth  workmonth.YearMonth
+		state      workmonth.State
+		records    []workmonth.DailyRecord
+		wantErr    error
+	}{
+		{
+			name:       "下書きは復元できる",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.StateDraft,
+			records: []workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+		},
+		{
+			name:       "締め済は復元できる（状態遷移を検査しない。AC-2-5）",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.StatePendingApproval,
+			records: []workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+		},
+		{
+			name:       "承認済は復元できる（状態遷移を検査しない。AC-2-5）",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.StateApproved,
+			records: []workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+		},
+		{
+			name:       "実績0件でも復元できる",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.StateDraft,
+			records: nil,
+		},
+		{
+			name:       "定義に無い状態は弾く（AC-3-7）",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.State("Closed"),
+			wantErr: workmonth.ErrInvalidValue,
+		},
+		{
+			name:       "空の状態は弾く（AC-3-7）",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.State(""),
+			wantErr: workmonth.ErrInvalidValue,
+		},
+		{
+			name:       "大文字小文字が違う状態は弾く（AC-3-7 の英語名一致）",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.State("draft"),
+			wantErr: workmonth.ErrInvalidValue,
+		},
+		{
+			name:       "同一の対象日が2件あるものは弾く（AC-2-6）",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.StateDraft,
+			records: []workmonth.DailyRecord{
+				mustDailyRecord(t, 2026, 7, 1, 8, 0),
+				mustDailyRecord(t, 2026, 7, 1, 6, 30),
+			},
+			wantErr: workmonth.ErrInvalidValue,
+		},
+		{
+			name:       "重複が入力順で隣り合っていなくても弾く（AC-2-6）",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.StateDraft,
+			records: []workmonth.DailyRecord{
+				mustDailyRecord(t, 2026, 7, 1, 8, 0),
+				mustDailyRecord(t, 2026, 7, 20, 7, 0),
+				mustDailyRecord(t, 2026, 7, 1, 6, 30),
+			},
+			wantErr: workmonth.ErrInvalidValue,
+		},
+		{
+			name:       "対象日が重複していなければ復元できる（AC-2-6）",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.StateDraft,
+			records: []workmonth.DailyRecord{
+				mustDailyRecord(t, 2026, 7, 1, 8, 0),
+				mustDailyRecord(t, 2026, 7, 2, 7, 0),
+			},
+		},
+		{
+			name:       "ゼロ値の契約識別子（空文字）は弾く（AC-3-1・AC-11-5）",
+			contractID: workmonth.ContractID{}, yearMonth: validYearMonth, state: workmonth.StateDraft,
+			wantErr: workmonth.ErrInvalidValue,
+		},
+		{
+			name:       "ゼロ値の対象年月（月が範囲外）は弾く（AC-3-2・AC-11-5）",
+			contractID: validContractID, yearMonth: workmonth.YearMonth{}, state: workmonth.StateDraft,
+			wantErr: workmonth.ErrInvalidValue,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := workmonth.Reconstruct(
+				tt.contractID,
+				tt.yearMonth,
+				mustSettlementRange(t, 140, 180),
+				tt.state,
+				tt.records,
+			)
+
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Reconstruct のエラー = %v, want errors.Is(err, %v)", err, tt.wantErr)
+				}
+				if got != nil {
+					t.Errorf("不正な値から勤務月が復元されている: %+v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Reconstruct が予期しないエラーを返した: %v", err)
+			}
+			if got.State() != tt.state {
+				t.Errorf("State() = %q, want %q", got.State(), tt.state)
+			}
+			if len(got.DailyRecords()) != len(tt.records) {
+				t.Errorf("DailyRecords() の件数 = %d, want %d", len(got.DailyRecords()), len(tt.records))
+			}
+		})
+	}
+}
+
+// TestReconstruct_OrdersAndCopiesRecords は復元時に対象日の昇順へ整列すること（AC-2-6）と、
+// 呼び出し側が渡したスライスを書き換えないこと（AC-2-3。不変条件を集約の内側に閉じる）を検証する。
+func TestReconstruct_OrdersAndCopiesRecords(t *testing.T) {
+	given := []workmonth.DailyRecord{
+		mustDailyRecord(t, 2026, 7, 20, 8, 0),
+		mustDailyRecord(t, 2026, 7, 3, 7, 0),
+		mustDailyRecord(t, 2026, 7, 11, 6, 0),
+	}
+	before := viewOfRecords(given)
+
+	target, err := workmonth.Reconstruct(
+		mustContractID(t, "ctr-0001"),
+		mustYearMonth(t, 2026, 7),
+		mustSettlementRange(t, 140, 180),
+		workmonth.StateDraft,
+		given,
+	)
+	if err != nil {
+		t.Fatalf("Reconstruct が予期しないエラーを返した: %v", err)
+	}
+
+	want := []recordView{
+		{Date: "2026-07-03", Hours: 7, Minutes: 0},
+		{Date: "2026-07-11", Hours: 6, Minutes: 0},
+		{Date: "2026-07-20", Hours: 8, Minutes: 0},
+	}
+	if diff := cmp.Diff(want, viewOfRecords(target.DailyRecords())); diff != "" {
+		t.Errorf("復元後の DailyRecords() が対象日の昇順になっていない (-want +got):\n%s（AC-2-6）", diff)
+	}
+	if diff := cmp.Diff(before, viewOfRecords(given)); diff != "" {
+		t.Errorf("Reconstruct が呼び出し側のスライスを書き換えている (-want +got):\n%s（AC-2-3）", diff)
+	}
+}
+
 // ---- AC-6 ----------------------------------------------------------------
 
 // TestWorkMonth_TotalHours は総稼働時間の算出を検証する。

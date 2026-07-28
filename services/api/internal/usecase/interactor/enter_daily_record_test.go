@@ -21,10 +21,16 @@ import (
 //   - AC-5-2・AC-5-3（Draft 以外は弾く）
 
 const (
-	testContractID  = "ctr-0001"
-	testEngineerID  = "eng-0001"
-	testDisplayName = "サンプル株式会社 / 基幹システム保守"
+	testContractID = "ctr-0001"
+	testEngineerID = "eng-0001"
+	// testOtherEngineerID は当該契約の技術者ではない操作者の識別子。
+	testOtherEngineerID = "eng-9999"
+	testDisplayName     = "サンプル株式会社 / 基幹システム保守"
 )
+
+// errSaveFailed は永続化の失敗を注入するための番兵値。
+// 番兵として定義済みのいずれにも該当しないエラー（実装設計 AC-11-11）を表す。
+var errSaveFailed = errors.New("fake: save failed")
 
 // ---- テスト補助 ----------------------------------------------------------
 
@@ -119,6 +125,26 @@ func newFixture(t *testing.T, today workmonth.Date) *fixture {
 
 func (f *fixture) enter() *interactor.EnterDailyRecord {
 	return interactor.NewEnterDailyRecord(f.workMonths, f.contracts, f.clock, f.output)
+}
+
+// ---- 操作者（port.Actor）の組み立て --------------------------------------
+//
+// ゲストは「未認証の操作者」として表す。ロール値 Guest は存在しない
+// （実装設計 D-9・AC-8-7／HTTP 契約 AC-1-5）。
+
+// ownerActor は当該契約の技術者本人。
+func ownerActor(role port.Role) port.Actor {
+	return port.Actor{ID: testEngineerID, Role: role, Authenticated: true}
+}
+
+// foreignActor は当該契約の技術者ではない認証済みの操作者。
+func foreignActor(role port.Role) port.Actor {
+	return port.Actor{ID: testOtherEngineerID, Role: role, Authenticated: true}
+}
+
+// guestActor は操作者ヘッダを持たないゲスト（HTTP 契約 AC-1-6）。
+func guestActor() port.Actor {
+	return port.Actor{Authenticated: false}
 }
 
 // reconstructWorkMonth は保存済みの勤務月を組み立てる（前提投入用）。
@@ -451,6 +477,292 @@ func TestEnterDailyRecord_RejectsNotEditableState(t *testing.T) {
 				t.Errorf("弾かれたのに稼働実績が変化している（件数 = %d, want 1）", len(saved.DailyRecords()))
 			}
 		})
+	}
+}
+
+// ---- 実装設計 AC-8-7（認証） ---------------------------------------------
+
+// TestEnterDailyRecord_RejectsUnauthenticated は未認証（ゲスト）の入力を弾くことを検証する。
+// 実装設計 AC-8-7（更新操作はすべて弾く）／HTTP 契約 AC-1-6（401 UNAUTHENTICATED）。
+// 認証は判定順序の1番目であり、対象の実在（3）より先に判定する（HTTP 契約 AC-9）。
+func TestEnterDailyRecord_RejectsUnauthenticated(t *testing.T) {
+	tests := []struct {
+		name       string
+		actor      port.Actor
+		contractID string // 空なら fixture の契約
+	}{
+		{
+			name:  "操作者ヘッダを持たないゲストは弾く（AC-8-7）",
+			actor: guestActor(),
+		},
+		{
+			name:  "識別子が本人と一致していても未認証なら弾く（AC-8-7）",
+			actor: port.Actor{ID: testEngineerID, Role: port.RoleEngineer, Authenticated: false},
+		},
+		{
+			name:       "契約が実在しなくても認証を先に判定する（判定順序 1 → 3）",
+			actor:      guestActor(),
+			contractID: "ctr-unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t, mustDate(t, 2026, 7, 10))
+			contractID := f.contractID
+			if tt.contractID != "" {
+				contractID = mustContractID(t, tt.contractID)
+			}
+
+			f.enter().Execute(context.Background(), port.EnterDailyRecordInput{
+				Actor:      tt.actor,
+				ContractID: contractID,
+				YearMonth:  f.yearMonth,
+				Date:       mustDate(t, 2026, 7, 1),
+				Hours:      8,
+				Minutes:    0,
+			})
+
+			if err := f.output.onlyPresentedError(t); !errors.Is(err, port.ErrUnauthenticated) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrUnauthenticated)", err)
+			}
+			if f.workMonths.saveCount != 0 {
+				t.Errorf("未認証なのに Save が呼ばれた（回数 = %d, want 0）", f.workMonths.saveCount)
+			}
+			if len(f.workMonths.stored) != 0 {
+				t.Errorf("未認証なのに勤務月が生成されている（件数 = %d, want 0）", len(f.workMonths.stored))
+			}
+		})
+	}
+}
+
+// ---- 実装設計 AC-8-1（認可） ---------------------------------------------
+
+// TestEnterDailyRecord_Authorization は入力・編集の認可を検証する。
+// 実装設計 AC-8-1（本人のみ。ロールは問わない）／HTTP 契約 AC-4-3
+// （本人でなければ 403 FORBIDDEN_NOT_OWNER。本人であれば Approver でも許可）。
+//
+// 未生成の年月（暗黙生成の経路）でも同じ判定になることを併せて固定する。
+func TestEnterDailyRecord_Authorization(t *testing.T) {
+	actors := []struct {
+		name    string
+		actor   port.Actor
+		wantErr error // nil なら許可
+	}{
+		{name: "本人（技術者ロール）は許可（AC-8-1）", actor: ownerActor(port.RoleEngineer)},
+		{name: "本人なら承認者ロールでも許可（AC-8-1・HTTP AC-4-3）", actor: ownerActor(port.RoleApprover)},
+		{name: "他の技術者は弾く（HTTP AC-4-3）", actor: foreignActor(port.RoleEngineer), wantErr: port.ErrNotOwner},
+		{name: "他人が承認者ロールでも弾く（ロールは問わない。AC-8-1）", actor: foreignActor(port.RoleApprover), wantErr: port.ErrNotOwner},
+	}
+	states := []struct {
+		name      string
+		generated bool
+	}{
+		{name: "生成済みの勤務月", generated: true},
+		{name: "未生成の年月（暗黙生成の経路）", generated: false},
+	}
+
+	for _, ac := range actors {
+		for _, st := range states {
+			t.Run(ac.name+"/"+st.name, func(t *testing.T) {
+				f := newFixture(t, mustDate(t, 2026, 8, 15))
+				if st.generated {
+					f.workMonths.put(reconstructWorkMonth(
+						t,
+						f.contractID,
+						f.yearMonth,
+						mustSettlementRange(t, 140, 180),
+						workmonth.StateDraft,
+						[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+					))
+				}
+
+				f.enter().Execute(context.Background(), port.EnterDailyRecordInput{
+					Actor:      ac.actor,
+					ContractID: f.contractID,
+					YearMonth:  f.yearMonth,
+					Date:       mustDate(t, 2026, 7, 2),
+					Hours:      7,
+					Minutes:    30,
+				})
+
+				if ac.wantErr != nil {
+					if err := f.output.onlyPresentedError(t); !errors.Is(err, ac.wantErr) {
+						t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, %v)", err, ac.wantErr)
+					}
+					if f.workMonths.saveCount != 0 {
+						t.Errorf("認可で弾かれたのに Save が呼ばれた（回数 = %d, want 0）", f.workMonths.saveCount)
+					}
+					if st.generated {
+						saved := f.workMonths.saved(t, f.contractID, f.yearMonth)
+						if len(saved.DailyRecords()) != 1 {
+							t.Errorf("認可で弾かれたのに稼働実績が変化している（件数 = %d, want 1）", len(saved.DailyRecords()))
+						}
+						return
+					}
+					if len(f.workMonths.stored) != 0 {
+						t.Errorf("認可で弾かれたのに勤務月が生成されている（件数 = %d, want 0）", len(f.workMonths.stored))
+					}
+					return
+				}
+
+				output := f.output.onlyPresented(t)
+				if f.workMonths.saveCount != 1 {
+					t.Errorf("Save の呼び出し回数 = %d, want 1", f.workMonths.saveCount)
+				}
+				want := port.DailyRecordOutput{
+					Date:                "2026-07-02",
+					WorkingHours:        port.Hours{Hours: 7, Minutes: 30},
+					RoundedWorkingHours: port.Hours{Hours: 7, Minutes: 30},
+				}
+				got := output.DailyRecords[len(output.DailyRecords)-1]
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("許可された入力が反映されていない (-want +got):\n%s", diff)
+				}
+			})
+		}
+	}
+}
+
+// ---- 判定順序（HTTP 契約 AC-9） ------------------------------------------
+
+// TestEnterDailyRecord_JudgementOrder は複数の条件に該当する入力で
+// 「先に該当したもの」が返ることを検証する（HTTP 契約 AC-9 の判定順序表・実装設計 AC-7-7）。
+//
+//	4 認可 → 5 状態 → 6 業務バリデーション（値域・未来日・当該月外）
+//
+// 状態を値域より先に判定するため、締め済の勤務月へ値域外の稼働時間を送っても
+// 400 WORKING_HOURS_OUT_OF_RANGE ではなく 409 WORK_MONTH_NOT_EDITABLE になる
+// （HTTP 契約 AC-4-4 / AC-4-5）。
+func TestEnterDailyRecord_JudgementOrder(t *testing.T) {
+	tests := []struct {
+		name    string
+		actor   port.Actor
+		state   workmonth.State
+		date    [3]int
+		hours   int
+		minutes int
+		wantErr error
+	}{
+		{
+			name:  "状態(5)は値域(6)より先 — 締め済へ24時間1分",
+			actor: ownerActor(port.RoleEngineer), state: workmonth.StatePendingApproval,
+			date: [3]int{2026, 7, 2}, hours: 24, minutes: 1,
+			wantErr: workmonth.ErrNotEditable,
+		},
+		{
+			name:  "状態(5)は値域(6)より先 — 締め済へ分が60",
+			actor: ownerActor(port.RoleEngineer), state: workmonth.StatePendingApproval,
+			date: [3]int{2026, 7, 2}, hours: 8, minutes: 60,
+			wantErr: workmonth.ErrNotEditable,
+		},
+		{
+			name:  "状態(5)は未来日(6)より先 — 承認済へ未来日",
+			actor: ownerActor(port.RoleEngineer), state: workmonth.StateApproved,
+			date: [3]int{2026, 7, 31}, hours: 8,
+			wantErr: workmonth.ErrNotEditable,
+		},
+		{
+			name:  "状態(5)は当該月外(6)より先 — 承認済へ翌月の日",
+			actor: ownerActor(port.RoleEngineer), state: workmonth.StateApproved,
+			date: [3]int{2026, 8, 1}, hours: 8,
+			wantErr: workmonth.ErrNotEditable,
+		},
+		{
+			name:  "認可(4)は状態(5)より先 — 他人が締め済へ入力",
+			actor: foreignActor(port.RoleApprover), state: workmonth.StatePendingApproval,
+			date: [3]int{2026, 7, 2}, hours: 8,
+			wantErr: port.ErrNotOwner,
+		},
+		{
+			name:  "認可(4)は値域(6)より先 — 他人が下書きへ24時間1分",
+			actor: foreignActor(port.RoleEngineer), state: workmonth.StateDraft,
+			date: [3]int{2026, 7, 2}, hours: 24, minutes: 1,
+			wantErr: port.ErrNotOwner,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// 「当日」は 2026-07-10。2026-07-31 は未来日にあたる。
+			f := newFixture(t, mustDate(t, 2026, 7, 10))
+			f.workMonths.put(reconstructWorkMonth(
+				t,
+				f.contractID,
+				f.yearMonth,
+				mustSettlementRange(t, 140, 180),
+				tt.state,
+				[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+			))
+
+			f.enter().Execute(context.Background(), port.EnterDailyRecordInput{
+				Actor:      tt.actor,
+				ContractID: f.contractID,
+				YearMonth:  f.yearMonth,
+				Date:       mustDate(t, tt.date[0], tt.date[1], tt.date[2]),
+				Hours:      tt.hours,
+				Minutes:    tt.minutes,
+			})
+
+			if err := f.output.onlyPresentedError(t); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, %v)", err, tt.wantErr)
+			}
+			if f.workMonths.saveCount != 0 {
+				t.Errorf("弾かれたのに Save が呼ばれた（回数 = %d, want 0）", f.workMonths.saveCount)
+			}
+		})
+	}
+}
+
+// ---- 実装設計 AC-11-7・AC-11-11（対象の実在・想定外のエラー） -------------
+
+// TestEnterDailyRecord_ContractNotFound は実在しない契約への入力を検証する
+// （HTTP 契約 AC-4-11。404 CONTRACT_NOT_FOUND）。
+func TestEnterDailyRecord_ContractNotFound(t *testing.T) {
+	f := newFixture(t, mustDate(t, 2026, 7, 10))
+
+	f.enter().Execute(context.Background(), port.EnterDailyRecordInput{
+		Actor:      f.actor,
+		ContractID: mustContractID(t, "ctr-unknown"),
+		YearMonth:  f.yearMonth,
+		Date:       mustDate(t, 2026, 7, 1),
+		Hours:      8,
+	})
+
+	if err := f.output.onlyPresentedError(t); !errors.Is(err, port.ErrContractNotFound) {
+		t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrContractNotFound)", err)
+	}
+	if f.workMonths.saveCount != 0 {
+		t.Errorf("契約が実在しないのに Save が呼ばれた（回数 = %d, want 0）", f.workMonths.saveCount)
+	}
+	if len(f.workMonths.stored) != 0 {
+		t.Errorf("契約が実在しないのに勤務月が生成されている（件数 = %d, want 0）", len(f.workMonths.stored))
+	}
+}
+
+// TestEnterDailyRecord_SaveFailure は保存の失敗が出力ポートへ渡ることを検証する。
+// 番兵として定義済みのいずれにも該当しないエラーはそのまま伝播させ、interactor で握り潰さない
+// （実装設計 AC-11-11／HTTP 契約 AC-9 の INTERNAL_ERROR）。
+func TestEnterDailyRecord_SaveFailure(t *testing.T) {
+	f := newFixture(t, mustDate(t, 2026, 7, 10))
+	f.workMonths.saveErr = errSaveFailed
+
+	f.enter().Execute(context.Background(), port.EnterDailyRecordInput{
+		Actor:      f.actor,
+		ContractID: f.contractID,
+		YearMonth:  f.yearMonth,
+		Date:       mustDate(t, 2026, 7, 1),
+		Hours:      8,
+	})
+
+	if err := f.output.onlyPresentedError(t); !errors.Is(err, errSaveFailed) {
+		t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, errSaveFailed)", err)
+	}
+	if f.workMonths.saveCount != 1 {
+		t.Errorf("Save の呼び出し回数 = %d, want 1（保存は試みられる）", f.workMonths.saveCount)
+	}
+	if len(f.workMonths.stored) != 0 {
+		t.Errorf("保存に失敗したのに勤務月が残っている（件数 = %d, want 0）", len(f.workMonths.stored))
 	}
 }
 
