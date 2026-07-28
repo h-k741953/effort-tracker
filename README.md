@@ -130,6 +130,7 @@ ADR は Nygard 形式。**書き換えず、覆すときは新しい ADR で置�
 | [0014](docs/adr/0014-execution-role-over-vercel-oidc.md) | Vercel OIDC Federation を廃止し、BFF Lambda の実行ロールで AWS を呼ぶ | 人間 |
 | [0015](docs/adr/0015-claude-design-for-design-system.md) | フロントエンドのデザインシステムに Claude Design を採用する | 人間 |
 | [0016](docs/adr/0016-cognito-end-user-authentication.md) | エンドユーザー認証に Amazon Cognito を採用する | 人間 |
+| [0017](docs/adr/0017-pgx-as-postgres-driver.md) | Postgres ドライバに pgx を採用する | 人間 |
 
 **すべて人間が決定者である。** これは偶然ではなく、`CLAUDE.md` が「技術選定の変更（ADR が必要な判断）」を人間の責務に置いているためである。AI が単独で「承認済み」の ADR を起票することを禁じている。
 
