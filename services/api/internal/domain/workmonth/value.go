@@ -144,16 +144,18 @@ func NewWorkingHours(hours, minutes int) (WorkingHours, error) {
 		return WorkingHours{}, fmt.Errorf("%w: hours %d must not be negative", ErrWorkingHoursOutOfRange, hours)
 	}
 	if minutes < 0 || minutes >= minutesPerHour {
-		return WorkingHours{}, fmt.Errorf("%w: minutes %d must be in 0..59", ErrWorkingHoursOutOfRange, minutes)
+		return WorkingHours{}, fmt.Errorf(
+			"%w: minutes %d must be in 0..%d", ErrWorkingHoursOutOfRange, minutes, minutesPerHour-1,
+		)
 	}
 	return WorkingHours{minutes: hours*minutesPerHour + minutes}, nil
 }
 
 // Hours は時の部分を返す。
-func (w WorkingHours) Hours() int { return w.minutes / 60 }
+func (w WorkingHours) Hours() int { return w.minutes / minutesPerHour }
 
-// Minutes は分の部分（0〜59）を返す。
-func (w WorkingHours) Minutes() int { return w.minutes % 60 }
+// Minutes は分の部分を返す。値域の出典は NewWorkingHours と同じ。
+func (w WorkingHours) Minutes() int { return w.minutes % minutesPerHour }
 
 // TotalMinutes は合計を分で返す。
 func (w WorkingHours) TotalMinutes() int { return w.minutes }
