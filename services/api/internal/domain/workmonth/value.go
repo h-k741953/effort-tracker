@@ -181,6 +181,10 @@ type DailyRecord struct {
 
 // NewDailyRecord は稼働実績を構築する。
 // 稼働時間が 0時間0分以上 24時間0分以下でなければ ErrWorkingHoursOutOfRange。
+//
+// 下限（`< 0`）の分岐は構造上到達しない。WorkingHours は非公開フィールドで
+// NewWorkingHours が負を弾き、ゼロ値も加算も切り捨ても非負を保つため、負の
+// WorkingHours は構築できない。値域の対称性を残すための防御であり、テスト不足ではない。
 func NewDailyRecord(date Date, workingHours WorkingHours) (DailyRecord, error) {
 	if workingHours.TotalMinutes() < 0 || workingHours.TotalMinutes() > maxDailyMinutes {
 		return DailyRecord{}, fmt.Errorf(
