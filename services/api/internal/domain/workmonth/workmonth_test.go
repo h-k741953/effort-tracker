@@ -415,6 +415,111 @@ func TestWorkMonth_DeleteDailyRecord_StateRestriction(t *testing.T) {
 	}
 }
 
+// ---- AC-5-5・D-9（Issue #51, 2026-07-28 人間確定） -----------------------
+
+// TestWorkMonth_DeleteDailyRecord_DateOutOfMonth は、当該勤務月の年月に属さない
+// 対象日への削除を弾くことを検証する（daily-record-entry.md AC-5-5・D-9。
+// 実装設計 AC-4-2・AC-3-11）。
+//
+// 「当該日にレコードがあるか否かを問わず弾く」（AC-5-5）を、集約が既に保持している
+// 他の日のレコードの有無を変えて検証する。対象日自体（年月外）にレコードを持たせる
+// ことはできない。「すべての対象日が当該年月に属する」という不変条件（AC-2-6）により、
+// 年月外の対象日は構造上レコードを持ち得ないため。
+func TestWorkMonth_DeleteDailyRecord_DateOutOfMonth(t *testing.T) {
+	tests := []struct {
+		name       string
+		existing   []workmonth.DailyRecord
+		deleteDate workmonth.Date
+	}{
+		{
+			name:       "レコードが1件も無くても前月末日の削除は弾く（AC-5-5・D-9）",
+			existing:   nil,
+			deleteDate: mustDate(t, 2026, 6, 30),
+		},
+		{
+			name:       "レコードが1件も無くても翌月初日の削除は弾く（AC-5-5・D-9）",
+			existing:   nil,
+			deleteDate: mustDate(t, 2026, 8, 1),
+		},
+		{
+			name: "当該年月に他のレコードがあっても翌月初日の削除は弾く（AC-5-5・D-9）",
+			existing: []workmonth.DailyRecord{
+				mustDailyRecord(t, 2026, 7, 1, 8, 0),
+			},
+			deleteDate: mustDate(t, 2026, 8, 1),
+		},
+		{
+			name:       "同じ月でも年が違えば弾く（AC-5-5・D-9）",
+			existing:   nil,
+			deleteDate: mustDate(t, 2025, 7, 15),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := mustReconstructWorkMonth(t, workmonth.StateDraft, tt.existing)
+
+			err := target.DeleteDailyRecord(tt.deleteDate)
+
+			if !errors.Is(err, workmonth.ErrDateOutOfMonth) {
+				t.Fatalf("DeleteDailyRecord のエラー = %v, want errors.Is(err, ErrDateOutOfMonth)（AC-5-5・D-9）", err)
+			}
+			if diff := cmp.Diff(viewOfRecords(tt.existing), viewOfRecords(target.DailyRecords())); diff != "" {
+				t.Errorf("弾かれたのに稼働実績が変化している (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestWorkMonth_DeleteDailyRecord_StateCheckedBeforeDateOutOfMonth は、
+// DeleteDailyRecord の検査順序が「①状態 → ②当該年月に属するか」であることを検証する
+// （実装設計 AC-4-2。docs/specs/domain-api-http-contract.md AC-9 の順 5 → 順 6 と一致させる）。
+//
+// Draft 以外の状態で当該年月外の対象日を削除しようとしても、ErrDateOutOfMonth ではなく
+// ErrNotEditable が先に返ることを固定する。
+func TestWorkMonth_DeleteDailyRecord_StateCheckedBeforeDateOutOfMonth(t *testing.T) {
+	existing := []workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)}
+	dateOutOfMonth := mustDate(t, 2026, 8, 1)
+
+	tests := []struct {
+		name    string
+		state   workmonth.State
+		wantErr error
+	}{
+		{
+			name:    "下書きなら年月外の判定に進み ErrDateOutOfMonth（AC-4-2 順②）",
+			state:   workmonth.StateDraft,
+			wantErr: workmonth.ErrDateOutOfMonth,
+		},
+		{
+			name:    "締め済は年月外でもまず状態で弾く（AC-4-2 順①優先）",
+			state:   workmonth.StatePendingApproval,
+			wantErr: workmonth.ErrNotEditable,
+		},
+		{
+			name:    "承認済は年月外でもまず状態で弾く（AC-4-2 順①優先）",
+			state:   workmonth.StateApproved,
+			wantErr: workmonth.ErrNotEditable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := mustReconstructWorkMonth(t, tt.state, existing)
+
+			err := target.DeleteDailyRecord(dateOutOfMonth)
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("DeleteDailyRecord のエラー = %v, want errors.Is(err, %v)", err, tt.wantErr)
+			}
+			if tt.wantErr == workmonth.ErrNotEditable && errors.Is(err, workmonth.ErrDateOutOfMonth) {
+				t.Fatalf("DeleteDailyRecord のエラー = %v が ErrDateOutOfMonth にも該当している。"+
+					"状態の検査（①）が年月外の判定（②）より先であるべき（AC-4-2）", err)
+			}
+		})
+	}
+}
+
 // ---- AC-5-4 --------------------------------------------------------------
 
 // TestWorkMonth_DeleteDailyRecord は下書きでの削除の振る舞いを検証する。
@@ -616,6 +721,36 @@ func TestReconstruct_Invariants(t *testing.T) {
 			},
 		},
 		{
+			// AC-2-5: 「すべての対象日が当該年月に属する」（AC-2-1・AC-2-6）の違反は
+			// ErrInvalidValue で弾く。利用者の要求に対する ErrDateOutOfMonth
+			// （AC-11-2）とは番兵を使い分ける（Reconstruct は保存済みの事実を
+			// 復元する操作であり、遷移でも利用者の要求でもないため）。
+			name:       "翌月初日を含む行は弾く（AC-2-1・AC-2-5・AC-2-6・AC-3-11）",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.StateDraft,
+			records: []workmonth.DailyRecord{
+				mustDailyRecord(t, 2026, 8, 1, 8, 0),
+			},
+			wantErr: workmonth.ErrInvalidValue,
+		},
+		{
+			name:       "前月末日を含む行は弾く（AC-2-1・AC-2-5・AC-2-6・AC-3-11）",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.StateDraft,
+			records: []workmonth.DailyRecord{
+				mustDailyRecord(t, 2026, 6, 30, 8, 0),
+			},
+			wantErr: workmonth.ErrInvalidValue,
+		},
+		{
+			// 当該年月に属する行と属さない行が混在していても、1件でも違反があれば弾く。
+			name:       "当該年月に属する行と属さない行が混在していても弾く（AC-2-1・AC-2-5・AC-2-6）",
+			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.StateDraft,
+			records: []workmonth.DailyRecord{
+				mustDailyRecord(t, 2026, 7, 1, 8, 0),
+				mustDailyRecord(t, 2026, 8, 1, 7, 0),
+			},
+			wantErr: workmonth.ErrInvalidValue,
+		},
+		{
 			name:       "ゼロ値の契約識別子（空文字）は弾く（AC-3-1・AC-11-5）",
 			contractID: workmonth.ContractID{}, yearMonth: validYearMonth, state: workmonth.StateDraft,
 			wantErr: workmonth.ErrInvalidValue,
@@ -656,6 +791,32 @@ func TestReconstruct_Invariants(t *testing.T) {
 				t.Errorf("DailyRecords() の件数 = %d, want %d", len(got.DailyRecords()), len(tt.records))
 			}
 		})
+	}
+}
+
+// TestReconstruct_DateOutOfMonthUsesInvalidValueNotDateOutOfMonth は、
+// 「対象日が当該年月に属さない」という同じ種類の違反であっても、
+// Reconstruct では ErrDateOutOfMonth ではなく ErrInvalidValue を返すことを検証する
+// （実装設計 AC-2-5・AC-3-11、AC-11-2「Reconstruct は ErrInvalidValue」）。
+//
+// ErrDateOutOfMonth は利用者の要求（EnterDailyRecord・DeleteDailyRecord）に対する
+// 判定であり、Reconstruct は保存済みの事実を復元する操作であって利用者の要求では
+// ないため、番兵を使い分ける。
+func TestReconstruct_DateOutOfMonthUsesInvalidValueNotDateOutOfMonth(t *testing.T) {
+	_, err := workmonth.Reconstruct(
+		mustContractID(t, "ctr-0001"),
+		mustYearMonth(t, 2026, 7),
+		mustSettlementRange(t, 140, 180),
+		workmonth.StateDraft,
+		[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 8, 1, 8, 0)},
+	)
+
+	if !errors.Is(err, workmonth.ErrInvalidValue) {
+		t.Fatalf("Reconstruct のエラー = %v, want errors.Is(err, ErrInvalidValue)（AC-2-5・AC-11-2）", err)
+	}
+	if errors.Is(err, workmonth.ErrDateOutOfMonth) {
+		t.Fatalf("Reconstruct のエラー = %v が ErrDateOutOfMonth に該当している。"+
+			"Reconstruct は利用者の要求ではないため ErrDateOutOfMonth を使わない（AC-2-5・AC-11-2）", err)
 	}
 }
 
