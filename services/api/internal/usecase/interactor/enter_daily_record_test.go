@@ -148,6 +148,10 @@ func guestActor() port.Actor {
 }
 
 // reconstructWorkMonth は保存済みの勤務月を組み立てる（前提投入用）。
+//
+// 確定済みの超過／不足（実装設計 AC-2-5・AC-5-9）は常に nil を渡す。UC1 の
+// テストは超過／不足そのものを検証する目的では使わない（UC2 の締めに関する
+// テストは domain/workmonth と interactor/close_work_month_test.go が持つ）。
 func reconstructWorkMonth(
 	t *testing.T,
 	contractID workmonth.ContractID,
@@ -157,7 +161,7 @@ func reconstructWorkMonth(
 	records []workmonth.DailyRecord,
 ) *workmonth.WorkMonth {
 	t.Helper()
-	target, err := workmonth.Reconstruct(contractID, yearMonth, settlement, state, records)
+	target, err := workmonth.Reconstruct(contractID, yearMonth, settlement, state, records, nil, nil)
 	if err != nil {
 		t.Fatalf("前提の構築に失敗: Reconstruct: %v", err)
 	}

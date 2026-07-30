@@ -32,18 +32,34 @@ func workMonthKey(contractID workmonth.ContractID, yearMonth workmonth.YearMonth
 // Find は保存済みの勤務月の**複製**を返す。実装（gateway）は行から集約を組み立てるため、
 // 呼び出し側が受け取った集約を変更しても Save を経ない限り保存済みの状態は変わらない。
 // 同じ性質を Fake でも再現しないと、「Save を呼ばずに反映されている」誤りを検知できない。
+//
+// 確定済みの超過／不足も複製へ引き継ぐ（実装設計 AC-12-7）。引き継がないと
+// 締め済・承認済の勤務月が未確定として復元され、テストが実装より弱くなる。
 func (f *fakeWorkMonthRepository) Find(_ context.Context, contractID workmonth.ContractID, yearMonth workmonth.YearMonth) (*workmonth.WorkMonth, error) {
 	target, ok := f.stored[workMonthKey(contractID, yearMonth)]
 	if !ok {
 		return nil, port.ErrWorkMonthNotFound
 	}
+	excess, excessOK := target.Excess()
+	shortfall, shortfallOK := target.Shortfall()
 	return workmonth.Reconstruct(
 		target.ContractID(),
 		target.YearMonth(),
 		target.SettlementRange(),
 		target.State(),
 		target.DailyRecords(),
+		workingHoursPointer(excess, excessOK),
+		workingHoursPointer(shortfall, shortfallOK),
 	)
+}
+
+// workingHoursPointer は (WorkingHours, bool) の組を Reconstruct が受け取る
+// *WorkingHours へ変換する。未確定（ok=false）なら nil。
+func workingHoursPointer(w workmonth.WorkingHours, ok bool) *workmonth.WorkingHours {
+	if !ok {
+		return nil
+	}
+	return &w
 }
 
 // Save は保存を記録する。saveCount は「Save が呼ばれた回数」であり、
