@@ -76,6 +76,15 @@ type DeleteDailyRecordInput struct {
 	Date       workmonth.Date
 }
 
+// CloseWorkMonthInput は月次締めの入力 DTO（実装設計 AC-7-10）。
+// 対象日も稼働時間も持たない（締めの HTTP 要求はボディを取らない。
+// docs/specs/domain-api-http-contract.md AC-6-8）。
+type CloseWorkMonthInput struct {
+	Actor      Actor
+	ContractID workmonth.ContractID
+	YearMonth  workmonth.YearMonth
+}
+
 // Hours は時分の素の値（AC-7-4）。
 type Hours struct {
 	Hours   int

@@ -19,4 +19,8 @@ var (
 
 	// ErrInvalidValue は値オブジェクトの構築に失敗したことを表す。
 	ErrInvalidValue = errors.New("workmonth: invalid value")
+
+	// ErrNotClosable は Draft 以外の状態で締めようとしたことを表す
+	// （二重締め・終端状態からの締め。monthly-closing.md AC-1-2・AC-1-3）。
+	ErrNotClosable = errors.New("workmonth: work month is not closable")
 )

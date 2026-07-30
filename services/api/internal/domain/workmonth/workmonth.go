@@ -19,6 +19,10 @@ type WorkMonth struct {
 	settlementRange SettlementRange
 	state           State
 	dailyRecords    []DailyRecord
+	// excess・shortfall は締め（Close）で確定する超過／不足（実装設計 AC-2-5・AC-5-9）。
+	// nil は未確定（Draft）を表す。
+	excess    *WorkingHours
+	shortfall *WorkingHours
 }
 
 // New は勤務月を新規生成する。初期状態は Draft（AC-2-4）。
@@ -46,12 +50,20 @@ func New(contractID ContractID, yearMonth YearMonth, settlementRange SettlementR
 // DeleteDailyRecord）では作られない行に対する防御であり、利用者の要求の不正では
 // ないため、`ErrDateOutOfMonth` ではなく `ErrInvalidValue` で失敗させる
 // （AC-3-11。Issue #51、2026-07-28 に人間が確定）。
+//
+// excess・shortfall は確定済みの超過／不足（AC-5-9）。未確定は nil。
+// 受け取った値と状態の整合（例: Draft なのに値がある／締め済なのに値が無い）を
+// 検査するかどうかは Q-1 として人間へ確定を待っている未決の論点であり
+// （実装設計「人間の決定を待っている論点」Q-1、2026-07-30）、確定するまで
+// 3つ目の不変条件を足さない。受け取った値はそのまま複写して保持する。
 func Reconstruct(
 	contractID ContractID,
 	yearMonth YearMonth,
 	settlementRange SettlementRange,
 	state State,
 	dailyRecords []DailyRecord,
+	excess *WorkingHours,
+	shortfall *WorkingHours,
 ) (*WorkMonth, error) {
 	if err := validateIdentity(contractID, yearMonth); err != nil {
 		return nil, err
@@ -93,7 +105,20 @@ func Reconstruct(
 		settlementRange: settlementRange,
 		state:           state,
 		dailyRecords:    records,
+		excess:          copyWorkingHoursPointer(excess),
+		shortfall:       copyWorkingHoursPointer(shortfall),
 	}, nil
+}
+
+// copyWorkingHoursPointer は *WorkingHours を値として複写する。呼び出し側が
+// 引数に渡したポインタの参照先を後から書き換えても集約が影響を受けないようにする
+// （AC-2-3・AC-5-9）。nil はそのまま nil を返す（未確定）。
+func copyWorkingHoursPointer(w *WorkingHours) *WorkingHours {
+	if w == nil {
+		return nil
+	}
+	copied := *w
+	return &copied
 }
 
 // validateIdentity は勤務月を一意にする値（契約 × 年月）の妥当性を検査する。
@@ -134,6 +159,59 @@ func (w *WorkMonth) DailyRecords() []DailyRecord {
 	records := make([]DailyRecord, len(w.dailyRecords))
 	copy(records, w.dailyRecords)
 	return records
+}
+
+// Excess は確定済みの超過を返す。第2戻り値は確定済みか（AC-5-7）。
+// 未確定（Draft）の間は第1戻り値をゼロ値とし、呼び出し側は第2戻り値でのみ判別する
+// （AC-5-2・AC-5-7。0 と未確定を混同しない）。
+func (w *WorkMonth) Excess() (WorkingHours, bool) {
+	if w.excess == nil {
+		return WorkingHours{}, false
+	}
+	return *w.excess, true
+}
+
+// Shortfall は確定済みの不足を返す。第2戻り値は確定済みか（AC-5-7）。
+func (w *WorkMonth) Shortfall() (WorkingHours, bool) {
+	if w.shortfall == nil {
+		return WorkingHours{}, false
+	}
+	return *w.shortfall, true
+}
+
+// Close は勤務月を締める（monthly-closing.md AC-1・AC-3・AC-5、実装設計 AC-4-3）。
+// Draft のみ許可し、超過／不足を算出して確定させたうえで PendingApproval へ
+// 直接遷移する（中間状態を経ない。同 AC-5-1）。Draft 以外なら遷移も算出もせず
+// ErrNotClosable（二重締め・終端状態。同 AC-1-2・AC-1-3。実装設計 AC-11-6）。
+// 引数を取らない（締めに月末制約・「当日」を要さない。同 D-3・AC-1-4）。
+func (w *WorkMonth) Close() error {
+	if w.state != StateDraft {
+		return fmt.Errorf("%w: state is %q", ErrNotClosable, w.state)
+	}
+	excess, shortfall := w.computeExcessShortfall()
+	w.excess = &excess
+	w.shortfall = &shortfall
+	w.state = StatePendingApproval
+	return nil
+}
+
+// computeExcessShortfall は超過／不足を算出する（実装設計 AC-5-6・AC-5-8）。
+// 入力は TotalHours() と集約が保持する SettlementRange に限り、契約の現在値は
+// 参照しない（monthly-closing.md AC-3-2・D-2）。両端は範囲内として扱う
+// （同 AC-4。超過・不足の一方は必ず0であり、両方が同時に正になる戻り値を
+// 構造上作らない＝実装設計 AC-5-6）。
+func (w *WorkMonth) computeExcessShortfall() (excess, shortfall WorkingHours) {
+	total := w.TotalHours().TotalMinutes()
+	lower := w.settlementRange.LowerBound().TotalMinutes()
+	upper := w.settlementRange.UpperBound().TotalMinutes()
+
+	switch {
+	case total > upper:
+		excess = WorkingHours{minutes: total - upper}
+	case total < lower:
+		shortfall = WorkingHours{minutes: lower - total}
+	}
+	return excess, shortfall
 }
 
 // TotalHours は総稼働時間を都度算出して返す（AC-5-1）。
