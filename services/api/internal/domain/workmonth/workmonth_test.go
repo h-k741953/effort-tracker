@@ -87,6 +87,13 @@ func mustNewWorkMonth(t *testing.T) *workmonth.WorkMonth {
 // mustReconstructWorkMonth は任意の状態の勤務月を復元する。
 // 状態遷移メソッド（Close / Approve）は UC2・UC3 の関心事であるため、
 // UC1 のテストでは永続化からの再構築（実装設計 AC-2-5）で前提を組み立てる。
+//
+// 確定済みの超過／不足（末尾の引数。実装設計 AC-2-5・AC-5-9）は常に nil を渡す。
+// このヘルパーは超過／不足そのものを検証する目的では使わない
+// （締め済・承認済なのに値が無い復元の当否は Q-1 未決であり、本ヘルパーの呼び出し側は
+// いずれもその検証をしていない。UC2 の締め自体のテストは TestWorkMonth_Close_* が
+// Close() 経由で検証し、Reconstruct の往復は TestReconstruct_ExcessShortfall が
+// 個別に検証する）。
 func mustReconstructWorkMonth(t *testing.T, state workmonth.State, records []workmonth.DailyRecord) *workmonth.WorkMonth {
 	t.Helper()
 	w, err := workmonth.Reconstruct(
@@ -95,6 +102,8 @@ func mustReconstructWorkMonth(t *testing.T, state workmonth.State, records []wor
 		mustSettlementRange(t, 140, 180),
 		state,
 		records,
+		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("前提の構築に失敗: Reconstruct(%s): %v", state, err)
@@ -770,6 +779,8 @@ func TestReconstruct_Invariants(t *testing.T) {
 				mustSettlementRange(t, 140, 180),
 				tt.state,
 				tt.records,
+				nil,
+				nil,
 			)
 
 			if tt.wantErr != nil {
@@ -809,6 +820,8 @@ func TestReconstruct_DateOutOfMonthUsesInvalidValueNotDateOutOfMonth(t *testing.
 		mustSettlementRange(t, 140, 180),
 		workmonth.StateDraft,
 		[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 8, 1, 8, 0)},
+		nil,
+		nil,
 	)
 
 	if !errors.Is(err, workmonth.ErrInvalidValue) {
@@ -836,6 +849,8 @@ func TestReconstruct_OrdersAndCopiesRecords(t *testing.T) {
 		mustSettlementRange(t, 140, 180),
 		workmonth.StateDraft,
 		given,
+		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Reconstruct が予期しないエラーを返した: %v", err)
@@ -946,4 +961,323 @@ func TestWorkMonth_TotalHours(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---- UC2: 月次締め --------------------------------------------------------
+//
+// 検証対象の受け入れ条件:
+//   - docs/specs/monthly-closing.md AC-1（Draft のみ締められる）
+//   - 同 AC-3（超過／不足は締め時に確定し、以後再計算しない）
+//   - 同 AC-4（境界を含む算出ロジック）
+//   - 同 AC-5（PendingApproval へ直接遷移。中間状態を経ない）
+//   - 同 AC-7-1・AC-7-2（一部未入力・空月も締められる）
+//   - docs/specs/workmonth-implementation-design.md AC-4-3（Close() のシグネチャと番兵）
+//   - 同 AC-5-2・AC-5-6・AC-5-7・AC-5-9（超過／不足のアクセサと Reconstruct の往復）
+
+// recordsSummingTo は合計が totalMinutes 分になるよう、2026年7月の連続した日へ
+// 分割した稼働実績を組み立てる。1日あたり20時間（1200分）以下に収め、
+// DailyRecord の1日の上限（24時間）に抵触しないようにする。
+// totalMinutes は15分単位でなければならない（呼び出し側が保証する）。
+func recordsSummingTo(t *testing.T, totalMinutes int) []workmonth.DailyRecord {
+	t.Helper()
+	if totalMinutes%15 != 0 {
+		t.Fatalf("前提の構築に失敗: %d分は15分単位ではない", totalMinutes)
+	}
+
+	const maxPerDayMinutes = 20 * 60
+
+	var records []workmonth.DailyRecord
+	day := 1
+	remaining := totalMinutes
+	for remaining > 0 {
+		minutes := remaining
+		if minutes > maxPerDayMinutes {
+			minutes = maxPerDayMinutes
+		}
+		records = append(records, mustDailyRecord(t, 2026, 7, day, minutes/60, minutes%60))
+		remaining -= minutes
+		day++
+	}
+	return records
+}
+
+// determinedHoursView は go-cmp で「確定済みか」を含めて超過／不足を比較するための
+// 表示用の射影（実装設計 AC-5-7・AC-12-4）。
+type determinedHoursView struct {
+	Determined bool
+	Hours      int
+	Minutes    int
+}
+
+func viewOfDetermined(w workmonth.WorkingHours, ok bool) determinedHoursView {
+	if !ok {
+		return determinedHoursView{Determined: false}
+	}
+	return determinedHoursView{Determined: true, Hours: w.Hours(), Minutes: w.Minutes()}
+}
+
+// TestWorkMonth_ExcessShortfall_UndeterminedInDraft は Draft の間、超過／不足が
+// 未確定であることを検証する（実装設計 AC-5-2）。0 と未確定を混同しない。
+func TestWorkMonth_ExcessShortfall_UndeterminedInDraft(t *testing.T) {
+	target := mustNewWorkMonth(t)
+
+	if _, ok := target.Excess(); ok {
+		t.Errorf("Excess() ok = true, want false（Draft は未確定）")
+	}
+	if _, ok := target.Shortfall(); ok {
+		t.Errorf("Shortfall() ok = true, want false（Draft は未確定）")
+	}
+}
+
+// TestWorkMonth_Close_StateTransition は Close の状態遷移を検証する。
+// Draft から PendingApproval へ直接遷移し、中間状態を経ない（monthly-closing.md AC-5-1）。
+func TestWorkMonth_Close_StateTransition(t *testing.T) {
+	target := mustReconstructWorkMonth(t, workmonth.StateDraft, recordsSummingTo(t, 160*60))
+
+	if err := target.Close(); err != nil {
+		t.Fatalf("Close() が失敗: %v", err)
+	}
+
+	if got := target.State(); got != workmonth.StatePendingApproval {
+		t.Errorf("State() = %q, want %q", got, workmonth.StatePendingApproval)
+	}
+}
+
+// TestWorkMonth_Close_RejectsNonDraftState は Draft 以外からの締めを弾くことを検証する
+// （monthly-closing.md AC-1-2・AC-1-3。実装設計 AC-4-3 の ErrNotClosable）。
+func TestWorkMonth_Close_RejectsNonDraftState(t *testing.T) {
+	tests := []struct {
+		name  string
+		state workmonth.State
+	}{
+		{name: "PendingApproval からの締めは弾く（二重締め）", state: workmonth.StatePendingApproval},
+		{name: "Approved からの締めは弾く（終端状態）", state: workmonth.StateApproved},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := mustReconstructWorkMonth(t, tt.state, nil)
+
+			err := target.Close()
+			if !errors.Is(err, workmonth.ErrNotClosable) {
+				t.Errorf("Close() error = %v, want errors.Is ErrNotClosable", err)
+			}
+			if got := target.State(); got != tt.state {
+				t.Errorf("State() = %q, want unchanged %q", got, tt.state)
+			}
+		})
+	}
+}
+
+// TestWorkMonth_Close_ExcessAndShortfall は超過／不足の算出ロジックと境界を検証する
+// （monthly-closing.md AC-4-1〜AC-4-6。精算幅は下限140時間0分／上限180時間0分の
+// 具体例で固定されている。両端は「含む」）。
+func TestWorkMonth_Close_ExcessAndShortfall(t *testing.T) {
+	tests := []struct {
+		name          string
+		totalMinutes  int
+		wantExcess    determinedHoursView
+		wantShortfall determinedHoursView
+	}{
+		{
+			name:          "180時間15分は上限超過（AC-4-1）",
+			totalMinutes:  180*60 + 15,
+			wantExcess:    determinedHoursView{Determined: true, Hours: 0, Minutes: 15},
+			wantShortfall: determinedHoursView{Determined: true, Hours: 0, Minutes: 0},
+		},
+		{
+			name:          "180時間0分は上限ちょうどで範囲内（AC-4-2）",
+			totalMinutes:  180 * 60,
+			wantExcess:    determinedHoursView{Determined: true, Hours: 0, Minutes: 0},
+			wantShortfall: determinedHoursView{Determined: true, Hours: 0, Minutes: 0},
+		},
+		{
+			name:          "160時間0分は範囲内・中間（AC-4-3）",
+			totalMinutes:  160 * 60,
+			wantExcess:    determinedHoursView{Determined: true, Hours: 0, Minutes: 0},
+			wantShortfall: determinedHoursView{Determined: true, Hours: 0, Minutes: 0},
+		},
+		{
+			name:          "140時間0分は下限ちょうどで範囲内（AC-4-4）",
+			totalMinutes:  140 * 60,
+			wantExcess:    determinedHoursView{Determined: true, Hours: 0, Minutes: 0},
+			wantShortfall: determinedHoursView{Determined: true, Hours: 0, Minutes: 0},
+		},
+		{
+			name:          "139時間45分は下限未達（AC-4-5）",
+			totalMinutes:  139*60 + 45,
+			wantExcess:    determinedHoursView{Determined: true, Hours: 0, Minutes: 0},
+			wantShortfall: determinedHoursView{Determined: true, Hours: 0, Minutes: 15},
+		},
+		{
+			name:          "0時間0分（空月）は不足が下限そのものに一致する（AC-4-6・AC-7-2）",
+			totalMinutes:  0,
+			wantExcess:    determinedHoursView{Determined: true, Hours: 0, Minutes: 0},
+			wantShortfall: determinedHoursView{Determined: true, Hours: 140, Minutes: 0},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := mustReconstructWorkMonth(t, workmonth.StateDraft, recordsSummingTo(t, tt.totalMinutes))
+
+			if err := target.Close(); err != nil {
+				t.Fatalf("Close() が失敗: %v", err)
+			}
+
+			gotExcess, gotExcessOK := target.Excess()
+			if diff := cmp.Diff(tt.wantExcess, viewOfDetermined(gotExcess, gotExcessOK)); diff != "" {
+				t.Errorf("Excess() が不一致 (-want +got):\n%s", diff)
+			}
+
+			gotShortfall, gotShortfallOK := target.Shortfall()
+			if diff := cmp.Diff(tt.wantShortfall, viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
+				t.Errorf("Shortfall() が不一致 (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestWorkMonth_Close_PartialMonth は一部の日が未入力の勤務月・稼働実績が
+// 1件も無い勤務月（空月）も締められることを検証する
+// （monthly-closing.md AC-7-1・AC-7-2。「全日入力済み」を締め条件にしない）。
+func TestWorkMonth_Close_PartialMonth(t *testing.T) {
+	tests := []struct {
+		name    string
+		records []workmonth.DailyRecord
+	}{
+		{
+			name: "一部の日が未入力でも締められる（AC-7-1）",
+			records: []workmonth.DailyRecord{
+				mustDailyRecord(t, 2026, 7, 1, 8, 0),
+			},
+		},
+		{
+			name:    "稼働実績が1件も無い空月も締められる（AC-7-2）",
+			records: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := mustReconstructWorkMonth(t, workmonth.StateDraft, tt.records)
+
+			if err := target.Close(); err != nil {
+				t.Fatalf("Close() が失敗: %v", err)
+			}
+			if got := target.State(); got != workmonth.StatePendingApproval {
+				t.Errorf("State() = %q, want %q", got, workmonth.StatePendingApproval)
+			}
+		})
+	}
+}
+
+// TestWorkMonth_Close_DoesNotRecomputeOnRepeatedAttempt は二重締めの試行が
+// 確定済みの超過／不足を変えないことを検証する
+// （monthly-closing.md AC-1-2・AC-3-3。実装設計 AC-5-4）。
+func TestWorkMonth_Close_DoesNotRecomputeOnRepeatedAttempt(t *testing.T) {
+	target := mustReconstructWorkMonth(t, workmonth.StateDraft, recordsSummingTo(t, 139*60+45))
+	if err := target.Close(); err != nil {
+		t.Fatalf("前提の構築に失敗: 1回目の Close(): %v", err)
+	}
+
+	wantExcess, wantExcessOK := target.Excess()
+	wantShortfall, wantShortfallOK := target.Shortfall()
+
+	if err := target.Close(); !errors.Is(err, workmonth.ErrNotClosable) {
+		t.Fatalf("2回目の Close() error = %v, want errors.Is ErrNotClosable", err)
+	}
+
+	gotExcess, gotExcessOK := target.Excess()
+	gotShortfall, gotShortfallOK := target.Shortfall()
+
+	if diff := cmp.Diff(viewOfDetermined(wantExcess, wantExcessOK), viewOfDetermined(gotExcess, gotExcessOK)); diff != "" {
+		t.Errorf("2回目の Close() 試行で Excess() が変化した (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(viewOfDetermined(wantShortfall, wantShortfallOK), viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
+		t.Errorf("2回目の Close() 試行で Shortfall() が変化した (-want +got):\n%s", diff)
+	}
+}
+
+// TestReconstruct_ExcessShortfall は永続化からの往復における確定済みの
+// 超過／不足の復元を検証する（実装設計 AC-5-9）。
+func TestReconstruct_ExcessShortfall(t *testing.T) {
+	t.Run("Draft へ nil を渡すと未確定として復元される", func(t *testing.T) {
+		w, err := workmonth.Reconstruct(
+			mustContractID(t, "ctr-0001"),
+			mustYearMonth(t, 2026, 7),
+			mustSettlementRange(t, 140, 180),
+			workmonth.StateDraft,
+			nil,
+			nil,
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("Reconstruct が失敗: %v", err)
+		}
+		if _, ok := w.Excess(); ok {
+			t.Errorf("Excess() ok = true, want false")
+		}
+		if _, ok := w.Shortfall(); ok {
+			t.Errorf("Shortfall() ok = true, want false")
+		}
+	})
+
+	t.Run("締め済は渡した値をそのまま返し、再計算しない", func(t *testing.T) {
+		// 精算幅（100〜200時間）と総稼働時間（190時間）の組み合わせを
+		// 現在の SettlementRange で計算し直すと範囲内（超過・不足とも0）に
+		// なるはずだが、復元時に渡した超過15分・不足0分をそのまま返すことを
+		// 検証する（実装設計 AC-5-8 の「再構築時は再計算しない」側の裏付け）。
+		excess := mustWorkingHours(t, 0, 15)
+		shortfall := mustWorkingHours(t, 0, 0)
+		w, err := workmonth.Reconstruct(
+			mustContractID(t, "ctr-0001"),
+			mustYearMonth(t, 2026, 7),
+			mustSettlementRange(t, 100, 200),
+			workmonth.StatePendingApproval,
+			recordsSummingTo(t, 190*60),
+			&excess,
+			&shortfall,
+		)
+		if err != nil {
+			t.Fatalf("Reconstruct が失敗: %v", err)
+		}
+
+		gotExcess, gotExcessOK := w.Excess()
+		if diff := cmp.Diff(determinedHoursView{Determined: true, Hours: 0, Minutes: 15}, viewOfDetermined(gotExcess, gotExcessOK)); diff != "" {
+			t.Errorf("Excess() が不一致 (-want +got):\n%s", diff)
+		}
+
+		gotShortfall, gotShortfallOK := w.Shortfall()
+		if diff := cmp.Diff(determinedHoursView{Determined: true, Hours: 0, Minutes: 0}, viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
+			t.Errorf("Shortfall() が不一致 (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("渡したポインタの参照先を外から書き換えても集約は影響を受けない", func(t *testing.T) {
+		excess := mustWorkingHours(t, 1, 0)
+		shortfall := mustWorkingHours(t, 0, 0)
+		w, err := workmonth.Reconstruct(
+			mustContractID(t, "ctr-0001"),
+			mustYearMonth(t, 2026, 7),
+			mustSettlementRange(t, 140, 180),
+			workmonth.StatePendingApproval,
+			nil,
+			&excess,
+			&shortfall,
+		)
+		if err != nil {
+			t.Fatalf("Reconstruct が失敗: %v", err)
+		}
+
+		excess = mustWorkingHours(t, 99, 0) // 呼び出し側の変数を書き換える
+
+		gotExcess, ok := w.Excess()
+		if !ok {
+			t.Fatalf("Excess() ok = false, want true")
+		}
+		if diff := cmp.Diff(hoursView{Hours: 1, Minutes: 0}, viewOfHours(gotExcess)); diff != "" {
+			t.Errorf("呼び出し側の変数の書き換えの影響を受けた (-want +got):\n%s", diff)
+		}
+	})
 }
