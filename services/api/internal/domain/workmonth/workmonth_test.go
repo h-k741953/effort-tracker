@@ -1175,28 +1175,74 @@ func TestWorkMonth_Close_PartialMonth(t *testing.T) {
 // TestWorkMonth_Close_DoesNotRecomputeOnRepeatedAttempt は二重締めの試行が
 // 確定済みの超過／不足を変えないことを検証する
 // （monthly-closing.md AC-1-2・AC-3-3。実装設計 AC-5-4）。
+//
+// 1つ目のサブテストは実際に Close() した後の再試行を検証するが、総稼働・精算幅を
+// 変えずに2回目を試みるため「再算出しても同じ値になる」。この前提だけでは、
+// 超過／不足の算出・代入を状態番兵より前へ移す変異があっても構造上失敗しえず、
+// 偽 Green を許した（レビュー往復1, C-1, Issue #51）。2つ目のサブテストは
+// 「保存済みの値」と「再算出したら出る値」が食い違う前提を追加し、同じ主張
+// （AC-3-3）を実際に検出できる形へ強化する。
 func TestWorkMonth_Close_DoesNotRecomputeOnRepeatedAttempt(t *testing.T) {
-	target := mustReconstructWorkMonth(t, workmonth.StateDraft, recordsSummingTo(t, 139*60+45))
-	if err := target.Close(); err != nil {
-		t.Fatalf("前提の構築に失敗: 1回目の Close(): %v", err)
-	}
+	t.Run("実際に締めた後の再試行では値が変わらない", func(t *testing.T) {
+		target := mustReconstructWorkMonth(t, workmonth.StateDraft, recordsSummingTo(t, 139*60+45))
+		if err := target.Close(); err != nil {
+			t.Fatalf("前提の構築に失敗: 1回目の Close(): %v", err)
+		}
 
-	wantExcess, wantExcessOK := target.Excess()
-	wantShortfall, wantShortfallOK := target.Shortfall()
+		wantExcess, wantExcessOK := target.Excess()
+		wantShortfall, wantShortfallOK := target.Shortfall()
 
-	if err := target.Close(); !errors.Is(err, workmonth.ErrNotClosable) {
-		t.Fatalf("2回目の Close() error = %v, want errors.Is ErrNotClosable", err)
-	}
+		if err := target.Close(); !errors.Is(err, workmonth.ErrNotClosable) {
+			t.Fatalf("2回目の Close() error = %v, want errors.Is ErrNotClosable", err)
+		}
 
-	gotExcess, gotExcessOK := target.Excess()
-	gotShortfall, gotShortfallOK := target.Shortfall()
+		gotExcess, gotExcessOK := target.Excess()
+		gotShortfall, gotShortfallOK := target.Shortfall()
 
-	if diff := cmp.Diff(viewOfDetermined(wantExcess, wantExcessOK), viewOfDetermined(gotExcess, gotExcessOK)); diff != "" {
-		t.Errorf("2回目の Close() 試行で Excess() が変化した (-want +got):\n%s", diff)
-	}
-	if diff := cmp.Diff(viewOfDetermined(wantShortfall, wantShortfallOK), viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
-		t.Errorf("2回目の Close() 試行で Shortfall() が変化した (-want +got):\n%s", diff)
-	}
+		if diff := cmp.Diff(viewOfDetermined(wantExcess, wantExcessOK), viewOfDetermined(gotExcess, gotExcessOK)); diff != "" {
+			t.Errorf("2回目の Close() 試行で Excess() が変化した (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(viewOfDetermined(wantShortfall, wantShortfallOK), viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
+			t.Errorf("2回目の Close() 試行で Shortfall() が変化した (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("保存済みの値が再算出したら出る値と食い違っていても変わらない（C-1）", func(t *testing.T) {
+		// 総稼働（160時間）は精算幅（140〜180時間）の内側 → 再算出すれば超過・不足とも0。
+		// しかし復元時に渡した超過1時間0分（食い違う値）をそのまま保持することを固定する。
+		records := recordsSummingTo(t, 160*60)
+		storedExcess := mustWorkingHours(t, 1, 0)
+		storedShortfall := mustWorkingHours(t, 0, 0)
+
+		target, err := workmonth.Reconstruct(
+			mustContractID(t, "ctr-0001"),
+			mustYearMonth(t, 2026, 7),
+			mustSettlementRange(t, 140, 180),
+			workmonth.StatePendingApproval,
+			records,
+			&storedExcess,
+			&storedShortfall,
+		)
+		if err != nil {
+			t.Fatalf("前提の構築に失敗: Reconstruct: %v", err)
+		}
+
+		if err := target.Close(); !errors.Is(err, workmonth.ErrNotClosable) {
+			t.Fatalf("Close() error = %v, want errors.Is ErrNotClosable", err)
+		}
+
+		gotExcess, gotExcessOK := target.Excess()
+		wantExcess := determinedHoursView{Determined: true, Hours: 1, Minutes: 0}
+		if diff := cmp.Diff(wantExcess, viewOfDetermined(gotExcess, gotExcessOK)); diff != "" {
+			t.Errorf("弾かれた Close() 試行で Excess() が保存済みの値から変化した (-want +got):\n%s", diff)
+		}
+
+		gotShortfall, gotShortfallOK := target.Shortfall()
+		wantShortfall := determinedHoursView{Determined: true, Hours: 0, Minutes: 0}
+		if diff := cmp.Diff(wantShortfall, viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
+			t.Errorf("弾かれた Close() 試行で Shortfall() が保存済みの値から変化した (-want +got):\n%s", diff)
+		}
+	})
 }
 
 // TestReconstruct_ExcessShortfall は永続化からの往復における確定済みの

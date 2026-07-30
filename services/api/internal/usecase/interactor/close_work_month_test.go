@@ -329,6 +329,18 @@ func TestCloseWorkMonth_JudgementOrder(t *testing.T) {
 			wantErr: port.ErrUnauthenticated,
 		},
 		{
+			// レビュー往復1, W-1（Issue #51）: 上のケース（ゲスト）は実在する契約IDを
+			// 使い、下のケース（実在しない契約）は認証済みの操作者を使うため交差しない。
+			// 認証の番兵を契約の Find より後ろへ移す変異があっても、両ケースが揃って
+			// 検出しない交差点を作ってしまう。「ゲスト かつ 実在しない契約ID」を
+			// 追加し、未認証が契約の実在有無より先に判定されることを直接固定する
+			// （未認証の呼び出し元へ契約の存在有無を漏らさない。AC-6-9）。
+			name:                 "ゲスト かつ 実在しない契約IDでも未認証が先（順1。認証は契約の Find より前）",
+			actor:                guestActor(),
+			useUnknownContractID: true,
+			wantErr:              port.ErrUnauthenticated,
+		},
+		{
 			name:                 "実在しない契約は ErrContractNotFound が先（順3。認可より先）",
 			actor:                foreignActor(port.RoleEngineer),
 			useUnknownContractID: true,
