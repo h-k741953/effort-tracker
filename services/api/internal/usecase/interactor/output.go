@@ -35,11 +35,32 @@ func newWorkMonthOutput(target *workmonth.WorkMonth, contract port.Contract) por
 		Generated:           true,
 		SettlementRange:     toSettlementRangeOutput(target.SettlementRange()),
 		TotalHours:          toHours(target.TotalHours()),
-		// 超過／不足は締め時に確定する（AC-5-2・AC-5-3）。UC1 の経路では常に未確定。
-		Excess:       nil,
-		Shortfall:    nil,
+		// 超過／不足は集約のアクセサから詰める。締め時に確定し（AC-5-2・AC-5-3）、
+		// 未確定（Draft・差戻し後）なら「値なし」（実装設計 AC-7-11）。
+		Excess:       excessOutput(target),
+		Shortfall:    shortfallOutput(target),
 		DailyRecords: outputs,
 	}
+}
+
+// excessOutput は集約の確定済みの超過を出力 DTO へ落とす。未確定なら nil（AC-7-11）。
+func excessOutput(target *workmonth.WorkMonth) *port.Hours {
+	excess, ok := target.Excess()
+	if !ok {
+		return nil
+	}
+	h := toHours(excess)
+	return &h
+}
+
+// shortfallOutput は集約の確定済みの不足を出力 DTO へ落とす。未確定なら nil（AC-7-11）。
+func shortfallOutput(target *workmonth.WorkMonth) *port.Hours {
+	shortfall, ok := target.Shortfall()
+	if !ok {
+		return nil
+	}
+	h := toHours(shortfall)
+	return &h
 }
 
 // newEmptyWorkMonthOutput は未生成の年月の出力 DTO を組み立てる（AC-7-8・AC-7-9）。
