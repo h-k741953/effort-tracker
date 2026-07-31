@@ -149,9 +149,14 @@ func guestActor() port.Actor {
 
 // reconstructWorkMonth は保存済みの勤務月を組み立てる（前提投入用）。
 //
-// 確定済みの超過／不足（実装設計 AC-2-5・AC-5-9）は常に nil を渡す。UC1 の
-// テストは超過／不足そのものを検証する目的では使わない（UC2 の締めに関する
-// テストは domain/workmonth と interactor/close_work_month_test.go が持つ）。
+// 確定済みの超過／不足（実装設計 AC-2-5・AC-5-9）は、状態との整合
+// （AC-2-5 の不変条件③・AC-5-9 の対応表 5-9-a〜5-9-c。決定9）を満たすように、
+// Draft は (nil, nil)、PendingApproval・Approved は非nilの値を渡す。
+// UC1・UC2 のこのファイル群のテストはいずれも超過／不足そのものの値を検証する
+// 目的では使っていない（状態・稼働実績・判定順序の検証が主張であるため。
+// AC-13-13）。超過／不足そのものの組み合わせの網羅は workmonth 側の
+// TestReconstruct_ExcessShortfallStateConsistency が、Reconstruct の往復は
+// 同 TestReconstruct_ExcessShortfall が個別に検証する。
 func reconstructWorkMonth(
 	t *testing.T,
 	contractID workmonth.ContractID,
@@ -161,9 +166,15 @@ func reconstructWorkMonth(
 	records []workmonth.DailyRecord,
 ) *workmonth.WorkMonth {
 	t.Helper()
-	target, err := workmonth.Reconstruct(contractID, yearMonth, settlement, state, records, nil, nil)
+	var excess, shortfall *workmonth.WorkingHours
+	if state != workmonth.StateDraft {
+		determined := mustWorkingHours(t, 1, 0)
+		excess = &determined
+		shortfall = &determined
+	}
+	target, err := workmonth.Reconstruct(contractID, yearMonth, settlement, state, records, excess, shortfall)
 	if err != nil {
-		t.Fatalf("前提の構築に失敗: Reconstruct: %v", err)
+		t.Fatalf("前提の構築に失敗: Reconstruct(%s): %v", state, err)
 	}
 	return target
 }
