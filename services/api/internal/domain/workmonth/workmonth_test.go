@@ -88,22 +88,29 @@ func mustNewWorkMonth(t *testing.T) *workmonth.WorkMonth {
 // 状態遷移メソッド（Close / Approve）は UC2・UC3 の関心事であるため、
 // UC1 のテストでは永続化からの再構築（実装設計 AC-2-5）で前提を組み立てる。
 //
-// 確定済みの超過／不足（末尾の引数。実装設計 AC-2-5・AC-5-9）は常に nil を渡す。
-// このヘルパーは超過／不足そのものを検証する目的では使わない
-// （締め済・承認済なのに値が無い復元の当否は Q-1 未決であり、本ヘルパーの呼び出し側は
-// いずれもその検証をしていない。UC2 の締め自体のテストは TestWorkMonth_Close_* が
-// Close() 経由で検証し、Reconstruct の往復は TestReconstruct_ExcessShortfall が
-// 個別に検証する）。
+// 確定済みの超過／不足（末尾の引数。実装設計 AC-2-5・AC-5-9）は、状態との整合
+// （AC-2-5 の不変条件③・AC-5-9 の対応表 5-9-a〜5-9-c。決定9）を満たすように、
+// Draft は (nil, nil)、それ以外は非nilの値を渡す。このヘルパーの呼び出し側は
+// いずれも超過／不足そのものの値を検証する目的で使っていない（状態・稼働実績の
+// 検証が主張であるため。AC-13-13）。超過／不足そのものの組み合わせの網羅は
+// TestReconstruct_ExcessShortfallStateConsistency が、Reconstruct の往復は
+// TestReconstruct_ExcessShortfall が個別に検証する。
 func mustReconstructWorkMonth(t *testing.T, state workmonth.State, records []workmonth.DailyRecord) *workmonth.WorkMonth {
 	t.Helper()
+	var excess, shortfall *workmonth.WorkingHours
+	if state != workmonth.StateDraft {
+		determined := mustWorkingHours(t, 1, 0)
+		excess = &determined
+		shortfall = &determined
+	}
 	w, err := workmonth.Reconstruct(
 		mustContractID(t, "ctr-0001"),
 		mustYearMonth(t, 2026, 7),
 		mustSettlementRange(t, 140, 180),
 		state,
 		records,
-		nil,
-		nil,
+		excess,
+		shortfall,
 	)
 	if err != nil {
 		t.Fatalf("前提の構築に失敗: Reconstruct(%s): %v", state, err)
@@ -659,12 +666,21 @@ func TestReconstruct_Invariants(t *testing.T) {
 	validContractID := mustContractID(t, "ctr-0001")
 	validYearMonth := mustYearMonth(t, 2026, 7)
 
+	// 締め済・承認済の復元には確定済みの超過／不足が要る（AC-2-5 の不変条件③・
+	// AC-5-9 の対応表 5-9-b・5-9-c。決定9）。本テストが検証する主張は
+	// 「状態遷移を検査しない」ことであり、超過／不足そのものの値は主張に含まない
+	// （AC-13-13）ため、任意の非nil値を使う。組み合わせの網羅は
+	// TestReconstruct_ExcessShortfallStateConsistency が別途固定する。
+	determined := mustWorkingHours(t, 1, 0)
+
 	tests := []struct {
 		name       string
 		contractID workmonth.ContractID
 		yearMonth  workmonth.YearMonth
 		state      workmonth.State
 		records    []workmonth.DailyRecord
+		excess     *workmonth.WorkingHours
+		shortfall  *workmonth.WorkingHours
 		wantErr    error
 	}{
 		{
@@ -675,12 +691,16 @@ func TestReconstruct_Invariants(t *testing.T) {
 		{
 			name:       "締め済は復元できる（状態遷移を検査しない。AC-2-5）",
 			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.StatePendingApproval,
-			records: []workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+			records:   []workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+			excess:    &determined,
+			shortfall: &determined,
 		},
 		{
 			name:       "承認済は復元できる（状態遷移を検査しない。AC-2-5）",
 			contractID: validContractID, yearMonth: validYearMonth, state: workmonth.StateApproved,
-			records: []workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+			records:   []workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+			excess:    &determined,
+			shortfall: &determined,
 		},
 		{
 			name:       "実績0件でも復元できる",
@@ -779,8 +799,8 @@ func TestReconstruct_Invariants(t *testing.T) {
 				mustSettlementRange(t, 140, 180),
 				tt.state,
 				tt.records,
-				nil,
-				nil,
+				tt.excess,
+				tt.shortfall,
 			)
 
 			if tt.wantErr != nil {
@@ -1335,4 +1355,157 @@ func TestReconstruct_ExcessShortfall(t *testing.T) {
 			t.Errorf("呼び出し側の変数の書き換えの影響を受けた (-want +got):\n%s", diff)
 		}
 	})
+}
+
+// ---- 実装設計 AC-2-5 の不変条件③・AC-5-9（対応表 5-9-a〜5-9-c）・AC-11-5（決定9）---
+
+// TestReconstruct_ExcessShortfallStateConsistency は、Reconstruct が受け取る
+// 確定済みの超過／不足（excess・shortfall）と状態の整合を検証する
+// （実装設計 AC-2-5 の不変条件③・AC-5-9 の対応表 5-9-a〜5-9-c。決定9）。
+//
+// 状態は Draft・PendingApproval・Approved の3値がすべてであり（AC-3-7。
+// 差戻しは状態ではなく操作でその結果は Draft）、対応表は全状態を尽くす:
+//   - Draft: 復元に成功するのは (nil, nil) のみ。(値, nil)・(nil, 値)・(値, 値) は
+//     いずれも ErrInvalidValue（5-9-a）。
+//   - PendingApproval・Approved: 復元に成功するのは双方が非nilのみ。
+//     (nil, nil)・(値, nil)・(nil, 値) はいずれも ErrInvalidValue（5-9-b・5-9-c）。
+//
+// 値そのもの（ゼロか正か、超過と不足が同時に正か）は本 AC の検査対象に含まない
+// （AC-13-13）ため、失敗しない組み合わせに使う値は任意の非nil値でよい。
+func TestReconstruct_ExcessShortfallStateConsistency(t *testing.T) {
+	determined := mustWorkingHours(t, 1, 0)
+
+	tests := []struct {
+		name                    string
+		state                   workmonth.State
+		excess                  *workmonth.WorkingHours
+		shortfall               *workmonth.WorkingHours
+		wantErr                 error
+		wantExcessDetermined    bool
+		wantShortfallDetermined bool
+	}{
+		// AC-5-9-a: Draft
+		{
+			name:                 "Draftは(nil, nil)なら復元でき、両アクセサとも未確定になる（AC-5-9-a）",
+			state:                workmonth.StateDraft,
+			excess:               nil,
+			shortfall:            nil,
+			wantExcessDetermined: false, wantShortfallDetermined: false,
+		},
+		{
+			name:      "Draftで超過だけ確定済みの行は弾く（AC-5-9-a）",
+			state:     workmonth.StateDraft,
+			excess:    &determined,
+			shortfall: nil,
+			wantErr:   workmonth.ErrInvalidValue,
+		},
+		{
+			name:      "Draftで不足だけ確定済みの行は弾く（AC-5-9-a）",
+			state:     workmonth.StateDraft,
+			excess:    nil,
+			shortfall: &determined,
+			wantErr:   workmonth.ErrInvalidValue,
+		},
+		{
+			name:      "Draftで超過・不足とも確定済みの行は弾く（AC-5-9-a）",
+			state:     workmonth.StateDraft,
+			excess:    &determined,
+			shortfall: &determined,
+			wantErr:   workmonth.ErrInvalidValue,
+		},
+		// AC-5-9-b: PendingApproval
+		{
+			name:                 "PendingApprovalは双方非nilなら復元でき、両アクセサとも確定済みになる（AC-5-9-b）",
+			state:                workmonth.StatePendingApproval,
+			excess:               &determined,
+			shortfall:            &determined,
+			wantExcessDetermined: true, wantShortfallDetermined: true,
+		},
+		{
+			name:      "PendingApprovalで双方nilの行は弾く（AC-5-9-b）",
+			state:     workmonth.StatePendingApproval,
+			excess:    nil,
+			shortfall: nil,
+			wantErr:   workmonth.ErrInvalidValue,
+		},
+		{
+			name:      "PendingApprovalで超過だけnilの行は弾く（AC-5-9-b）",
+			state:     workmonth.StatePendingApproval,
+			excess:    nil,
+			shortfall: &determined,
+			wantErr:   workmonth.ErrInvalidValue,
+		},
+		{
+			name:      "PendingApprovalで不足だけnilの行は弾く（AC-5-9-b）",
+			state:     workmonth.StatePendingApproval,
+			excess:    &determined,
+			shortfall: nil,
+			wantErr:   workmonth.ErrInvalidValue,
+		},
+		// AC-5-9-c: Approved
+		{
+			name:                 "Approvedは双方非nilなら復元でき、両アクセサとも確定済みになる（AC-5-9-c）",
+			state:                workmonth.StateApproved,
+			excess:               &determined,
+			shortfall:            &determined,
+			wantExcessDetermined: true, wantShortfallDetermined: true,
+		},
+		{
+			name:      "Approvedで双方nilの行は弾く（AC-5-9-c）",
+			state:     workmonth.StateApproved,
+			excess:    nil,
+			shortfall: nil,
+			wantErr:   workmonth.ErrInvalidValue,
+		},
+		{
+			name:      "Approvedで超過だけnilの行は弾く（AC-5-9-c）",
+			state:     workmonth.StateApproved,
+			excess:    nil,
+			shortfall: &determined,
+			wantErr:   workmonth.ErrInvalidValue,
+		},
+		{
+			name:      "Approvedで不足だけnilの行は弾く（AC-5-9-c）",
+			state:     workmonth.StateApproved,
+			excess:    &determined,
+			shortfall: nil,
+			wantErr:   workmonth.ErrInvalidValue,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := workmonth.Reconstruct(
+				mustContractID(t, "ctr-0001"),
+				mustYearMonth(t, 2026, 7),
+				mustSettlementRange(t, 140, 180),
+				tt.state,
+				nil,
+				tt.excess,
+				tt.shortfall,
+			)
+
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Reconstruct のエラー = %v, want errors.Is(err, %v)（AC-11-5・決定9）", err, tt.wantErr)
+				}
+				if got != nil {
+					t.Errorf("不正な組み合わせから勤務月が復元されている: %+v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Reconstruct が予期しないエラーを返した: %v", err)
+			}
+
+			_, excessOK := got.Excess()
+			if excessOK != tt.wantExcessDetermined {
+				t.Errorf("Excess() の確定済みフラグ = %v, want %v（AC-5-7）", excessOK, tt.wantExcessDetermined)
+			}
+			_, shortfallOK := got.Shortfall()
+			if shortfallOK != tt.wantShortfallDetermined {
+				t.Errorf("Shortfall() の確定済みフラグ = %v, want %v（AC-5-7）", shortfallOK, tt.wantShortfallDetermined)
+			}
+		})
+	}
 }
