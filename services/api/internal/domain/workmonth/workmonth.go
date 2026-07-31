@@ -52,10 +52,11 @@ func New(contractID ContractID, yearMonth YearMonth, settlementRange SettlementR
 // （AC-3-11。Issue #51、2026-07-28 に人間が確定）。
 //
 // excess・shortfall は確定済みの超過／不足（AC-5-9）。未確定は nil。
-// 受け取った値と状態の整合（例: Draft なのに値がある／締め済なのに値が無い）を
-// 検査するかどうかは Q-1 として人間へ確定を待っている未決の論点であり
-// （実装設計「人間の決定を待っている論点」Q-1、2026-07-30）、確定するまで
-// 3つ目の不変条件を足さない。受け取った値はそのまま複写して保持する。
+// 受け取った値と状態の整合が3つ目の不変条件（AC-2-5・AC-5-9 の対応表・決定9）。
+// Draft は (nil, nil) のみを許し（5-9-a）、PendingApproval・Approved は双方
+// 非 nil のみを許す（5-9-b・5-9-c）。違反は ErrInvalidValue（AC-11-5）。
+// 値そのもの（ゼロか正か等）は検査対象に含まない（AC-13-13）。
+// 検査を通った値はそのまま複写して保持する。
 func Reconstruct(
 	contractID ContractID,
 	yearMonth YearMonth,
@@ -70,6 +71,9 @@ func Reconstruct(
 	}
 	if !state.valid() {
 		return nil, fmt.Errorf("%w: state %q is not defined", ErrInvalidValue, state)
+	}
+	if err := validateExcessShortfallStateConsistency(state, excess, shortfall); err != nil {
+		return nil, err
 	}
 
 	records := make([]DailyRecord, len(dailyRecords))
@@ -119,6 +123,34 @@ func copyWorkingHoursPointer(w *WorkingHours) *WorkingHours {
 	}
 	copied := *w
 	return &copied
+}
+
+// validateExcessShortfallStateConsistency は Reconstruct が受け取った確定済みの
+// 超過／不足（excess・shortfall）と状態の整合を検査する（AC-2-5 の不変条件③・
+// AC-5-9 の対応表。決定9）。Draft は (nil, nil) のみを許し（5-9-a）、
+// PendingApproval・Approved は双方非 nil のみを許す（5-9-b・5-9-c）。
+// 値そのもの（ゼロか正か、超過と不足が同時に正か）は検査しない（AC-13-13）。
+func validateExcessShortfallStateConsistency(state State, excess, shortfall *WorkingHours) error {
+	determined := excess != nil && shortfall != nil
+	partial := (excess == nil) != (shortfall == nil)
+
+	switch state {
+	case StateDraft:
+		if determined || partial {
+			return fmt.Errorf(
+				"%w: state %q must not have determined excess/shortfall",
+				ErrInvalidValue, state,
+			)
+		}
+	case StatePendingApproval, StateApproved:
+		if !determined {
+			return fmt.Errorf(
+				"%w: state %q requires both excess and shortfall to be determined",
+				ErrInvalidValue, state,
+			)
+		}
+	}
+	return nil
 }
 
 // validateIdentity は勤務月を一意にする値（契約 × 年月）の妥当性を検査する。
