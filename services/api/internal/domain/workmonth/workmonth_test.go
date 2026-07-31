@@ -1010,10 +1010,9 @@ type determinedHoursView struct {
 }
 
 func viewOfDetermined(w workmonth.WorkingHours, ok bool) determinedHoursView {
-	if !ok {
-		return determinedHoursView{Determined: false}
-	}
-	return determinedHoursView{Determined: true, Hours: w.Hours(), Minutes: w.Minutes()}
+	// !ok でも w を捨てない。未確定のとき第1戻り値がゼロ値であること自体を
+	// 検証対象にするため（AC-5-2・AC-5-7。レビュー往復2 W-A）。
+	return determinedHoursView{Determined: ok, Hours: w.Hours(), Minutes: w.Minutes()}
 }
 
 // TestWorkMonth_ExcessShortfall_UndeterminedInDraft は Draft の間、超過／不足が
@@ -1021,11 +1020,16 @@ func viewOfDetermined(w workmonth.WorkingHours, ok bool) determinedHoursView {
 func TestWorkMonth_ExcessShortfall_UndeterminedInDraft(t *testing.T) {
 	target := mustNewWorkMonth(t)
 
-	if _, ok := target.Excess(); ok {
-		t.Errorf("Excess() ok = true, want false（Draft は未確定）")
+	want := determinedHoursView{Determined: false}
+
+	gotExcess, gotExcessOK := target.Excess()
+	if diff := cmp.Diff(want, viewOfDetermined(gotExcess, gotExcessOK)); diff != "" {
+		t.Errorf("Excess() が不一致 (-want +got):\n%s", diff)
 	}
-	if _, ok := target.Shortfall(); ok {
-		t.Errorf("Shortfall() ok = true, want false（Draft は未確定）")
+
+	gotShortfall, gotShortfallOK := target.Shortfall()
+	if diff := cmp.Diff(want, viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
+		t.Errorf("Shortfall() が不一致 (-want +got):\n%s", diff)
 	}
 }
 
@@ -1261,11 +1265,16 @@ func TestReconstruct_ExcessShortfall(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Reconstruct が失敗: %v", err)
 		}
-		if _, ok := w.Excess(); ok {
-			t.Errorf("Excess() ok = true, want false")
+		want := determinedHoursView{Determined: false}
+
+		gotExcess, gotExcessOK := w.Excess()
+		if diff := cmp.Diff(want, viewOfDetermined(gotExcess, gotExcessOK)); diff != "" {
+			t.Errorf("Excess() が不一致 (-want +got):\n%s", diff)
 		}
-		if _, ok := w.Shortfall(); ok {
-			t.Errorf("Shortfall() ok = true, want false")
+
+		gotShortfall, gotShortfallOK := w.Shortfall()
+		if diff := cmp.Diff(want, viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
+			t.Errorf("Shortfall() が不一致 (-want +got):\n%s", diff)
 		}
 	})
 
