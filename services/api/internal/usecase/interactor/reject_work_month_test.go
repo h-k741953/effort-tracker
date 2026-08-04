@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/h-k741953/effort-tracker/services/api/internal/domain/workmonth"
 	"github.com/h-k741953/effort-tracker/services/api/internal/usecase/interactor"
 	"github.com/h-k741953/effort-tracker/services/api/internal/usecase/port"
@@ -17,10 +19,11 @@ import (
 //     AC-7-13（責務順序。承認と完全に同一）・AC-7-14（差戻しの差分）・AC-8-11（認可の内訳と順序）
 //   - docs/specs/domain-api-http-contract.md AC-8・AC-9（判定順序）
 //
-// 判定順序（AC-7-13）は ApproveWorkMonth と完全に同一であり、判定順序の網羅は
-// approve_work_month_test.go の TestApproveWorkMonth_JudgementOrder が持つ。
-// 本ファイルは AC-12-8 が固定を求める2組を含む最小限の判定順序テストを別途持ち、
-// 差戻しにだけ判定を足さない・省かないこと（AC-7-14）を独立に検証する。
+// 判定順序（AC-7-13）は ApproveWorkMonth と完全に同一である。
+// 本ファイルの TestRejectWorkMonth_JudgementOrder は approve_work_month_test.go の
+// TestApproveWorkMonth_JudgementOrder と同一の6ケースを差戻し側で独立に複製する
+// （AC-12-8 が固定を求める2組を含む）。判定順序を差戻し側だけで別途検証するのは、
+// 差戻しにだけ判定を足さない・省かないこと（AC-7-14）を独立に確認するため。
 
 func (f *fixture) reject() *interactor.RejectWorkMonth {
 	return interactor.NewRejectWorkMonth(f.workMonths, f.contracts, f.output)
@@ -29,8 +32,14 @@ func (f *fixture) reject() *interactor.RejectWorkMonth {
 // ---- approval.md AC-2-1・AC-6 -----------------------------------------------
 
 // TestRejectWorkMonth_StateTransition は差戻しの成立と、確定済みの超過／不足が
-// 未確定（値なし）へ戻って出力・保存されることを検証する（AC-2-1・AC-6-1・AC-6-3。
-// 実装設計 AC-4-5・AC-5-10・AC-7-14-c・AC-7-14-d）。
+// 未確定（値なし）へ戻って出力・保存されること、稼働実績・総稼働時間は
+// 取り除かれず出力に残ることを検証する（AC-2-1・AC-6-1・AC-6-3。実装設計 AC-4-5・
+// AC-5-10・AC-7-14-c・AC-7-14-d）。
+//
+// 出力 DTO 全体を突き合わせるのは、空 DTO（未生成）へのすり替えと区別するため
+// （domain-api-http-contract.md AC-8-1・AC-8-7。レビュー往復1 C-2）。State と
+// Excess/Shortfall だけの検査では、差戻し成立時の期待値（Draft・値なし）と
+// 未生成の空 DTO の値が偶然一致し、両者を区別できない。
 func TestRejectWorkMonth_StateTransition(t *testing.T) {
 	f := newFixture(t, mustDate(t, 2026, 8, 15))
 	f.putPendingApproval(t)
@@ -41,15 +50,30 @@ func TestRejectWorkMonth_StateTransition(t *testing.T) {
 		YearMonth:  f.yearMonth,
 	})
 
+	want := port.WorkMonthOutput{
+		ContractID:          testContractID,
+		ContractDisplayName: testDisplayName,
+		YearMonth:           "2026-07",
+		State:               workmonth.StateDraft.String(),
+		Generated:           true,
+		SettlementRange: port.SettlementRangeOutput{
+			LowerBound: port.Hours{Hours: 140, Minutes: 0},
+			UpperBound: port.Hours{Hours: 180, Minutes: 0},
+		},
+		TotalHours: port.Hours{Hours: 8, Minutes: 0},
+		Excess:     nil,
+		Shortfall:  nil,
+		DailyRecords: []port.DailyRecordOutput{
+			{
+				Date:                "2026-07-01",
+				WorkingHours:        port.Hours{Hours: 8, Minutes: 0},
+				RoundedWorkingHours: port.Hours{Hours: 8, Minutes: 0},
+			},
+		},
+	}
 	output := f.output.onlyPresented(t)
-	if output.State != workmonth.StateDraft.String() {
-		t.Errorf("State = %q, want %q", output.State, workmonth.StateDraft.String())
-	}
-	if output.Excess != nil {
-		t.Errorf("Excess = %+v, want nil（値なし。AC-7-14-d）", output.Excess)
-	}
-	if output.Shortfall != nil {
-		t.Errorf("Shortfall = %+v, want nil（値なし。AC-7-14-d）", output.Shortfall)
+	if diff := cmp.Diff(want, output); diff != "" {
+		t.Errorf("出力ポートへ渡された勤務月が不一致 (-want +got):\n%s（AC-7-14-d・AC-4-5）", diff)
 	}
 	if f.workMonths.saveCount != 1 {
 		t.Errorf("Save の呼び出し回数 = %d, want 1", f.workMonths.saveCount)
