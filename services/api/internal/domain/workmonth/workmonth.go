@@ -247,22 +247,30 @@ func (w *WorkMonth) computeExcessShortfall() (excess, shortfall WorkingHours) {
 }
 
 // Approve は勤務月を承認する（approval.md AC-1・AC-5、実装設計 AC-4-4）。
-//
-// TODO(implementer): テスト工程が置いたスタブ（本体未実装）。
-// docs/specs/workmonth-implementation-design.md AC-4-4 に従って実装する
-// （PendingApproval のみ許可し Approved へ遷移。確定済みの超過／不足は
-// 再計算・変更しない。それ以外の状態は ErrNotApprovable で弾く）。
+// PendingApproval のみ許可し Approved へ遷移する。確定済みの超過／不足は
+// 締め時のまま保持し、再計算・変更しない（AC-5-4）。それ以外の状態は
+// ErrNotApprovable で弾く（二重承認・下書きの承認。AC-1-2・AC-1-3）。
+// 認可（本人・ロール・自己承認）は集約の外（interactor）が判定する（P-6・D-4）。
 func (w *WorkMonth) Approve() error {
+	if w.state != StatePendingApproval {
+		return fmt.Errorf("%w: state is %q", ErrNotApprovable, w.state)
+	}
+	w.state = StateApproved
 	return nil
 }
 
 // Reject は勤務月を差戻す（approval.md AC-2・AC-6、実装設計 AC-4-5）。
-//
-// TODO(implementer): テスト工程が置いたスタブ（本体未実装）。
-// docs/specs/workmonth-implementation-design.md AC-4-5 に従って実装する
-// （PendingApproval のみ許可し Draft へ遷移。確定済みの超過／不足を未確定へ
-// 戻す。稼働実績は取り除かない。それ以外の状態は ErrNotRejectable で弾く）。
+// PendingApproval のみ許可し Draft へ遷移する。確定済みの超過／不足を未確定
+// （nil）へ戻す（AC-5-10）。稼働実績は取り除かない（差戻し後も Draft として
+// 再び編集の対象になるだけ。AC-6-2・AC-6-3）。それ以外の状態は
+// ErrNotRejectable で弾く（下書き・終端状態からの差戻し。AC-2-2・AC-2-3）。
 func (w *WorkMonth) Reject() error {
+	if w.state != StatePendingApproval {
+		return fmt.Errorf("%w: state is %q", ErrNotRejectable, w.state)
+	}
+	w.excess = nil
+	w.shortfall = nil
+	w.state = StateDraft
 	return nil
 }
 
