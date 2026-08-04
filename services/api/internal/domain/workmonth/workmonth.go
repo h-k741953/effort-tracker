@@ -246,6 +246,26 @@ func (w *WorkMonth) computeExcessShortfall() (excess, shortfall WorkingHours) {
 	return excess, shortfall
 }
 
+// Approve は勤務月を承認する（approval.md AC-1・AC-5、実装設計 AC-4-4）。
+//
+// TODO(implementer): テスト工程が置いたスタブ（本体未実装）。
+// docs/specs/workmonth-implementation-design.md AC-4-4 に従って実装する
+// （PendingApproval のみ許可し Approved へ遷移。確定済みの超過／不足は
+// 再計算・変更しない。それ以外の状態は ErrNotApprovable で弾く）。
+func (w *WorkMonth) Approve() error {
+	return nil
+}
+
+// Reject は勤務月を差戻す（approval.md AC-2・AC-6、実装設計 AC-4-5）。
+//
+// TODO(implementer): テスト工程が置いたスタブ（本体未実装）。
+// docs/specs/workmonth-implementation-design.md AC-4-5 に従って実装する
+// （PendingApproval のみ許可し Draft へ遷移。確定済みの超過／不足を未確定へ
+// 戻す。稼働実績は取り除かない。それ以外の状態は ErrNotRejectable で弾く）。
+func (w *WorkMonth) Reject() error {
+	return nil
+}
+
 // TotalHours は総稼働時間を都度算出して返す（AC-5-1）。
 //
 // 各日の稼働時間を15分単位で切り捨ててから合計する。合計してから丸めない

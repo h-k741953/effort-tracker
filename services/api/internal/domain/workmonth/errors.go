@@ -23,4 +23,12 @@ var (
 	// ErrNotClosable は Draft 以外の状態で締めようとしたことを表す
 	// （二重締め・終端状態からの締め。monthly-closing.md AC-1-2・AC-1-3）。
 	ErrNotClosable = errors.New("workmonth: work month is not closable")
+
+	// ErrNotApprovable は PendingApproval 以外の状態で承認しようとしたことを表す
+	// （二重承認・下書きの承認。approval.md AC-1-2・AC-1-3。実装設計 AC-4-4・AC-11-6）。
+	ErrNotApprovable = errors.New("workmonth: work month is not approvable")
+
+	// ErrNotRejectable は PendingApproval 以外の状態で差戻そうとしたことを表す
+	// （下書き・終端状態からの差戻し。approval.md AC-2-2・AC-2-3。実装設計 AC-4-5・AC-11-6）。
+	ErrNotRejectable = errors.New("workmonth: work month is not rejectable")
 )
