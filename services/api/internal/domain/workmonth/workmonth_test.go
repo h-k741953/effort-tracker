@@ -1269,6 +1269,138 @@ func TestWorkMonth_Close_DoesNotRecomputeOnRepeatedAttempt(t *testing.T) {
 	})
 }
 
+// ---- UC3（承認・差戻し）実装設計 AC-4-4・AC-4-5・AC-5-10・AC-12-8 -----------
+//
+// 集約のテストは Approve() / Reject() を3状態（Draft / PendingApproval /
+// Approved。AC-3-7）× 2メソッドで網羅する。弾かれた場合は状態も確定済みの
+// 超過／不足も動かないことを、State() とアクセサ（AC-5-7）の双方で確認する
+// （Close() の同種のテストと同じ形。AC-12-8）。
+
+// TestWorkMonth_Approve_StateTransition は Approve() の状態遷移と、成立した場合に
+// 確定済みの超過／不足が締め時のまま保たれることを検証する
+// （approval.md AC-1・AC-5-1・AC-5-2。実装設計 AC-4-4・AC-11-6 の ErrNotApprovable）。
+func TestWorkMonth_Approve_StateTransition(t *testing.T) {
+	tests := []struct {
+		name    string
+		state   workmonth.State
+		wantErr error // nil なら成功
+	}{
+		{name: "PendingApproval からは許可（AC-1-1）", state: workmonth.StatePendingApproval},
+		{name: "Draft からは弾く（まだ締められていない。AC-1-2）", state: workmonth.StateDraft, wantErr: workmonth.ErrNotApprovable},
+		{name: "Approved からは弾く（二重承認・終端状態。AC-1-3）", state: workmonth.StateApproved, wantErr: workmonth.ErrNotApprovable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := mustReconstructWorkMonth(t, tt.state, recordsSummingTo(t, 160*60))
+			wantExcess, wantExcessOK := target.Excess()
+			wantShortfall, wantShortfallOK := target.Shortfall()
+
+			err := target.Approve()
+
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Approve() error = %v, want errors.Is %v", err, tt.wantErr)
+				}
+				if got := target.State(); got != tt.state {
+					t.Errorf("弾かれたのに State() が変化した = %q, want unchanged %q", got, tt.state)
+				}
+				gotExcess, gotExcessOK := target.Excess()
+				gotShortfall, gotShortfallOK := target.Shortfall()
+				if diff := cmp.Diff(viewOfDetermined(wantExcess, wantExcessOK), viewOfDetermined(gotExcess, gotExcessOK)); diff != "" {
+					t.Errorf("弾かれたのに Excess() が変化した (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(viewOfDetermined(wantShortfall, wantShortfallOK), viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
+					t.Errorf("弾かれたのに Shortfall() が変化した (-want +got):\n%s", diff)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Approve() が失敗: %v", err)
+			}
+			if got := target.State(); got != workmonth.StateApproved {
+				t.Errorf("State() = %q, want %q", got, workmonth.StateApproved)
+			}
+			// 承認では確定値が締め時のまま（再計算・変更しない。AC-4-4・AC-5-4）。
+			gotExcess, gotExcessOK := target.Excess()
+			gotShortfall, gotShortfallOK := target.Shortfall()
+			if diff := cmp.Diff(viewOfDetermined(wantExcess, wantExcessOK), viewOfDetermined(gotExcess, gotExcessOK)); diff != "" {
+				t.Errorf("承認で Excess() が変化した (-want +got):\n%s（AC-4-4・AC-5-4）", diff)
+			}
+			if diff := cmp.Diff(viewOfDetermined(wantShortfall, wantShortfallOK), viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
+				t.Errorf("承認で Shortfall() が変化した (-want +got):\n%s（AC-4-4・AC-5-4）", diff)
+			}
+		})
+	}
+}
+
+// TestWorkMonth_Reject_StateTransition は Reject() の状態遷移と、成立した場合に
+// 確定済みの超過／不足が未確定へ戻ることを検証する（approval.md AC-2・AC-6-1・
+// AC-6-3。実装設計 AC-4-5・AC-5-10・AC-11-6 の ErrNotRejectable）。
+func TestWorkMonth_Reject_StateTransition(t *testing.T) {
+	tests := []struct {
+		name    string
+		state   workmonth.State
+		wantErr error // nil なら成功
+	}{
+		{name: "PendingApproval からは許可（AC-2-1）", state: workmonth.StatePendingApproval},
+		{name: "Draft からは弾く（差戻す対象が無い。AC-2-2）", state: workmonth.StateDraft, wantErr: workmonth.ErrNotRejectable},
+		{name: "Approved からは弾く（終端状態。AC-2-3）", state: workmonth.StateApproved, wantErr: workmonth.ErrNotRejectable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			records := recordsSummingTo(t, 160*60)
+			target := mustReconstructWorkMonth(t, tt.state, records)
+			wantExcess, wantExcessOK := target.Excess()
+			wantShortfall, wantShortfallOK := target.Shortfall()
+
+			err := target.Reject()
+
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Reject() error = %v, want errors.Is %v", err, tt.wantErr)
+				}
+				if got := target.State(); got != tt.state {
+					t.Errorf("弾かれたのに State() が変化した = %q, want unchanged %q", got, tt.state)
+				}
+				gotExcess, gotExcessOK := target.Excess()
+				gotShortfall, gotShortfallOK := target.Shortfall()
+				if diff := cmp.Diff(viewOfDetermined(wantExcess, wantExcessOK), viewOfDetermined(gotExcess, gotExcessOK)); diff != "" {
+					t.Errorf("弾かれたのに Excess() が変化した (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(viewOfDetermined(wantShortfall, wantShortfallOK), viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
+					t.Errorf("弾かれたのに Shortfall() が変化した (-want +got):\n%s", diff)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Reject() が失敗: %v", err)
+			}
+			if got := target.State(); got != workmonth.StateDraft {
+				t.Errorf("State() = %q, want %q", got, workmonth.StateDraft)
+			}
+			// 差戻しでは両アクセサの第2戻り値が false（未確定）になる（AC-5-10）。
+			want := determinedHoursView{Determined: false}
+			gotExcess, gotExcessOK := target.Excess()
+			if diff := cmp.Diff(want, viewOfDetermined(gotExcess, gotExcessOK)); diff != "" {
+				t.Errorf("差戻し後の Excess() が未確定になっていない (-want +got):\n%s（AC-5-10）", diff)
+			}
+			gotShortfall, gotShortfallOK := target.Shortfall()
+			if diff := cmp.Diff(want, viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
+				t.Errorf("差戻し後の Shortfall() が未確定になっていない (-want +got):\n%s（AC-5-10）", diff)
+			}
+			// 稼働実績は取り除かない。Draft へ戻って再び編集の対象になるだけ
+			// （実装設計 AC-4-5、approval.md AC-6-2・AC-6-3）。
+			if diff := cmp.Diff(viewOfRecords(records), viewOfRecords(target.DailyRecords())); diff != "" {
+				t.Errorf("差戻しで稼働実績が変化した (-want +got):\n%s（AC-4-5）", diff)
+			}
+		})
+	}
+}
+
 // TestReconstruct_ExcessShortfall は永続化からの往復における確定済みの
 // 超過／不足の復元を検証する（実装設計 AC-5-9）。
 func TestReconstruct_ExcessShortfall(t *testing.T) {

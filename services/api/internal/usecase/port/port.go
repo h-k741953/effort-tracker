@@ -85,6 +85,25 @@ type CloseWorkMonthInput struct {
 	YearMonth  workmonth.YearMonth
 }
 
+// ApproveWorkMonthInput は承認（UC3）の入力 DTO（実装設計 AC-7-12）。
+// 対象日も稼働時間も持たない。理由・コメントに当たるフィールドも持たない
+// （承認・差戻しの HTTP 要求はボディを取らない。
+// docs/specs/domain-api-http-contract.md AC-7-8）。
+// CloseWorkMonthInput と同じ形だが型を共有しない（1ユースケース1 interactor＝AC-7-1）。
+type ApproveWorkMonthInput struct {
+	Actor      Actor
+	ContractID workmonth.ContractID
+	YearMonth  workmonth.YearMonth
+}
+
+// RejectWorkMonthInput は差戻し（UC3）の入力 DTO（実装設計 AC-7-12）。
+// 差戻しの理由を受け取らない（UC3 D-3・AC-6-4）。
+type RejectWorkMonthInput struct {
+	Actor      Actor
+	ContractID workmonth.ContractID
+	YearMonth  workmonth.YearMonth
+}
+
 // Hours は時分の素の値（AC-7-4）。
 type Hours struct {
 	Hours   int
