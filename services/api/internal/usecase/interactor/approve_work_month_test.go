@@ -23,27 +23,38 @@ func (f *fixture) approve() *interactor.ApproveWorkMonth {
 	return interactor.NewApproveWorkMonth(f.workMonths, f.contracts, f.output)
 }
 
-// approvedFixtureWorkMonth は締め済（PendingApproval）で確定済みの超過1時間0分・
-// 不足1時間0分を持つ勤務月を保存する（reconstructWorkMonth の既定値。
-// approval.md AC-5-2 の「締め時に確定した値をそのまま保持する」を検証するため、
-// 締め時の値そのものを固定して使う）。
+// putPendingApproval は締め済（PendingApproval）の勤務月を保存する。
+//
+// 確定済みの超過・不足には意図的に異なる値（2時間30分・1時間15分）を与える。
+// 共有ヘルパー reconstructWorkMonth（enter_daily_record_test.go）・
+// mustReconstructWorkMonth（workmonth_test.go）は超過・不足に同一の値を使っており、
+// Approve() 内で両者を入れ替える変異を検出できない（レビュー往復1 W-1）。
+// 共有ヘルパーを変えると UC1・UC2 に波及するため、UC3 のテストが使う前提だけを
+// workmonth.Reconstruct の直接呼び出しで作る。
 func (f *fixture) putPendingApproval(t *testing.T) {
 	t.Helper()
-	f.workMonths.put(reconstructWorkMonth(
-		t,
+	excess := mustWorkingHours(t, 2, 30)
+	shortfall := mustWorkingHours(t, 1, 15)
+	target, err := workmonth.Reconstruct(
 		f.contractID,
 		f.yearMonth,
 		mustSettlementRange(t, 140, 180),
 		workmonth.StatePendingApproval,
 		[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
-	))
+		&excess,
+		&shortfall,
+	)
+	if err != nil {
+		t.Fatalf("前提の構築に失敗: Reconstruct: %v", err)
+	}
+	f.workMonths.put(target)
 }
 
 // ---- approval.md AC-1-1・AC-5 -----------------------------------------------
 
-// TestApproveWorkMonth_StateTransition は承認の成立と、確定済みの超過／不足が
-// 締め時のまま出力・保存されることを検証する（AC-1-1・AC-5-1・AC-5-2。実装設計 AC-4-4・
-// AC-7-14-c・AC-7-14-d）。
+// TestApproveWorkMonth_StateTransition は承認の成立と、確定済みの超過／不足・
+// 稼働実績・総稼働時間が締め時のまま出力・保存されることを検証する（AC-1-1・AC-5-1・
+// AC-5-2。実装設計 AC-4-4・AC-7-14-c・AC-7-14-d）。
 func TestApproveWorkMonth_StateTransition(t *testing.T) {
 	f := newFixture(t, mustDate(t, 2026, 8, 15))
 	f.putPendingApproval(t)
@@ -54,17 +65,35 @@ func TestApproveWorkMonth_StateTransition(t *testing.T) {
 		YearMonth:  f.yearMonth,
 	})
 
+	// 出力 DTO 全体を締め時の値と突き合わせる。超過・不足に加えて DailyRecords・
+	// TotalHours・Generated・SettlementRange も締め時のまま（変化しない）ことを
+	// 同時に固定する（AC-4-4。レビュー往復1 C-1・C-2）。
+	wantExcess := port.Hours{Hours: 2, Minutes: 30}
+	wantShortfall := port.Hours{Hours: 1, Minutes: 15}
+	want := port.WorkMonthOutput{
+		ContractID:          testContractID,
+		ContractDisplayName: testDisplayName,
+		YearMonth:           "2026-07",
+		State:               workmonth.StateApproved.String(),
+		Generated:           true,
+		SettlementRange: port.SettlementRangeOutput{
+			LowerBound: port.Hours{Hours: 140, Minutes: 0},
+			UpperBound: port.Hours{Hours: 180, Minutes: 0},
+		},
+		TotalHours: port.Hours{Hours: 8, Minutes: 0},
+		Excess:     &wantExcess,
+		Shortfall:  &wantShortfall,
+		DailyRecords: []port.DailyRecordOutput{
+			{
+				Date:                "2026-07-01",
+				WorkingHours:        port.Hours{Hours: 8, Minutes: 0},
+				RoundedWorkingHours: port.Hours{Hours: 8, Minutes: 0},
+			},
+		},
+	}
 	output := f.output.onlyPresented(t)
-	if output.State != workmonth.StateApproved.String() {
-		t.Errorf("State = %q, want %q", output.State, workmonth.StateApproved.String())
-	}
-	wantExcess := port.Hours{Hours: 1, Minutes: 0}
-	wantShortfall := port.Hours{Hours: 1, Minutes: 0}
-	if diff := cmp.Diff(&wantExcess, output.Excess); diff != "" {
-		t.Errorf("Excess が締め時の値から変化した (-want +got):\n%s（AC-5-2）", diff)
-	}
-	if diff := cmp.Diff(&wantShortfall, output.Shortfall); diff != "" {
-		t.Errorf("Shortfall が締め時の値から変化した (-want +got):\n%s（AC-5-2）", diff)
+	if diff := cmp.Diff(want, output); diff != "" {
+		t.Errorf("出力ポートへ渡された勤務月が不一致 (-want +got):\n%s（AC-5-2・AC-4-4）", diff)
 	}
 	if f.workMonths.saveCount != 1 {
 		t.Errorf("Save の呼び出し回数 = %d, want 1", f.workMonths.saveCount)

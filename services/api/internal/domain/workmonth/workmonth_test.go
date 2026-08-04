@@ -1277,7 +1277,7 @@ func TestWorkMonth_Close_DoesNotRecomputeOnRepeatedAttempt(t *testing.T) {
 // （Close() の同種のテストと同じ形。AC-12-8）。
 
 // TestWorkMonth_Approve_StateTransition は Approve() の状態遷移と、成立した場合に
-// 確定済みの超過／不足が締め時のまま保たれることを検証する
+// 確定済みの超過／不足・稼働実績が締め時のまま保たれることを検証する
 // （approval.md AC-1・AC-5-1・AC-5-2。実装設計 AC-4-4・AC-11-6 の ErrNotApprovable）。
 func TestWorkMonth_Approve_StateTransition(t *testing.T) {
 	tests := []struct {
@@ -1292,7 +1292,8 @@ func TestWorkMonth_Approve_StateTransition(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			target := mustReconstructWorkMonth(t, tt.state, recordsSummingTo(t, 160*60))
+			records := recordsSummingTo(t, 160*60)
+			target := mustReconstructWorkMonth(t, tt.state, records)
 			wantExcess, wantExcessOK := target.Excess()
 			wantShortfall, wantShortfallOK := target.Shortfall()
 
@@ -1330,6 +1331,10 @@ func TestWorkMonth_Approve_StateTransition(t *testing.T) {
 			}
 			if diff := cmp.Diff(viewOfDetermined(wantShortfall, wantShortfallOK), viewOfDetermined(gotShortfall, gotShortfallOK)); diff != "" {
 				t.Errorf("承認で Shortfall() が変化した (-want +got):\n%s（AC-4-4・AC-5-4）", diff)
+			}
+			// 承認では稼働実績も締め時のまま（再計算・変更しない。AC-4-4・実装設計 AC-4-4）。
+			if diff := cmp.Diff(viewOfRecords(records), viewOfRecords(target.DailyRecords())); diff != "" {
+				t.Errorf("承認で DailyRecords() が変化した (-want +got):\n%s（AC-4-4）", diff)
 			}
 		})
 	}
