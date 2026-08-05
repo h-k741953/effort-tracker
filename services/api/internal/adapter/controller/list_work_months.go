@@ -2,8 +2,11 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strconv"
 
+	"github.com/h-k741953/effort-tracker/services/api/internal/domain/workmonth"
 	"github.com/h-k741953/effort-tracker/services/api/internal/usecase/port"
 )
 
@@ -21,9 +24,95 @@ type listWorkMonthsInvoker interface {
 // errorPresenter へ渡す（決定10・AC-9-7-a①）。engineerId を指定した要求は
 // 両ヘッダ不在でも弾かず、未認証の Actor を渡す（AC-9-7-a②・AC-9-7-d）。
 // 承認待ち一覧のロール要求（Approver）は判定しない（AC-9-6-j・AC-8-10）。
-//
-// スタブ（tester が置いた最小実装。ビルドを通すためだけのもので業務ロジックを
-// 持たない）。
-func HandleListWorkMonths(_ *http.Request, _ listWorkMonthsInvoker, _ errorPresenter) {
-	// TODO(implementer): AC-9-5-b・AC-9-6-j・AC-9-6-k・AC-9-7・決定10 を実装する。
+func HandleListWorkMonths(r *http.Request, invoker listWorkMonthsInvoker, output errorPresenter) {
+	query := r.URL.Query()
+	engineerID := query.Get("engineerId")
+	state := query.Get("state")
+
+	var actor port.Actor
+	if engineerID == "" {
+		// 承認待ち一覧（契約 AC-9 順1 の対象）。ヘッダの有無を他の構文検査より
+		// 前に判定する（決定10）。
+		a, err := requireActorHeader(r)
+		if err != nil {
+			output.PresentError(err)
+			return
+		}
+		actor = a
+
+		if state != string(workmonth.StatePendingApproval) {
+			output.PresentError(fmt.Errorf(
+				"%w: engineerId omitted requires state=PendingApproval, got %q", ErrInvalidRequest, state,
+			))
+			return
+		}
+	} else {
+		a, err := buildActorAllowGuest(r)
+		if err != nil {
+			output.PresentError(err)
+			return
+		}
+		actor = a
+
+		if state != "" && !isListState(state) {
+			output.PresentError(fmt.Errorf("%w: invalid state value: %q", ErrInvalidRequest, state))
+			return
+		}
+	}
+
+	limit, err := parseListLimit(query.Get("limit"))
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	offset, err := parseListOffset(query.Get("offset"))
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	invoker.Execute(r.Context(), port.ListWorkMonthsInput{
+		Actor:      actor,
+		EngineerID: engineerID,
+		State:      state,
+		Limit:      limit,
+		Offset:     offset,
+	})
+}
+
+// isListState は state クエリが3値（ユビキタス言語の英語名）のいずれかであることを
+// 確認する（AC-9-6-j）。
+func isListState(value string) bool {
+	switch workmonth.State(value) {
+	case workmonth.StateDraft, workmonth.StatePendingApproval, workmonth.StateApproved:
+		return true
+	default:
+		return false
+	}
+}
+
+// parseListLimit は limit クエリを解釈する（契約 AC-3-6）。省略時は
+// controller が既定値を与える（AC-9-6-k）。
+func parseListLimit(raw string) (int, error) {
+	if raw == "" {
+		return DefaultListLimit, nil
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v <= 0 {
+		return 0, fmt.Errorf("%w: invalid limit: %q", ErrInvalidRequest, raw)
+	}
+	return v, nil
+}
+
+// parseListOffset は offset クエリを解釈する（契約 AC-3-6）。省略時は 0。
+func parseListOffset(raw string) (int, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v < 0 {
+		return 0, fmt.Errorf("%w: invalid offset: %q", ErrInvalidRequest, raw)
+	}
+	return v, nil
 }

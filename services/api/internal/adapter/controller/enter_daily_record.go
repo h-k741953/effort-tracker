@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/h-k741953/effort-tracker/services/api/internal/usecase/port"
@@ -21,9 +23,54 @@ type enterDailyRecordInvoker interface {
 // port.ErrUnauthenticated を errorPresenter へ渡す（決定10・AC-9-7-a①）。
 // 稼働時間は値域を検査せず素の整数のまま写す（AC-9-6-e）。未来日・当該月外・
 // 状態・認可はいずれも検査しない（AC-9-6-d・AC-9-6-f）。
-//
-// スタブ（tester が置いた最小実装。ビルドを通すためだけのもので業務ロジックを
-// 持たない）。
-func HandleEnterDailyRecord(_ *http.Request, _ enterDailyRecordInvoker, _ errorPresenter) {
-	// TODO(implementer): AC-9-5-c・AC-9-6・AC-9-7・決定10 を実装する。
+func HandleEnterDailyRecord(r *http.Request, invoker enterDailyRecordInvoker, output errorPresenter) {
+	actor, err := requireActorHeader(r)
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	if r.Header.Get("Content-Type") != "application/json" {
+		output.PresentError(fmt.Errorf("%w: Content-Type must be application/json", ErrInvalidRequest))
+		return
+	}
+
+	contractID, err := parseContractID(r.PathValue("contractId"))
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	yearMonth, err := parseYearMonth(r.PathValue("yearMonth"))
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	date, err := parseDate(r.PathValue("date"))
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	var body struct {
+		WorkingHours *struct {
+			Hours   int `json:"hours"`
+			Minutes int `json:"minutes"`
+		} `json:"workingHours"`
+	}
+	// 未知フィールドは落とす（エラーにしない。AC-9-6-g）。
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.WorkingHours == nil {
+		output.PresentError(fmt.Errorf("%w: workingHours is missing or malformed", ErrInvalidRequest))
+		return
+	}
+
+	invoker.Execute(r.Context(), port.EnterDailyRecordInput{
+		Actor:      actor,
+		ContractID: contractID,
+		YearMonth:  yearMonth,
+		Date:       date,
+		Hours:      body.WorkingHours.Hours,
+		Minutes:    body.WorkingHours.Minutes,
+	})
 }

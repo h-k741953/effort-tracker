@@ -17,9 +17,28 @@ type rejectWorkMonthInvoker interface {
 // （POST /work-months/{contractId}/{yearMonth}/reject）を入力 DTO へ変換し
 // invoker を呼ぶ（AC-9-5-g）。ボディは読まない・検査しない（AC-9-6-h）。
 // 更新系は契約 AC-9 順1 の対象（決定10・AC-9-7-a①）。
-//
-// スタブ（tester が置いた最小実装。ビルドを通すためだけのもので業務ロジックを
-// 持たない）。
-func HandleRejectWorkMonth(_ *http.Request, _ rejectWorkMonthInvoker, _ errorPresenter) {
-	// TODO(implementer): AC-9-5-g・AC-9-6・AC-9-7・決定10 を実装する。
+func HandleRejectWorkMonth(r *http.Request, invoker rejectWorkMonthInvoker, output errorPresenter) {
+	actor, err := requireActorHeader(r)
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	contractID, err := parseContractID(r.PathValue("contractId"))
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	yearMonth, err := parseYearMonth(r.PathValue("yearMonth"))
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	invoker.Execute(r.Context(), port.RejectWorkMonthInput{
+		Actor:      actor,
+		ContractID: contractID,
+		YearMonth:  yearMonth,
+	})
 }

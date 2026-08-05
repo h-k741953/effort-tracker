@@ -19,9 +19,28 @@ type getWorkMonthInvoker interface {
 //
 // 参照系は操作者ヘッダの有無で応答を変えない（AC-9-7-d）。両ヘッダ不在でも
 // 弾かず、未認証の Actor を組み立てて渡す（AC-9-7-a②）。
-//
-// スタブ（tester が置いた最小実装。ビルドを通すためだけのもので業務ロジックを
-// 持たない。docs/rules/development-process.md の TDD）。
-func HandleGetWorkMonth(_ *http.Request, _ getWorkMonthInvoker, _ errorPresenter) {
-	// TODO(implementer): AC-9-5-a・AC-9-6-a・AC-9-6-b・AC-9-7 を実装する。
+func HandleGetWorkMonth(r *http.Request, invoker getWorkMonthInvoker, output errorPresenter) {
+	actor, err := buildActorAllowGuest(r)
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	contractID, err := parseContractID(r.PathValue("contractId"))
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	yearMonth, err := parseYearMonth(r.PathValue("yearMonth"))
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	invoker.Execute(r.Context(), port.GetWorkMonthInput{
+		Actor:      actor,
+		ContractID: contractID,
+		YearMonth:  yearMonth,
+	})
 }
