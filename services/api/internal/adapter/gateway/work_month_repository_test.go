@@ -73,6 +73,7 @@ func mustDailyRecord(t *testing.T, year, month, day, hours, minutes int) workmon
 // workMonthCmpOpts は WorkMonth の比較用に、非公開フィールドを持つ値オブジェクトの
 // 比較を許可する（AC-12-4）。
 var workMonthCmpOpts = cmp.AllowUnexported(
+	workmonth.WorkMonth{},
 	workmonth.ContractID{}, workmonth.YearMonth{}, workmonth.Date{},
 	workmonth.WorkingHours{}, workmonth.DailyRecord{}, workmonth.SettlementRange{},
 )
