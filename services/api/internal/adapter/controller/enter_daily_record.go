@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime"
 	"net/http"
 
 	"github.com/h-k741953/effort-tracker/services/api/internal/usecase/port"
@@ -30,7 +31,12 @@ func HandleEnterDailyRecord(r *http.Request, invoker enterDailyRecordInvoker, ou
 		return
 	}
 
-	if r.Header.Get("Content-Type") != "application/json" {
+	// 契約 AC-1-2 が固定するのはメディアタイプであって charset 等のパラメータ
+	// ではないため、mime.ParseMediaType でメディアタイプだけを比較する
+	// （`application/json; charset=utf-8` のようなパラメータ付きの値を
+	// 誤って弾かないため）。
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
 		output.PresentError(fmt.Errorf("%w: Content-Type must be application/json", ErrInvalidRequest))
 		return
 	}

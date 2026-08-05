@@ -93,13 +93,15 @@ func isListState(value string) bool {
 }
 
 // parseListLimit は limit クエリを解釈する（契約 AC-3-6）。省略時は
-// controller が既定値を与える（AC-9-6-k）。
+// controller が既定値を与える（AC-9-6-k）。上限（MaxListLimit）を超える値も
+// 契約 AC-3-6 に従い INVALID_REQUEST とする（コストガードレールの観点。
+// docs/rules/cost-guardrails.md）。
 func parseListLimit(raw string) (int, error) {
 	if raw == "" {
 		return DefaultListLimit, nil
 	}
 	v, err := strconv.Atoi(raw)
-	if err != nil || v <= 0 {
+	if err != nil || v <= 0 || v > MaxListLimit {
 		return 0, fmt.Errorf("%w: invalid limit: %q", ErrInvalidRequest, raw)
 	}
 	return v, nil

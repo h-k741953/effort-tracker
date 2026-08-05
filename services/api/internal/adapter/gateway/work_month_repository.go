@@ -65,7 +65,7 @@ DELETE FROM daily_records WHERE contract_id = $1 AND year = $2 AND month = $3
 // workMonthDailyRecordInsertQuery は稼働実績を1件挿入する SQL 文（AC-9-16-c。
 // 入力された稼働時間のみを書き、丸め値・総稼働時間の列は持たない）。
 const workMonthDailyRecordInsertQuery = `
-INSERT INTO daily_records (year, month, day, hours, minutes) VALUES ($1, $2, $3, $4, $5)
+INSERT INTO daily_records (contract_id, year, month, day, hours, minutes) VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 // Find は勤務月を1件取得し、workmonth.Reconstruct（AC-2-5）で集約へ組み立てる
@@ -242,7 +242,7 @@ func (r *WorkMonthRepository) writeWithinTx(ctx context.Context, tx Tx, target *
 
 	for _, record := range target.DailyRecords() {
 		if err := tx.Exec(ctx, workMonthDailyRecordInsertQuery,
-			record.Date().Year(), record.Date().Month(), record.Date().Day(),
+			contractID, record.Date().Year(), record.Date().Month(), record.Date().Day(),
 			record.WorkingHours().Hours(), record.WorkingHours().Minutes(),
 		); err != nil {
 			return err

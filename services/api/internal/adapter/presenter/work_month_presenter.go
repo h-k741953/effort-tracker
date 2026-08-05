@@ -13,6 +13,15 @@ import (
 // リクエストごとに生成し、プロセス内で共有しない（AC-9-13-a）。
 var _ port.WorkMonthOutputPort = (*WorkMonthPresenter)(nil)
 
+// ErrRouteNotFound は未定義のパス・メソッドへのリクエストを表す（AC-1-11）。
+// ルーティングは usecase を経由しない（`driver/lambda` がリクエストを
+// どのハンドラにも振り分けられなかった場合の番兵）ため port ではなく
+// presenter に置く。`code`/ステータスの対応表を presenter 以外に持たせない
+// （AC-11-10）ため、`driver/lambda` はこの番兵を渡して PresentError を呼ぶ
+// 側に倒し、404/`NOT_FOUND` を自前で組み立てない。置き場所・識別子名は
+// 仕様が固定していない（AC-13-17）。
+var ErrRouteNotFound = errors.New("presenter: route not found")
+
 // WorkMonthPresenter は成功・失敗いずれか1回の呼び出しの結果を保持する
 // （AC-9-13-b）。
 type WorkMonthPresenter struct {
@@ -131,6 +140,7 @@ var errorMapping = []struct {
 	{workmonth.ErrNotClosable, "INVALID_STATE_FOR_CLOSE", http.StatusConflict, "work month is not in Draft"},
 	{workmonth.ErrNotApprovable, "INVALID_STATE_FOR_APPROVE", http.StatusConflict, "work month is not in PendingApproval"},
 	{workmonth.ErrNotRejectable, "INVALID_STATE_FOR_REJECT", http.StatusConflict, "work month is not in PendingApproval"},
+	{ErrRouteNotFound, "NOT_FOUND", http.StatusNotFound, "the requested path or method does not exist"},
 }
 
 // PresentError はエラーをステータス・code へ写して保持する（AC-9-12・AC-11-12・

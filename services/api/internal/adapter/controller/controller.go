@@ -40,3 +40,13 @@ type errorPresenter interface {
 // tester が置いた仮の値であり、実装工程が変更してよい。テストはこの定数を
 // 参照するのみで、リテラル値を期待値に埋め込まない。
 const DefaultListLimit = 20
+
+// MaxListLimit は一覧（E-2）の limit に設ける上限（AC-9-6-k）。**値そのものは
+// 契約・本仕様のいずれも固定しない**（domain-api-http-contract.md AC-3-5、
+// 実装設計 AC-13-16）が、上限が存在すること自体はコストガードレール
+// （docs/rules/cost-guardrails.md。Lambda 予約同時実行数 5・Neon への1クエリの
+// 応答サイズ）の観点で必要。100 は 1 回の一覧応答が返す行数の目安として、
+// 既定値 20 の5倍＝UI のページングで通常発生しない量を切り上限とし、Neon
+// への負荷とLambda のメモリ／応答時間を単一リクエストで膨らませないための
+// 仮の値（実装工程が選定。仕様が固定した値ではない）。
+const MaxListLimit = 100
