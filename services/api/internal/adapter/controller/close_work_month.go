@@ -17,9 +17,28 @@ type closeWorkMonthInvoker interface {
 // （POST /work-months/{contractId}/{yearMonth}/close）を入力 DTO へ変換し
 // invoker を呼ぶ（AC-9-5-e）。ボディは読まない・検査しない（AC-9-6-h）。
 // 更新系は契約 AC-9 順1 の対象（決定10・AC-9-7-a①）。
-//
-// スタブ（tester が置いた最小実装。ビルドを通すためだけのもので業務ロジックを
-// 持たない）。
-func HandleCloseWorkMonth(_ *http.Request, _ closeWorkMonthInvoker, _ errorPresenter) {
-	// TODO(implementer): AC-9-5-e・AC-9-6・AC-9-7・決定10 を実装する。
+func HandleCloseWorkMonth(r *http.Request, invoker closeWorkMonthInvoker, output errorPresenter) {
+	actor, err := requireActorHeader(r)
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	contractID, err := parseContractID(r.PathValue("contractId"))
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	yearMonth, err := parseYearMonth(r.PathValue("yearMonth"))
+	if err != nil {
+		output.PresentError(err)
+		return
+	}
+
+	invoker.Execute(r.Context(), port.CloseWorkMonthInput{
+		Actor:      actor,
+		ContractID: contractID,
+		YearMonth:  yearMonth,
+	})
 }
