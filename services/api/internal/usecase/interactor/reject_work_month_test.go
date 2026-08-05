@@ -21,8 +21,8 @@ import (
 //
 // 判定順序（AC-7-13）は ApproveWorkMonth と完全に同一である。
 // 本ファイルの TestRejectWorkMonth_JudgementOrder は approve_work_month_test.go の
-// TestApproveWorkMonth_JudgementOrder と同一の6ケースを差戻し側で独立に複製する
-// （AC-12-8 が固定を求める2組を含む）。判定順序を差戻し側だけで別途検証するのは、
+// TestApproveWorkMonth_JudgementOrder と同一の7ケースを差戻し側で独立に複製する
+// （AC-12-8 が固定を求める3組を含む）。判定順序を差戻し側だけで別途検証するのは、
 // 差戻しにだけ判定を足さない・省かないこと（AC-7-14）を独立に確認するため。
 
 func (f *fixture) reject() *interactor.RejectWorkMonth {
@@ -208,10 +208,15 @@ func TestRejectWorkMonth_Authorization(t *testing.T) {
 				if f.workMonths.saveCount != 0 {
 					t.Errorf("認可で弾かれたのに Save が呼ばれた（回数 = %d, want 0）", f.workMonths.saveCount)
 				}
-				saved := f.workMonths.saved(t, f.contractID, f.yearMonth)
-				if saved.State() != workmonth.StatePendingApproval {
-					t.Errorf("認可で弾かれたのに状態が変化している State() = %q, want %q", saved.State(), workmonth.StatePendingApproval)
-				}
+				// 「認可で弾かれたのに保存済みの状態が変化していない」ことは、上の
+				// saveCount == 0 の検査に尽きる。f.workMonths.Find は Reconstruct で
+				// **複製**を返す（fake_test.go）ため、interactor が触る target は
+				// 呼び出しごとの複製であり、f.stored（saved() が読む先）は Save を
+				// 経ない限り変わらない。よって「弾かれた経路にだけ
+				// _ = target.Reject() を挿入する」変異を入れても saved().State() は
+				// 構造上ぜったいに変化せず、この形の追加検査は保護を提供しない
+				// （レビュー往復2 W-C。往復1 C-1・C-2 と同じ「主張と実体の乖離」を
+				// 残さないため、意図的に検査しない）。
 				return
 			}
 
@@ -305,7 +310,17 @@ func TestRejectWorkMonth_UngeneratedWorkMonthNotFound(t *testing.T) {
 // TestRejectWorkMonth_JudgementOrder は差戻しの判定順序を検証する
 // （実装設計 AC-7-13。承認と完全に同一の順序。①認証 → ②契約の実在 → ③勤務月の実在 →
 // ④認可（承認者ロール→自己承認） → ⑤状態）。
-// AC-12-8 が固定を求める2組（未生成×承認者でない、Draft×承認者でない）を含む。
+// AC-12-8 が固定を求める3組（未生成×承認者でない、Draft×承認者でない、
+// Draft×承認者ロールを持つ本人＝自己承認）を含む。3組目は④（認可）が⑤
+// （target.Reject()）より先であることを、ロール判定の枝（2組目）だけでなく
+// 自己承認の枝でも観測するために要る。状態に**成立する**組み合わせ
+// （PendingApproval）で自己承認を検査すると、④と⑤の順序を入れ替えても
+// 最終的に返るエラーは ErrSelfApproval のまま変わらず（⑤が先に成功しても
+// ④が事後的に弾く）、順序の違いを検出できない（TestRejectWorkMonth_Authorization
+// の自己承認ケースがこれに当たる）。**状態が不成立**の Draft を選ぶことで、
+// ⑤が先に実行された場合は Reject() 自身のガード（ErrNotRejectable）が
+// 先に返ってしまい、期待する ErrSelfApproval との差分として検出できる
+// （レビュー往復2 C-1）。
 func TestRejectWorkMonth_JudgementOrder(t *testing.T) {
 	tests := []struct {
 		name                 string
@@ -344,6 +359,13 @@ func TestRejectWorkMonth_JudgementOrder(t *testing.T) {
 			generated: true,
 			state:     workmonth.StateDraft,
 			wantErr:   port.ErrNotApprover,
+		},
+		{
+			name:      "生成済み Draft で承認者ロールを持つ本人（自己承認）は ErrSelfApproval が先（順4。Reject() 自身の ErrNotRejectable ではない。AC-12-8 の3組目）",
+			actor:     ownerActor(port.RoleApprover),
+			generated: true,
+			state:     workmonth.StateDraft,
+			wantErr:   port.ErrSelfApproval,
 		},
 		{
 			name:      "承認者だが Draft なら ErrNotRejectable（順5。認可を満たした後の状態）",
