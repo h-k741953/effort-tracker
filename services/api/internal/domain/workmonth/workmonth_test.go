@@ -1276,8 +1276,40 @@ func TestWorkMonth_Close_DoesNotRecomputeOnRepeatedAttempt(t *testing.T) {
 // 超過／不足も動かないことを、State() とアクセサ（AC-5-7）の双方で確認する
 // （Close() の同種のテストと同じ形。AC-12-8）。
 
+// mustReconstructApproveFixture は TestWorkMonth_Approve_StateTransition の前提を
+// 組み立てる。PendingApproval には超過・不足に異なる値（超過=2時間30分・不足=0分。
+// 一方は必ず0という Close() 到達可能な組。`monthly-closing.md` AC-3-4）を与える。
+// 共有ヘルパー mustReconstructWorkMonth は超過・不足に同一の値（1時間0分・1時間0分）を
+// 使っており、Approve() 内で両者を入れ替える変異を domain パッケージ単体では
+// 検出できない（レビュー往復2 W-A）。共有ヘルパーを変えると UC1・UC2 に波及するため、
+// この UC3 のテストが使う前提だけをローカルに作る（interactor 側の
+// putPendingApproval と同じ方針。approve_work_month_test.go）。
+// Draft・Approved は Approve() が成功しない（値を触らない）ため、従来どおり
+// mustReconstructWorkMonth を使う。
+func mustReconstructApproveFixture(t *testing.T, state workmonth.State, records []workmonth.DailyRecord) *workmonth.WorkMonth {
+	t.Helper()
+	if state != workmonth.StatePendingApproval {
+		return mustReconstructWorkMonth(t, state, records)
+	}
+	excess := mustWorkingHours(t, 2, 30)
+	shortfall := mustWorkingHours(t, 0, 0)
+	w, err := workmonth.Reconstruct(
+		mustContractID(t, "ctr-0001"),
+		mustYearMonth(t, 2026, 7),
+		mustSettlementRange(t, 140, 180),
+		state,
+		records,
+		&excess,
+		&shortfall,
+	)
+	if err != nil {
+		t.Fatalf("前提の構築に失敗: Reconstruct(%s): %v", state, err)
+	}
+	return w
+}
+
 // TestWorkMonth_Approve_StateTransition は Approve() の状態遷移と、成立した場合に
-// 確定済みの超過／不足・稼働実績が締め時のまま保たれることを検証する
+// 確定済みの超過・不足・稼働実績が締め時のまま保たれることを検証する
 // （approval.md AC-1・AC-5-1・AC-5-2。実装設計 AC-4-4・AC-11-6 の ErrNotApprovable）。
 func TestWorkMonth_Approve_StateTransition(t *testing.T) {
 	tests := []struct {
@@ -1293,7 +1325,7 @@ func TestWorkMonth_Approve_StateTransition(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			records := recordsSummingTo(t, 160*60)
-			target := mustReconstructWorkMonth(t, tt.state, records)
+			target := mustReconstructApproveFixture(t, tt.state, records)
 			wantExcess, wantExcessOK := target.Excess()
 			wantShortfall, wantShortfallOK := target.Shortfall()
 

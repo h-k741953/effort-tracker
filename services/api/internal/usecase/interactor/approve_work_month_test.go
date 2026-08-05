@@ -25,16 +25,19 @@ func (f *fixture) approve() *interactor.ApproveWorkMonth {
 
 // putPendingApproval は締め済（PendingApproval）の勤務月を保存する。
 //
-// 確定済みの超過・不足には意図的に異なる値（2時間30分・1時間15分）を与える。
+// 確定済みの超過・不足には意図的に異なる値（超過=2時間30分・不足=0分）を与える。
+// 超過・不足の一方は必ず0（`monthly-closing.md` AC-3-4）であり、Close() が
+// 実際に到達しうる組み合わせはこれに限られる（超過・不足がともに正の値になる組は
+// Close() では作れない。レビュー往復2 W-B）。それでも超過と不足を異なる値にするのは、
 // 共有ヘルパー reconstructWorkMonth（enter_daily_record_test.go）・
-// mustReconstructWorkMonth（workmonth_test.go）は超過・不足に同一の値を使っており、
-// Approve() 内で両者を入れ替える変異を検出できない（レビュー往復1 W-1）。
+// mustReconstructWorkMonth（workmonth_test.go）が超過・不足に同一の値を使っており、
+// Approve() 内で両者を入れ替える変異を検出できないため（レビュー往復1 W-1）。
 // 共有ヘルパーを変えると UC1・UC2 に波及するため、UC3 のテストが使う前提だけを
 // workmonth.Reconstruct の直接呼び出しで作る。
 func (f *fixture) putPendingApproval(t *testing.T) {
 	t.Helper()
 	excess := mustWorkingHours(t, 2, 30)
-	shortfall := mustWorkingHours(t, 1, 15)
+	shortfall := mustWorkingHours(t, 0, 0)
 	target, err := workmonth.Reconstruct(
 		f.contractID,
 		f.yearMonth,
@@ -69,7 +72,7 @@ func TestApproveWorkMonth_StateTransition(t *testing.T) {
 	// TotalHours・Generated・SettlementRange も締め時のまま（変化しない）ことを
 	// 同時に固定する（AC-4-4。レビュー往復1 C-1・C-2）。
 	wantExcess := port.Hours{Hours: 2, Minutes: 30}
-	wantShortfall := port.Hours{Hours: 1, Minutes: 15}
+	wantShortfall := port.Hours{Hours: 0, Minutes: 0}
 	want := port.WorkMonthOutput{
 		ContractID:          testContractID,
 		ContractDisplayName: testDisplayName,
@@ -224,10 +227,15 @@ func TestApproveWorkMonth_Authorization(t *testing.T) {
 				if f.workMonths.saveCount != 0 {
 					t.Errorf("認可で弾かれたのに Save が呼ばれた（回数 = %d, want 0）", f.workMonths.saveCount)
 				}
-				saved := f.workMonths.saved(t, f.contractID, f.yearMonth)
-				if saved.State() != workmonth.StatePendingApproval {
-					t.Errorf("認可で弾かれたのに状態が変化している State() = %q, want %q", saved.State(), workmonth.StatePendingApproval)
-				}
+				// 「認可で弾かれたのに保存済みの状態が変化していない」ことは、上の
+				// saveCount == 0 の検査に尽きる。f.workMonths.Find は Reconstruct で
+				// **複製**を返す（fake_test.go）ため、interactor が触る target は
+				// 呼び出しごとの複製であり、f.stored（saved() が読む先）は Save を
+				// 経ない限り変わらない。よって「弾かれた経路にだけ
+				// _ = target.Approve() を挿入する」変異を入れても saved().State() は
+				// 構造上ぜったいに変化せず、この形の追加検査は保護を提供しない
+				// （レビュー往復2 W-C。往復1 C-1・C-2 と同じ「主張と実体の乖離」を
+				// 残さないため、意図的に検査しない）。
 				return
 			}
 
@@ -321,7 +329,17 @@ func TestApproveWorkMonth_UngeneratedWorkMonthNotFound(t *testing.T) {
 // TestApproveWorkMonth_JudgementOrder は承認の判定順序を検証する
 // （実装設計 AC-7-13。①認証 → ②契約の実在 → ③勤務月の実在 → ④認可
 // （承認者ロール→自己承認） → ⑤状態）。
-// AC-12-8 が固定を求める2組（未生成×承認者でない、Draft×承認者でない）を含む。
+// AC-12-8 が固定を求める3組（未生成×承認者でない、Draft×承認者でない、
+// Draft×承認者ロールを持つ本人＝自己承認）を含む。3組目は④（認可）が⑤
+// （target.Approve()）より先であることを、ロール判定の枝（2組目）だけでなく
+// 自己承認の枝でも観測するために要る。状態に**成立する**組み合わせ
+// （PendingApproval）で自己承認を検査すると、④と⑤の順序を入れ替えても
+// 最終的に返るエラーは ErrSelfApproval のまま変わらず（⑤が先に成功しても
+// ④が事後的に弾く）、順序の違いを検出できない（TestApproveWorkMonth_Authorization
+// の自己承認ケースがこれに当たる）。**状態が不成立**の Draft を選ぶことで、
+// ⑤が先に実行された場合は Approve() 自身のガード（ErrNotApprovable）が
+// 先に返ってしまい、期待する ErrSelfApproval との差分として検出できる
+// （レビュー往復2 C-1）。
 func TestApproveWorkMonth_JudgementOrder(t *testing.T) {
 	tests := []struct {
 		name                 string
@@ -360,6 +378,13 @@ func TestApproveWorkMonth_JudgementOrder(t *testing.T) {
 			generated: true,
 			state:     workmonth.StateDraft,
 			wantErr:   port.ErrNotApprover,
+		},
+		{
+			name:      "生成済み Draft で承認者ロールを持つ本人（自己承認）は ErrSelfApproval が先（順4。Approve() 自身の ErrNotApprovable ではない。AC-12-8 の3組目）",
+			actor:     ownerActor(port.RoleApprover),
+			generated: true,
+			state:     workmonth.StateDraft,
+			wantErr:   port.ErrSelfApproval,
 		},
 		{
 			name:      "承認者だが Draft なら ErrNotApprovable（順5。認可を満たした後の状態）",
