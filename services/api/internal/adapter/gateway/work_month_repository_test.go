@@ -343,15 +343,45 @@ func TestWorkMonthRepository_Save_WritesExactDailyRecordSet(t *testing.T) {
 		t.Fatalf("Save failed: %v", err)
 	}
 
-	// 稼働実績1件分の Exec 呼び出しは5引数（年・月・日・時・分。AC-9-16-c）とする
-	// tester の取り決め（doubles_test.go の前書き）。丸め値・総稼働時間の列は
-	// 引数に含まれない。
-	recordCalls := execCallsWithArgCount(tx.execCalls, 5)
-	want := []execCall{{args: []any{2026, 7, 1, 7, 30}}}
+	// 稼働実績1件分の Exec 呼び出しは6引数（契約識別子・年・月・日・時・分。
+	// AC-9-16-c）とする tester の取り決め（doubles_test.go の前書き。契約識別子を
+	// 書かないと、稼働実績の主キーである「契約 × 年月 × 対象日」が保存されず、
+	// 保存した行を二度と読み出せない＝AC-10-5・AC-9-16-b 違反）。丸め値・
+	// 総稼働時間の列は引数に含まれない。
+	recordCalls := execCallsWithArgCount(tx.execCalls, 6)
+	want := []execCall{{args: []any{"contract-1", 2026, 7, 1, 7, 30}}}
 	if diff := cmp.Diff(want, recordCalls, cmp.Comparer(func(a, b execCall) bool {
 		return cmp.Equal(a.args, b.args)
 	})); diff != "" {
 		t.Errorf("稼働実績の書き込みが不一致 (-want +got):\n%s（AC-9-16-b・AC-9-16-c）", diff)
+	}
+}
+
+// TestWorkMonthRepository_Save_DeletesDailyRecordsBeforeInserting は、Save が
+// 稼働実績の全削除（DELETE）を発行することを検証する（AC-9-16-b・AC-12-11②）。
+// 削除の手順ごと欠落しても、単に保存後の行集合を突き合わせるだけの検証では
+// 検出できない（挿入前に対象の勤務月分の行が0件だから、削除してもしなくても
+// 結果の行集合は変わらない）。そのため DELETE の発行そのものを、他の Exec
+// 呼び出し（12引数のヘッダ upsert・6引数の稼働実績 insert）と引数の個数で
+// 判別してアサートする（DELETE は契約識別子・年・月の3引数。doubles_test.go の
+// 前書きに定める tester の取り決め）。
+func TestWorkMonthRepository_Save_DeletesDailyRecordsBeforeInserting(t *testing.T) {
+	db := newFakeDB()
+	tx := newFakeTx()
+	db.pushBegin(tx, nil)
+
+	repo := gateway.NewWorkMonthRepository(db)
+	target := closedWorkMonth(t)
+	if err := repo.Save(context.Background(), target); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	deleteCalls := execCallsWithArgCount(tx.execCalls, 3)
+	want := []execCall{{args: []any{"contract-1", 2026, 7}}}
+	if diff := cmp.Diff(want, deleteCalls, cmp.Comparer(func(a, b execCall) bool {
+		return cmp.Equal(a.args, b.args)
+	})); diff != "" {
+		t.Errorf("稼働実績の全削除 (DELETE) の呼び出しが不一致 (-want +got):\n%s（AC-9-16-b・AC-12-11②）", diff)
 	}
 }
 
