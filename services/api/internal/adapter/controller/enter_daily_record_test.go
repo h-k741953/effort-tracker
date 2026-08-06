@@ -174,8 +174,8 @@ func TestHandleEnterDailyRecord_RejectsMissingOrMistypedWorkingHours(t *testing.
 			controller.HandleEnterDailyRecord(r, invoker, output)
 
 			err := output.onlyErr(t)
-			if !errors.Is(err, controller.ErrInvalidRequest) {
-				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, controller.ErrInvalidRequest)（AC-9-6-e）", err)
+			if !errors.Is(err, port.ErrInvalidRequest) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrInvalidRequest)（AC-9-6-e）", err)
 			}
 			invoker.wantNoCall(t)
 		})
@@ -211,8 +211,8 @@ func TestHandleEnterDailyRecord_RejectsContentTypeMismatch(t *testing.T) {
 			controller.HandleEnterDailyRecord(r, invoker, output)
 
 			err := output.onlyErr(t)
-			if !errors.Is(err, controller.ErrInvalidRequest) {
-				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, controller.ErrInvalidRequest)（AC-9-6-i）", err)
+			if !errors.Is(err, port.ErrInvalidRequest) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrInvalidRequest)（AC-9-6-i）", err)
 			}
 			invoker.wantNoCall(t)
 		})
@@ -255,13 +255,13 @@ func TestHandleEnterDailyRecord_HeaderAbsenceOrderedBeforeSyntaxCheck(t *testing
 			headers:    map[string]string{"Content-Type": "application/json"},
 			date:       "2026-02-30",
 			wantErr:    port.ErrUnauthenticated,
-			wantNotErr: controller.ErrInvalidRequest,
+			wantNotErr: port.ErrInvalidRequest,
 		},
 		{
 			name:       "構文不正のみ（ヘッダは妥当） → INVALID_REQUEST",
 			headers:    jsonHeaders(testActorID, string(port.RoleEngineer)),
 			date:       "2026-02-30",
-			wantErr:    controller.ErrInvalidRequest,
+			wantErr:    port.ErrInvalidRequest,
 			wantNotErr: port.ErrUnauthenticated,
 		},
 	}

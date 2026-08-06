@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/h-k741953/effort-tracker/services/api/internal/adapter/controller"
 	"github.com/h-k741953/effort-tracker/services/api/internal/adapter/presenter"
 	"github.com/h-k741953/effort-tracker/services/api/internal/domain/workmonth"
 	"github.com/h-k741953/effort-tracker/services/api/internal/usecase/port"
@@ -47,7 +46,7 @@ func TestWorkMonthPresenter_PresentError_MapsToCodeAndStatus(t *testing.T) {
 		// adapter 層の要求側の識別子（AC-9-9-a・AC-11-13）。
 		{
 			name:       "controller の要求側の識別子は INVALID_REQUEST へ写る（AC-11-13）",
-			err:        controller.ErrInvalidRequest,
+			err:        port.ErrInvalidRequest,
 			wantCode:   "INVALID_REQUEST",
 			wantStatus: http.StatusBadRequest,
 		},

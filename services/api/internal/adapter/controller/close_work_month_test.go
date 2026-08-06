@@ -78,7 +78,7 @@ func TestHandleCloseWorkMonth_RejectsWhenBothHeadersAbsent(t *testing.T) {
 // TestHandleCloseWorkMonth_RejectsPartialOrInvalidActorHeader は操作者ヘッダが
 // 片方だけ、またはロール値が2値以外の要求を要求の構文不正として弾くことを検証する
 // （AC-9-7-c）。「両方不在」（決定10）ではないため port.ErrUnauthenticated ではなく
-// controller.ErrInvalidRequest が渡る。
+// port.ErrInvalidRequest が渡る。
 func TestHandleCloseWorkMonth_RejectsPartialOrInvalidActorHeader(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -102,8 +102,8 @@ func TestHandleCloseWorkMonth_RejectsPartialOrInvalidActorHeader(t *testing.T) {
 			if errors.Is(err, port.ErrUnauthenticated) {
 				t.Fatalf("片方だけ／不正なロール値は UNAUTHENTICATED ではなく INVALID_REQUEST（AC-9-7-c）: %v", err)
 			}
-			if !errors.Is(err, controller.ErrInvalidRequest) {
-				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, controller.ErrInvalidRequest)", err)
+			if !errors.Is(err, port.ErrInvalidRequest) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrInvalidRequest)", err)
 			}
 			invoker.wantNoCall(t)
 		})
@@ -137,8 +137,8 @@ func TestHandleCloseWorkMonth_RejectsInvalidContractIDFormat(t *testing.T) {
 			controller.HandleCloseWorkMonth(r, invoker, output)
 
 			err := output.onlyErr(t)
-			if !errors.Is(err, controller.ErrInvalidRequest) {
-				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, controller.ErrInvalidRequest)（AC-9-6-a）", err)
+			if !errors.Is(err, port.ErrInvalidRequest) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrInvalidRequest)（AC-9-6-a）", err)
 			}
 			if errors.Is(err, workmonth.ErrInvalidValue) {
 				t.Fatalf("controller の識別子は workmonth.ErrInvalidValue を兼ねてはならない（AC-9-9-b・AC-11-13）: %v", err)
@@ -150,7 +150,7 @@ func TestHandleCloseWorkMonth_RejectsInvalidContractIDFormat(t *testing.T) {
 
 // TestHandleCloseWorkMonth_RejectsInvalidYearMonthFormat は年月の構築失敗・書式
 // 不一致を弾くことを検証する（AC-9-6-b）。domain の workmonth.ErrInvalidValue を
-// そのまま出力側へ渡さず、controller.ErrInvalidRequest へ変換することを併せて
+// そのまま出力側へ渡さず、port.ErrInvalidRequest へ変換することを併せて
 // 確認する（AC-9-9-b・AC-9-9-c・AC-11-13）。
 func TestHandleCloseWorkMonth_RejectsInvalidYearMonthFormat(t *testing.T) {
 	tests := []struct {
@@ -175,8 +175,8 @@ func TestHandleCloseWorkMonth_RejectsInvalidYearMonthFormat(t *testing.T) {
 			controller.HandleCloseWorkMonth(r, invoker, output)
 
 			err := output.onlyErr(t)
-			if !errors.Is(err, controller.ErrInvalidRequest) {
-				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, controller.ErrInvalidRequest)（AC-9-6-b）", err)
+			if !errors.Is(err, port.ErrInvalidRequest) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrInvalidRequest)（AC-9-6-b）", err)
 			}
 			if errors.Is(err, workmonth.ErrInvalidValue) {
 				t.Fatalf("controller の識別子は workmonth.ErrInvalidValue を兼ねてはならない（AC-9-9-b・AC-11-13）: %v", err)
@@ -204,20 +204,20 @@ func TestHandleCloseWorkMonth_HeaderAbsenceOrderedBeforeSyntaxCheck(t *testing.T
 			headers:    nil,
 			yearMonth:  "2026-13",
 			wantErr:    port.ErrUnauthenticated,
-			wantNotErr: controller.ErrInvalidRequest,
+			wantNotErr: port.ErrInvalidRequest,
 		},
 		{
 			name:       "ヘッダ不在のみ（年月は妥当） → UNAUTHENTICATED",
 			headers:    nil,
 			yearMonth:  "2026-07",
 			wantErr:    port.ErrUnauthenticated,
-			wantNotErr: controller.ErrInvalidRequest,
+			wantNotErr: port.ErrInvalidRequest,
 		},
 		{
 			name:       "構文不正のみ（ヘッダは妥当） → INVALID_REQUEST",
 			headers:    actorHeaders(testActorID, string(port.RoleEngineer)),
 			yearMonth:  "2026-13",
-			wantErr:    controller.ErrInvalidRequest,
+			wantErr:    port.ErrInvalidRequest,
 			wantNotErr: port.ErrUnauthenticated,
 		},
 	}

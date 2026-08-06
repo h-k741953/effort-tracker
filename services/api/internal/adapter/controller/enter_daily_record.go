@@ -37,7 +37,7 @@ func HandleEnterDailyRecord(r *http.Request, invoker enterDailyRecordInvoker, ou
 	// 誤って弾かないため）。
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
-		output.PresentError(fmt.Errorf("%w: Content-Type must be application/json", ErrInvalidRequest))
+		output.PresentError(fmt.Errorf("%w: Content-Type must be application/json", port.ErrInvalidRequest))
 		return
 	}
 
@@ -67,7 +67,7 @@ func HandleEnterDailyRecord(r *http.Request, invoker enterDailyRecordInvoker, ou
 	}
 	// 未知フィールドは落とす（エラーにしない。AC-9-6-g）。
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.WorkingHours == nil {
-		output.PresentError(fmt.Errorf("%w: workingHours is missing or malformed", ErrInvalidRequest))
+		output.PresentError(fmt.Errorf("%w: workingHours is missing or malformed", port.ErrInvalidRequest))
 		return
 	}
 

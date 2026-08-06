@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/h-k741953/effort-tracker/services/api/internal/adapter/controller"
 	"github.com/h-k741953/effort-tracker/services/api/internal/domain/workmonth"
 	"github.com/h-k741953/effort-tracker/services/api/internal/usecase/port"
 )
@@ -126,7 +125,7 @@ var errorMapping = []struct {
 	status   int
 	message  string
 }{
-	{controller.ErrInvalidRequest, "INVALID_REQUEST", http.StatusBadRequest, "the request is invalid"},
+	{port.ErrInvalidRequest, "INVALID_REQUEST", http.StatusBadRequest, "the request is invalid"},
 	{workmonth.ErrWorkingHoursOutOfRange, "WORKING_HOURS_OUT_OF_RANGE", http.StatusBadRequest, "working hours out of range"},
 	{workmonth.ErrFutureDate, "FUTURE_DATE_NOT_ALLOWED", http.StatusBadRequest, "date must not be in the future"},
 	{workmonth.ErrDateOutOfMonth, "DATE_OUT_OF_WORK_MONTH", http.StatusBadRequest, "date is out of the work month"},

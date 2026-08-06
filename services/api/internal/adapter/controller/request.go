@@ -26,15 +26,15 @@ var (
 )
 
 // parseContractID は契約識別子をパス値から構築する（AC-9-6-a）。
-// workmonth.ErrInvalidValue を要求側の識別子（ErrInvalidRequest）へ変換して
-// から返す（AC-9-9-b・AC-9-9-c。%w に含めるのは ErrInvalidRequest だけ）。
+// workmonth.ErrInvalidValue を要求側の識別子（port.ErrInvalidRequest）へ変換して
+// から返す（AC-9-9-b・AC-9-9-c。%w に含めるのは port.ErrInvalidRequest だけ）。
 func parseContractID(value string) (workmonth.ContractID, error) {
 	if !contractIDPattern.MatchString(value) {
-		return workmonth.ContractID{}, fmt.Errorf("%w: invalid contractId format: %q", ErrInvalidRequest, value)
+		return workmonth.ContractID{}, fmt.Errorf("%w: invalid contractId format: %q", port.ErrInvalidRequest, value)
 	}
 	id, err := workmonth.NewContractID(value)
 	if err != nil {
-		return workmonth.ContractID{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		return workmonth.ContractID{}, fmt.Errorf("%w: %v", port.ErrInvalidRequest, err)
 	}
 	return id, nil
 }
@@ -43,13 +43,13 @@ func parseContractID(value string) (workmonth.ContractID, error) {
 func parseYearMonth(value string) (workmonth.YearMonth, error) {
 	m := yearMonthPattern.FindStringSubmatch(value)
 	if m == nil {
-		return workmonth.YearMonth{}, fmt.Errorf("%w: invalid yearMonth format: %q", ErrInvalidRequest, value)
+		return workmonth.YearMonth{}, fmt.Errorf("%w: invalid yearMonth format: %q", port.ErrInvalidRequest, value)
 	}
 	year, _ := strconv.Atoi(m[1])
 	month, _ := strconv.Atoi(m[2])
 	ym, err := workmonth.NewYearMonth(year, month)
 	if err != nil {
-		return workmonth.YearMonth{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		return workmonth.YearMonth{}, fmt.Errorf("%w: %v", port.ErrInvalidRequest, err)
 	}
 	return ym, nil
 }
@@ -58,14 +58,14 @@ func parseYearMonth(value string) (workmonth.YearMonth, error) {
 func parseDate(value string) (workmonth.Date, error) {
 	m := datePattern.FindStringSubmatch(value)
 	if m == nil {
-		return workmonth.Date{}, fmt.Errorf("%w: invalid date format: %q", ErrInvalidRequest, value)
+		return workmonth.Date{}, fmt.Errorf("%w: invalid date format: %q", port.ErrInvalidRequest, value)
 	}
 	year, _ := strconv.Atoi(m[1])
 	month, _ := strconv.Atoi(m[2])
 	day, _ := strconv.Atoi(m[3])
 	d, err := workmonth.NewDate(year, month, day)
 	if err != nil {
-		return workmonth.Date{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		return workmonth.Date{}, fmt.Errorf("%w: %v", port.ErrInvalidRequest, err)
 	}
 	return d, nil
 }
@@ -102,11 +102,11 @@ func buildActorAllowGuest(r *http.Request) (port.Actor, error) {
 		return port.Actor{}, nil
 	}
 	if id == "" || role == "" {
-		return port.Actor{}, fmt.Errorf("%w: actor headers must be present together", ErrInvalidRequest)
+		return port.Actor{}, fmt.Errorf("%w: actor headers must be present together", port.ErrInvalidRequest)
 	}
 	roleValue, ok := parseRole(role)
 	if !ok {
-		return port.Actor{}, fmt.Errorf("%w: invalid actor role: %q", ErrInvalidRequest, role)
+		return port.Actor{}, fmt.Errorf("%w: invalid actor role: %q", port.ErrInvalidRequest, role)
 	}
 	return port.Actor{ID: id, Role: roleValue, Authenticated: true}, nil
 }
@@ -115,19 +115,19 @@ func buildActorAllowGuest(r *http.Request) (port.Actor, error) {
 // E-2）向けに操作者ヘッダを Actor へ写す（決定10・AC-9-7-a①）。**ヘッダの
 // 有無の判定を他のどの構文検査よりも前に置く**ため、呼び出し元（各ハンドラ）は
 // 本関数を最初に呼ぶこと。両ヘッダ不在は port.ErrUnauthenticated（構文不正の
-// 識別子＝ErrInvalidRequest とは異なる番兵。AC-9-9-a）を返し、入力 DTO を組み
-// 立てさせない。片方だけ・ロール値が2値以外は ErrInvalidRequest。
+// 識別子＝port.ErrInvalidRequest とは異なる番兵。AC-9-9-a）を返し、入力 DTO を組み
+// 立てさせない。片方だけ・ロール値が2値以外は port.ErrInvalidRequest。
 func requireActorHeader(r *http.Request) (port.Actor, error) {
 	id, role := actorHeaderValues(r)
 	if id == "" && role == "" {
 		return port.Actor{}, port.ErrUnauthenticated
 	}
 	if id == "" || role == "" {
-		return port.Actor{}, fmt.Errorf("%w: actor headers must be present together", ErrInvalidRequest)
+		return port.Actor{}, fmt.Errorf("%w: actor headers must be present together", port.ErrInvalidRequest)
 	}
 	roleValue, ok := parseRole(role)
 	if !ok {
-		return port.Actor{}, fmt.Errorf("%w: invalid actor role: %q", ErrInvalidRequest, role)
+		return port.Actor{}, fmt.Errorf("%w: invalid actor role: %q", port.ErrInvalidRequest, role)
 	}
 	return port.Actor{ID: id, Role: roleValue, Authenticated: true}, nil
 }

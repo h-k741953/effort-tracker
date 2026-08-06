@@ -115,7 +115,7 @@ func TestHandleListWorkMonths_RejectsWhenEngineerIDOmittedAndBothHeadersAbsent(t
 			if !errors.Is(err, port.ErrUnauthenticated) {
 				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrUnauthenticated)（決定10）", err)
 			}
-			if errors.Is(err, controller.ErrInvalidRequest) {
+			if errors.Is(err, port.ErrInvalidRequest) {
 				t.Fatalf("UNAUTHENTICATED であるべきところで INVALID_REQUEST も兼ねてはならない: %v", err)
 			}
 			invoker.wantNoCall(t)
@@ -148,8 +148,8 @@ func TestHandleListWorkMonths_RejectsInvalidStateCombinationWhenEngineerIDOmitte
 			controller.HandleListWorkMonths(r, invoker, output)
 
 			err := output.onlyErr(t)
-			if !errors.Is(err, controller.ErrInvalidRequest) {
-				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, controller.ErrInvalidRequest)（契約 AC-3-3）", err)
+			if !errors.Is(err, port.ErrInvalidRequest) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrInvalidRequest)（契約 AC-3-3）", err)
 			}
 			invoker.wantNoCall(t)
 		})
@@ -182,8 +182,8 @@ func TestHandleListWorkMonths_RejectsInvalidLimitOrOffset(t *testing.T) {
 			controller.HandleListWorkMonths(r, invoker, output)
 
 			err := output.onlyErr(t)
-			if !errors.Is(err, controller.ErrInvalidRequest) {
-				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, controller.ErrInvalidRequest)（契約 AC-3-6）", err)
+			if !errors.Is(err, port.ErrInvalidRequest) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrInvalidRequest)（契約 AC-3-6）", err)
 			}
 			invoker.wantNoCall(t)
 		})
@@ -204,8 +204,8 @@ func TestHandleListWorkMonths_RejectsInvalidStateValue(t *testing.T) {
 	controller.HandleListWorkMonths(r, invoker, output)
 
 	err := output.onlyErr(t)
-	if !errors.Is(err, controller.ErrInvalidRequest) {
-		t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, controller.ErrInvalidRequest)（AC-9-6-j）", err)
+	if !errors.Is(err, port.ErrInvalidRequest) {
+		t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrInvalidRequest)（AC-9-6-j）", err)
 	}
 	invoker.wantNoCall(t)
 }
@@ -244,8 +244,8 @@ func TestHandleListWorkMonths_RejectsPartialActorHeader(t *testing.T) {
 	controller.HandleListWorkMonths(r, invoker, output)
 
 	err := output.onlyErr(t)
-	if !errors.Is(err, controller.ErrInvalidRequest) {
-		t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, controller.ErrInvalidRequest)（AC-9-7-c）", err)
+	if !errors.Is(err, port.ErrInvalidRequest) {
+		t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrInvalidRequest)（AC-9-7-c）", err)
 	}
 	invoker.wantNoCall(t)
 }
