@@ -1,19 +1,25 @@
 // Package gateway は usecase/port の repository / 参照ポートを実装する
-// （AC-9-3）。SQL と行 ↔ 集約（Reconstruct。AC-2-5）の変換を持つ。
+// （AC-9-3）。SQL と行 ↔ 集約（Reconstruct。AC-2-5）の変換を持ち、SQL の
+// 実行手段は自身が宣言する最小の interface 越しに受け取る（D-11・AC-9-14）。
+//
+// **持たないのは業務ルールである**（AC-9-3）。丸め・超過／不足の算出・状態
+// 遷移を SQL 側で行わない（AC-9-16-f。いずれも domain の責務）。SQL 文と
+// 行 ↔ 集約の変換を本パッケージが持つこと自体は責務分担のとおりで
+// （AC-9-14-c・AC-9-15・決定12）、driver/persistence は渡された文と引数を
+// 実行するだけである。
 //
 // 依存の向きは docs/specs/workmonth-implementation-design.md AC-1-5 に従い、
 // usecase/port・domain・標準ライブラリのみを import する。**driver は import
 // しない**（AC-1-5）。**pgx も import しない**（AC-1-6・AC-9-14-a）。
 //
-// 本パッケージ時点の実装はテスト工程（tester）が置いた**スタブ**であり、
-// 業務ロジックを持たない（docs/rules/development-process.md の TDD。
-// Red を確認してから実装工程が中身を書く）。
+// 本ファイルは SQL 実行インターフェースの宣言のみを置く。ポートの実装は
+// 同パッケージの各ファイル（勤務月・契約）にある。
 package gateway
 
 import "context"
 
-// 本ファイルは gateway が自ら宣言する SQL 実行インターフェース（D-11・AC-9-14）を
-// 置く。具体的な形は 2026-08-05 に人間が確定した（決定12・AC-9-14-e）:
+// 以下は gateway が自ら宣言する SQL 実行インターフェース（D-11・AC-9-14）。
+// 具体的な形は 2026-08-05 に人間が確定した（決定12・AC-9-14-e）:
 //
 //   - Query / Exec / Begin の3メソッドに限る（これ以外を足さない）。
 //   - Query は行の走査を返し、gateway は database/sql の Rows 相当の最小
