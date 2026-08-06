@@ -1,6 +1,9 @@
 package presenter
 
 import (
+	"errors"
+	"net/http"
+
 	"github.com/h-k741953/effort-tracker/services/api/internal/usecase/port"
 )
 
@@ -42,18 +45,46 @@ type WorkMonthListViewModel struct {
 }
 
 // Present は一覧の出力 DTO を ViewModel へ変換し保持する（AC-9-10-c・
-// AC-9-11-f）。
-//
-// テスト工程時点では未実装（TDD の Red を確認するための宣言のみ）。実装は
-// 次工程（implementer）が行う。
+// AC-9-11-f）。total・limit・offset は出力 DTO の値をそのまま写す
+// （presenter が数え直さない・既定値を与えない＝AC-9-11-f）。
 func (p *ListWorkMonthsPresenter) Present(output port.ListWorkMonthsOutput) {
+	items := make([]WorkMonthListItemViewModel, 0, len(output.Items))
+	for _, row := range output.Items {
+		items = append(items, WorkMonthListItemViewModel{
+			ContractID:          row.ContractID,
+			ContractDisplayName: row.ContractDisplayName,
+			YearMonth:           row.YearMonth,
+			State:               row.State,
+		})
+	}
+
+	body := WorkMonthListViewModel{
+		Items:  items,
+		Total:  output.Total,
+		Limit:  output.Limit,
+		Offset: output.Offset,
+	}
+
+	p.result = &Result{StatusCode: http.StatusOK, Body: body}
 }
 
 // PresentError はエラーをステータス・code へ写して保持する（AC-9-12・
-// AC-11-12・AC-11-13。errorMapping を共有する＝AC-9-13-d）。
-//
-// テスト工程時点では未実装。実装は次工程（implementer）が行う。
+// AC-11-12・AC-11-13。errorMapping は work_month_presenter.go にある表を
+// 共有し、二重に持たない＝AC-9-13-d・AC-11-10）。
 func (p *ListWorkMonthsPresenter) PresentError(err error) {
+	for _, m := range errorMapping {
+		if errors.Is(err, m.sentinel) {
+			p.result = &Result{StatusCode: m.status, Body: ErrorResponse{Error: ErrorBody{
+				Code:    m.code,
+				Message: m.message,
+			}}}
+			return
+		}
+	}
+	p.result = &Result{StatusCode: http.StatusInternalServerError, Body: ErrorResponse{Error: ErrorBody{
+		Code:    "INTERNAL_ERROR",
+		Message: "internal error",
+	}}}
 }
 
 // Result は直近の Present / PresentError の呼び出し結果を返す。一度も
