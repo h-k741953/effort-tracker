@@ -158,6 +158,9 @@ type queryResponse struct {
 type fakeDB struct {
 	queryQueue []queryResponse
 	queryCalls int
+	// queryLog は Query への呼び出しを (query, args) で記録する
+	// （省略した条件が引数として渡っていないことの検証用。AC-9-18-g・AC-12-13⑤）。
+	queryLog []execCall
 
 	execCalls []execCall
 
@@ -182,7 +185,8 @@ func (db *fakeDB) pushBegin(tx gateway.Tx, err error) {
 	db.beginQueue = append(db.beginQueue, beginResponse{tx: tx, err: err})
 }
 
-func (db *fakeDB) Query(_ context.Context, _ string, _ ...any) (gateway.Rows, error) {
+func (db *fakeDB) Query(_ context.Context, query string, args ...any) (gateway.Rows, error) {
+	db.queryLog = append(db.queryLog, execCall{query: query, args: args})
 	if db.queryCalls >= len(db.queryQueue) {
 		return nil, fmt.Errorf("fakeDB: Query called more times (%d) than configured (%d)", db.queryCalls+1, len(db.queryQueue))
 	}
@@ -232,4 +236,11 @@ func dailyRecordRow(year, month, day, hours, minutes int) []any {
 // 技術者識別子・精算幅下限（時・分）・精算幅上限（時・分）の7列。AC-9-17-a）。
 func contractRow(id, displayName, engineerID string, lowerH, lowerM, upperH, upperM int) []any {
 	return []any{id, displayName, engineerID, lowerH, lowerM, upperH, upperM}
+}
+
+// workMonthListRow は一覧の行を Scan の並びどおりに組み立てる（契約識別子・
+// 契約表示名・年・月・状態の5列。AC-9-18-a・AC-6-7-d）。年・月を分けるのは
+// 既存の workMonthHeaderRow・dailyRecordRow と揃えるため（tester の選択）。
+func workMonthListRow(contractID, displayName string, year, month int, state string) []any {
+	return []any{contractID, displayName, year, month, state}
 }
