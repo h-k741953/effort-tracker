@@ -26,4 +26,11 @@ var (
 
 	// ErrSelfApproval は自己承認・自己差戻しであることを表す。
 	ErrSelfApproval = errors.New("port: self approval is not allowed")
+
+	// ErrInvalidRequest はリクエストの構文・型・書式が不正であることを表す
+	// 要求側の識別子（AC-9-9-a）。domain の workmonth.ErrInvalidValue とは
+	// 別の識別子であり、両者を1つに兼ねない（AC-9-9-b・AC-11-13）。
+	// controller と presenter の双方が本パッケージ経由で参照する
+	// （決定13。旧 adapter/controller.ErrInvalidRequest からの移動）。
+	ErrInvalidRequest = errors.New("port: invalid request")
 )

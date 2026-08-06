@@ -107,8 +107,8 @@ func TestHandleDeleteDailyRecord_RejectsInvalidDateFormat(t *testing.T) {
 			controller.HandleDeleteDailyRecord(r, invoker, output)
 
 			err := output.onlyErr(t)
-			if !errors.Is(err, controller.ErrInvalidRequest) {
-				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, controller.ErrInvalidRequest)（AC-9-6-c）", err)
+			if !errors.Is(err, port.ErrInvalidRequest) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrInvalidRequest)（AC-9-6-c）", err)
 			}
 			if errors.Is(err, workmonth.ErrInvalidValue) {
 				t.Fatalf("controller の識別子は workmonth.ErrInvalidValue を兼ねてはならない（AC-9-9-b・AC-11-13）: %v", err)

@@ -42,7 +42,7 @@ func HandleListWorkMonths(r *http.Request, invoker listWorkMonthsInvoker, output
 
 		if state != string(workmonth.StatePendingApproval) {
 			output.PresentError(fmt.Errorf(
-				"%w: engineerId omitted requires state=PendingApproval, got %q", ErrInvalidRequest, state,
+				"%w: engineerId omitted requires state=PendingApproval, got %q", port.ErrInvalidRequest, state,
 			))
 			return
 		}
@@ -55,7 +55,7 @@ func HandleListWorkMonths(r *http.Request, invoker listWorkMonthsInvoker, output
 		actor = a
 
 		if state != "" && !isListState(state) {
-			output.PresentError(fmt.Errorf("%w: invalid state value: %q", ErrInvalidRequest, state))
+			output.PresentError(fmt.Errorf("%w: invalid state value: %q", port.ErrInvalidRequest, state))
 			return
 		}
 	}
@@ -102,7 +102,7 @@ func parseListLimit(raw string) (int, error) {
 	}
 	v, err := strconv.Atoi(raw)
 	if err != nil || v <= 0 || v > MaxListLimit {
-		return 0, fmt.Errorf("%w: invalid limit: %q", ErrInvalidRequest, raw)
+		return 0, fmt.Errorf("%w: invalid limit: %q", port.ErrInvalidRequest, raw)
 	}
 	return v, nil
 }
@@ -114,7 +114,7 @@ func parseListOffset(raw string) (int, error) {
 	}
 	v, err := strconv.Atoi(raw)
 	if err != nil || v < 0 {
-		return 0, fmt.Errorf("%w: invalid offset: %q", ErrInvalidRequest, raw)
+		return 0, fmt.Errorf("%w: invalid offset: %q", port.ErrInvalidRequest, raw)
 	}
 	return v, nil
 }

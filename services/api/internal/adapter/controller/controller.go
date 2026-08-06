@@ -12,16 +12,6 @@
 // Red を確認してから実装工程が中身を書く）。
 package controller
 
-import "errors"
-
-// ErrInvalidRequest はリクエストの構文・型・書式が不正であることを表す
-// 要求側の識別子（AC-9-9-a）。domain の workmonth.ErrInvalidValue とは
-// 別の識別子であり、両者を1つに兼ねない（AC-9-9-b・AC-11-13）。
-//
-// 置き場所と名前は固定しない（AC-9-9-d・AC-13-17）。本パッケージに置くのは
-// tester が選んだ一案であり、実装工程が変更してよい。
-var ErrInvalidRequest = errors.New("controller: invalid request")
-
 // errorPresenter は、ユースケースを呼ばずに早期に失敗を報告するために
 // controller が要る最小の形（PresentError のみ）。usecase/port の各出力
 // ポート（port.WorkMonthOutputPort 等）はいずれもこれを満たす。
