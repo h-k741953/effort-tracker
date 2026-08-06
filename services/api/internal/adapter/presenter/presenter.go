@@ -6,10 +6,10 @@
 // **driver は import しない**（AC-1-5）。**pgx も import しない**（AC-1-6）。
 // 集約・repository を直接触らない（AC-9-2「やらないこと」）。
 //
-// 本ファイル時点の実装はテスト工程（tester）が置いた**スタブ**であり、
-// 業務ロジック（ViewModel への変換、エラー → code の対応表）を持たない
-// （docs/rules/development-process.md の TDD。Red を確認してから実装工程が
-// 中身を書く）。
+// ViewModel への変換（AC-9-11）とエラー → `code` の対応表（AC-9-12・
+// AC-11-12・AC-11-13）は work_month_presenter.go にあり、本ファイルは
+// 成功・失敗に共通の応答の器（エラー応答のボディと保持する結果）だけを置く。
+// `code`／ステータスの対応表を presenter 以外に持たせない（AC-11-10）。
 package presenter
 
 // ErrorBody は契約 AC-9-1 の `error` フィールドの中身（`code` / `message`）。
