@@ -19,6 +19,9 @@ type fakeWorkMonthRepository struct {
 	stored    map[string]*workmonth.WorkMonth
 	saveCount int
 	saveErr   error
+	// findErr は Find が返す任意のエラーを注入する
+	// （ErrWorkMonthNotFound 以外のエラーが素通しされることの検証用。AC-12-12⑤）。
+	findErr error
 }
 
 func newFakeWorkMonthRepository() *fakeWorkMonthRepository {
@@ -36,6 +39,9 @@ func workMonthKey(contractID workmonth.ContractID, yearMonth workmonth.YearMonth
 // 確定済みの超過／不足も複製へ引き継ぐ（実装設計 AC-12-7）。引き継がないと
 // 締め済・承認済の勤務月が未確定として復元され、テストが実装より弱くなる。
 func (f *fakeWorkMonthRepository) Find(_ context.Context, contractID workmonth.ContractID, yearMonth workmonth.YearMonth) (*workmonth.WorkMonth, error) {
+	if f.findErr != nil {
+		return nil, f.findErr
+	}
 	target, ok := f.stored[workMonthKey(contractID, yearMonth)]
 	if !ok {
 		return nil, port.ErrWorkMonthNotFound
@@ -149,6 +155,64 @@ func (s *spyWorkMonthOutputPort) onlyPresented(t *testing.T) port.WorkMonthOutpu
 
 // onlyPresentedError は PresentError が1度だけ呼ばれたことを確認して、そのエラーを返す。
 func (s *spyWorkMonthOutputPort) onlyPresentedError(t *testing.T) error {
+	t.Helper()
+	if len(s.presented) != 0 {
+		t.Fatalf("Present が呼ばれた: %+v", s.presented)
+	}
+	if len(s.errs) != 1 {
+		t.Fatalf("PresentError の呼び出し回数 = %d, want 1", len(s.errs))
+	}
+	return s.errs[0]
+}
+
+// ---- 一覧参照クエリ（WorkMonthQuery）の Fake ------------------------------
+
+// fakeWorkMonthQuery は port.WorkMonthQuery の Fake。渡された条件を calls へ
+// 記録する（AC-7-16②「条件がそのまま渡ること」の検証用）。
+type fakeWorkMonthQuery struct {
+	rows  []port.WorkMonthQueryRow
+	total int
+	err   error
+	calls []port.WorkMonthQueryCondition
+}
+
+func (f *fakeWorkMonthQuery) List(_ context.Context, condition port.WorkMonthQueryCondition) ([]port.WorkMonthQueryRow, int, error) {
+	f.calls = append(f.calls, condition)
+	if f.err != nil {
+		return nil, 0, f.err
+	}
+	return f.rows, f.total, nil
+}
+
+// ---- 一覧出力ポートの spy --------------------------------------------------
+
+type spyListWorkMonthsOutputPort struct {
+	presented []port.ListWorkMonthsOutput
+	errs      []error
+}
+
+func (s *spyListWorkMonthsOutputPort) Present(output port.ListWorkMonthsOutput) {
+	s.presented = append(s.presented, output)
+}
+
+func (s *spyListWorkMonthsOutputPort) PresentError(err error) {
+	s.errs = append(s.errs, err)
+}
+
+// onlyPresented は Present が1度だけ呼ばれたことを確認して、その出力を返す。
+func (s *spyListWorkMonthsOutputPort) onlyPresented(t *testing.T) port.ListWorkMonthsOutput {
+	t.Helper()
+	if len(s.errs) != 0 {
+		t.Fatalf("PresentError が呼ばれた: %v", s.errs)
+	}
+	if len(s.presented) != 1 {
+		t.Fatalf("Present の呼び出し回数 = %d, want 1", len(s.presented))
+	}
+	return s.presented[0]
+}
+
+// onlyPresentedError は PresentError が1度だけ呼ばれたことを確認して、そのエラーを返す。
+func (s *spyListWorkMonthsOutputPort) onlyPresentedError(t *testing.T) error {
 	t.Helper()
 	if len(s.presented) != 0 {
 		t.Fatalf("Present が呼ばれた: %+v", s.presented)
