@@ -48,6 +48,33 @@ func TestWorkMonthQuery_List_MapsRowToReadModelAndReturnsTotal(t *testing.T) {
 	}
 }
 
+// TestWorkMonthQuery_List_TotalIsNotRowCount は、ページングが効いた状況で
+// total が返した行数（len(got)）と一致しないことを検証する。件数取得クエリの
+// 応答を行取得クエリと独立に設定し、total がその件数取得クエリの結果を
+// そのまま返すこと（返した行の数を数え直したものではないこと）を固定する
+// （AC-6-7-e「返した行の数ではない」・AC-9-18-d・AC-12-13②。契約 AC-3-5：
+// total は絞り込み後・ページング適用前の件数）。
+func TestWorkMonthQuery_List_TotalIsNotRowCount(t *testing.T) {
+	db := newFakeDB()
+	db.pushQuery(newFakeRows(
+		workMonthListRow("ctr-0001", "サンプル株式会社 / 基幹システム保守", 2026, 7, "PendingApproval"),
+	), nil)
+	db.pushQuery(newFakeRows([]any{42}), nil)
+
+	q := gateway.NewWorkMonthQuery(db)
+	got, total, err := q.List(context.Background(), port.WorkMonthQueryCondition{EngineerID: "eng-0001", Limit: 1, Offset: 0})
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("行の件数 = %d, want 1（ページングで1件だけ返っている前提）", len(got))
+	}
+	if total != 42 {
+		t.Errorf("total = %d, want 42（AC-6-7-e: 返した行の数ではなく件数取得クエリの結果。AC-12-13②）", total)
+	}
+}
+
 // TestWorkMonthQuery_List_EmptyResultIsNotWorkMonthNotFound は、該当0件が
 // ErrWorkMonthNotFound へ変換されず、空スライス・総件数0として返ることを
 // 検証する（AC-9-18-h。Find＝AC-9-15-e とは扱いが異なる）。
@@ -58,11 +85,11 @@ func TestWorkMonthQuery_List_EmptyResultIsNotWorkMonthNotFound(t *testing.T) {
 
 	q := gateway.NewWorkMonthQuery(db)
 	got, total, err := q.List(context.Background(), port.WorkMonthQueryCondition{EngineerID: "eng-nonexistent", Limit: 20, Offset: 0})
-	if err != nil {
-		t.Fatalf("List failed: %v", err)
-	}
 	if errors.Is(err, port.ErrWorkMonthNotFound) {
 		t.Fatalf("0件が port.ErrWorkMonthNotFound へ変換されている（AC-9-18-h。Find＝AC-9-15-e とは扱いが異なる）")
+	}
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
 	}
 	if got == nil {
 		t.Errorf("0件のとき nil が返っている（AC-9-18-h。空スライスであること）")
@@ -132,6 +159,44 @@ func TestWorkMonthQuery_List_OmittedConditionsAreNotBoundAsFilters(t *testing.T)
 			if s, ok := arg.(string); ok && s == "" {
 				t.Errorf("省略した条件（空文字列）が SQL の引数として渡っている（AC-9-18-g）: query=%q args=%v", call.query, call.args)
 			}
+		}
+	}
+}
+
+// TestWorkMonthQuery_List_SpecifiedConditionIsBoundAsFilterInBothQueries は、
+// 指定した（非空の）条件が、行取得クエリ・件数取得クエリの両方の引数として
+// 実際に渡ることを検証する（AC-9-18-g・AC-12-13⑤）。
+// OmittedConditionsAreNotBoundAsFilters と対にすることで、条件の取り違え
+// （例: 件数取得クエリだけ WHERE を落とす）を Red にする。
+func TestWorkMonthQuery_List_SpecifiedConditionIsBoundAsFilterInBothQueries(t *testing.T) {
+	db := newFakeDB()
+	db.pushQuery(newFakeRows(
+		workMonthListRow("ctr-0001", "サンプル株式会社 / 基幹システム保守", 2026, 7, "Draft"),
+	), nil)
+	db.pushQuery(newFakeRows([]any{1}), nil)
+
+	q := gateway.NewWorkMonthQuery(db)
+	got, total, err := q.List(context.Background(), port.WorkMonthQueryCondition{EngineerID: "eng-0001", State: "", Limit: 20, Offset: 0})
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(got) != 1 || total != 1 {
+		t.Fatalf("Fake が設定した行・総件数が反映されていない（検証の前提）: got=%v, total=%d", got, total)
+	}
+
+	if len(db.queryLog) != 2 {
+		t.Fatalf("Query の呼び出し回数 = %d, want 2（行取得クエリ + 件数取得クエリ）", len(db.queryLog))
+	}
+	for i, call := range db.queryLog {
+		found := false
+		for _, arg := range call.args {
+			if s, ok := arg.(string); ok && s == "eng-0001" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("指定した条件 eng-0001 がクエリ %d の引数に現れていない（AC-9-18-g・AC-12-13⑤）: query=%q args=%v", i, call.query, call.args)
 		}
 	}
 }

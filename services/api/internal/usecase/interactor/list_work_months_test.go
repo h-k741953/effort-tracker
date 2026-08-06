@@ -131,6 +131,28 @@ func TestListWorkMonths_PassesConditionThroughAndCopiesResult(t *testing.T) {
 	}
 }
 
+// TestListWorkMonths_QueryErrorIsNotConvertedToEmptyOutput は、WorkMonthQuery
+// が返したエラーが空の一覧へ変換されず、そのまま PresentError へ渡ることを
+// 検証する（永続化の失敗を 200 で隠さない。AC-7-3・AC-7-16・AC-11-11）。
+// GetWorkMonth 側の TestGetWorkMonth_OtherRepositoryErrorIsNotConvertedToEmptyOutput
+// と同じ形に揃える。
+func TestListWorkMonths_QueryErrorIsNotConvertedToEmptyOutput(t *testing.T) {
+	driverErr := errors.New("fake: query failed unexpectedly")
+	query := &fakeWorkMonthQuery{err: driverErr}
+	output := &spyListWorkMonthsOutputPort{}
+
+	interactor.NewListWorkMonths(query, output).Execute(context.Background(), port.ListWorkMonthsInput{
+		Actor:      guestActor(),
+		EngineerID: testEngineerID,
+		Limit:      20,
+		Offset:     0,
+	})
+
+	if err := output.onlyPresentedError(t); !errors.Is(err, driverErr) {
+		t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, driverErr)（AC-7-3・AC-11-11）", err)
+	}
+}
+
 // TestListWorkMonths_EmptyResultIsEmptySliceNotNil は該当0件でも行が空スライス
 // （nil でない）であることを検証する（AC-7-17・AC-12-12）。
 func TestListWorkMonths_EmptyResultIsEmptySliceNotNil(t *testing.T) {
