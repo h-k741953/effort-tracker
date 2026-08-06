@@ -219,6 +219,56 @@ func TestHandleEnterDailyRecord_RejectsContentTypeMismatch(t *testing.T) {
 	}
 }
 
+// TestHandleEnterDailyRecord_AcceptsContentTypeWithParameters は、契約 AC-1-2 が
+// 固定するのが**メディアタイプ**（`application/json`）であって charset 等の
+// パラメータではないことを検証する（AC-9-6-i）。
+//
+// パラメータ付きの値（`application/json; charset=utf-8`）を弾くと、標準的な
+// HTTP クライアントが付ける charset だけで 400 になる。文字列の完全一致で
+// 比較する実装ではこの表が Red になる（受理側の各行が INVALID_REQUEST に
+// なるため）。上の RejectsContentTypeMismatch と対にして、メディアタイプが
+// 異なる値は依然として弾かれることを保つ。
+func TestHandleEnterDailyRecord_AcceptsContentTypeWithParameters(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+	}{
+		{name: "パラメータなし", contentType: "application/json"},
+		{name: "charset パラメータ付き", contentType: "application/json; charset=utf-8"},
+		{name: "charset パラメータ付き（空白なし・大文字）", contentType: "application/json;charset=UTF-8"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			invoker := &invokerSpy[port.EnterDailyRecordInput]{}
+			output := &errorPresenterSpy{}
+			headers := actorHeaders(testActorID, string(port.RoleEngineer))
+			headers["Content-Type"] = tt.contentType
+			body := []byte(`{"workingHours":{"hours":8,"minutes":30}}`)
+			r := newRequest(
+				http.MethodPut, enterTarget(testContractID, "2026-07", "2026-07-01"), body, headers,
+				enterPaths(testContractID, "2026-07", "2026-07-01")...,
+			)
+
+			controller.HandleEnterDailyRecord(r, invoker, output)
+
+			output.wantNoErr(t)
+			want := port.EnterDailyRecordInput{
+				Actor:      port.Actor{ID: testActorID, Role: port.RoleEngineer, Authenticated: true},
+				ContractID: mustContractID(t, testContractID),
+				YearMonth:  mustYearMonth(t, 2026, 7),
+				Date:       mustDate(t, 2026, 7, 1),
+				Hours:      8,
+				Minutes:    30,
+			}
+			got := invoker.onlyCall(t)
+			if diff := cmp.Diff(want, got, cmp.AllowUnexported(workmonth.ContractID{}, workmonth.YearMonth{}, workmonth.Date{})); diff != "" {
+				t.Errorf("invoker へ渡った入力 DTO が不一致 (-want +got):\n%s（AC-9-5-c・AC-9-6-i）", diff)
+			}
+		})
+	}
+}
+
 // TestHandleEnterDailyRecord_RejectsWhenBothHeadersAbsent は更新系（契約 AC-9 順1
 // の対象）で両ヘッダが不在の要求を弾くことを検証する（決定10・AC-9-7-a①）。
 func TestHandleEnterDailyRecord_RejectsWhenBothHeadersAbsent(t *testing.T) {
