@@ -3,6 +3,7 @@ package controller_test
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -227,6 +228,62 @@ func TestHandleListWorkMonths_AppliesDefaultLimitWhenOmitted(t *testing.T) {
 	got := invoker.onlyCall(t)
 	if got.Limit != controller.DefaultListLimit {
 		t.Errorf("Limit = %d, want controller.DefaultListLimit(%d)（AC-9-6-k）", got.Limit, controller.DefaultListLimit)
+	}
+}
+
+// TestHandleListWorkMonths_EnforcesMaxLimit は limit に上限（controller.MaxListLimit）
+// があり、上限を超える指定を弾くことを検証する（AC-9-6-k。契約 AC-3-6。上限を
+// 設ける理由は docs/rules/cost-guardrails.md）。
+//
+// 上限の値そのものは契約も実装設計も固定しない（AC-13-16）ため、期待値に
+// リテラルを埋めず公開定数 controller.MaxListLimit を参照する
+// （DefaultListLimit を参照する上のテストと同じ形）。境界（上限ちょうど＝受理）と
+// その1つ外側（上限 + 1＝拒否）を対にして置く。対にしないと「常に弾く」実装でも
+// 通ってしまい、上限の位置を観測できない。
+func TestHandleListWorkMonths_EnforcesMaxLimit(t *testing.T) {
+	tests := []struct {
+		name       string
+		limit      int
+		wantReject bool
+	}{
+		{
+			name:       "上限ちょうど（MaxListLimit）は受理し、そのまま入力 DTO へ載る（AC-9-6-k）",
+			limit:      controller.MaxListLimit,
+			wantReject: false,
+		},
+		{
+			name:       "上限 + 1 は弾く（AC-9-6-k・契約 AC-3-6）",
+			limit:      controller.MaxListLimit + 1,
+			wantReject: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			invoker := &invokerSpy[port.ListWorkMonthsInput]{}
+			output := &errorPresenterSpy{}
+			r := newRequest(
+				http.MethodGet, listTarget("engineerId=eng-0001&limit="+strconv.Itoa(tt.limit)), nil,
+				actorHeaders(testActorID, string(port.RoleEngineer)),
+			)
+
+			controller.HandleListWorkMonths(r, invoker, output)
+
+			if tt.wantReject {
+				err := output.onlyErr(t)
+				if !errors.Is(err, port.ErrInvalidRequest) {
+					t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, port.ErrInvalidRequest)（AC-9-6-k）", err)
+				}
+				invoker.wantNoCall(t)
+				return
+			}
+
+			output.wantNoErr(t)
+			got := invoker.onlyCall(t)
+			if got.Limit != controller.MaxListLimit {
+				t.Errorf("Limit = %d, want controller.MaxListLimit(%d)（AC-9-6-k）", got.Limit, controller.MaxListLimit)
+			}
+		})
 	}
 }
 

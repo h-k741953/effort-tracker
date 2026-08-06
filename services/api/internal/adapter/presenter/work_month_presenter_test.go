@@ -137,6 +137,16 @@ func TestWorkMonthPresenter_PresentError_MapsToCodeAndStatus(t *testing.T) {
 			wantCode:   "FORBIDDEN_SELF_APPROVAL",
 			wantStatus: http.StatusForbidden,
 		},
+		// driver/lambda が検出する未定義のパス・メソッドの識別子（AC-9-12-d・AC-11-13）。
+		// 名前も置き場所も仕様は固定しない（AC-9-9-d・AC-13-17）ため、テストは
+		// 実装が置いた識別子を参照するだけで、その名前・置き場所を主張しない。
+		// 固定するのは写像（→ NOT_FOUND / 404）のみ（AC-12-10。契約 AC-1-11）。
+		{
+			name:       "未定義のパス・メソッドを表す識別子は NOT_FOUND へ写る（AC-11-13。契約 AC-1-11）",
+			err:        presenter.ErrRouteNotFound,
+			wantCode:   "NOT_FOUND",
+			wantStatus: http.StatusNotFound,
+		},
 		// 対応表のいずれにも該当しないエラー（AC-9-12-a・AC-11-11）。
 		{
 			name:       "対応表のいずれにも該当しないエラーは INTERNAL_ERROR へ写る（AC-11-11）",
@@ -405,5 +415,56 @@ func TestWorkMonthPresenter_Present_FieldSetMatchesContractExactly(t *testing.T)
 
 	if diff := cmp.Diff(wantKeys, gotKeys); diff != "" {
 		t.Errorf("トップレベルのフィールド集合が契約と不一致 (-want +got):\n%s（AC-9-11-e・契約 AC-10-1・AC-10-3）", diff)
+	}
+}
+
+// TestWorkMonthPresenter_Result_ReportsNoResultUntilPresented は、Present /
+// PresentError のいずれも呼ばれていない presenter が「結果なし」を表現できる
+// ことを検証する（AC-9-13-c）。`driver/lambda` はこれを INTERNAL_ERROR として
+// 応答し、配線の誤りを 200 で返さない。
+//
+// 生成直後（未呼び出し）で ok が偽になることと、いずれか一方を呼んだ後に
+// ok が真になることを対にして置く（対にしないと「常に偽を返す」実装でも
+// 通ってしまい、「一度も呼ばれていないこと」を観測できない）。
+func TestWorkMonthPresenter_Result_ReportsNoResultUntilPresented(t *testing.T) {
+	tests := []struct {
+		name   string
+		invoke func(p *presenter.WorkMonthPresenter)
+		wantOK bool
+	}{
+		{
+			name:   "Present も PresentError も呼ばれていない → ok は偽（AC-9-13-c）",
+			invoke: func(*presenter.WorkMonthPresenter) {},
+			wantOK: false,
+		},
+		{
+			name:   "Present を呼んだ後 → ok は真（AC-9-13-b）",
+			invoke: func(p *presenter.WorkMonthPresenter) { p.Present(sampleClosedOutput()) },
+			wantOK: true,
+		},
+		{
+			name:   "PresentError を呼んだ後 → ok は真（AC-9-13-b）",
+			invoke: func(p *presenter.WorkMonthPresenter) { p.PresentError(workmonth.ErrNotClosable) },
+			wantOK: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := presenter.NewWorkMonthPresenter()
+			tt.invoke(p)
+
+			result, ok := p.Result()
+			if ok != tt.wantOK {
+				t.Fatalf("Result() の ok = %t, want %t（AC-9-13-c）", ok, tt.wantOK)
+			}
+			if !ok {
+				// 「結果なし」のときは、呼び出し元が誤って直列化しないよう
+				// ゼロ値のままであること（ステータス 0・ボディ nil）。
+				if diff := cmp.Diff(presenter.Result{}, result); diff != "" {
+					t.Errorf("結果なしのときの Result が非ゼロ値 (-want +got):\n%s（AC-9-13-c）", diff)
+				}
+			}
+		})
 	}
 }
