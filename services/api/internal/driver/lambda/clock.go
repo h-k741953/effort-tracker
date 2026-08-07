@@ -6,9 +6,8 @@ import (
 	"time"
 
 	// time/tzdata は標準ライブラリであり domain の許容 import には影響しない。
-	// Lambda 実行環境には $GOROOT も /usr/share/zoneinfo も無く、
-	// time.LoadLocation はシステムの zoneinfo を参照できないため、
-	// バイナリへ tzdata を埋め込んで確実に解決させる（AC-10-4）。
+	// 実行環境の zoneinfo の有無に依存せずタイムゾーン解決を確定させるため、
+	// バイナリへ tzdata を埋め込む（AC-10-4）。
 	_ "time/tzdata"
 
 	"github.com/h-k741953/effort-tracker/services/api/internal/domain/workmonth"
@@ -38,13 +37,20 @@ func mustLoadLocation(name string) *time.Location {
 	return loc
 }
 
+// nowFunc は壁時計時刻の取得を差し替え可能にするためのパッケージ変数。
+// 通常は time.Now を指すが、内部テスト（package lambda）からのみ固定時刻へ
+// 差し替える。これにより SystemClock.Today() が jst を実際に使っていること
+// （UTC 等へ変異した場合に Red になること）を、壁時計時刻に依存せず決定的に
+// 検証できる。
+var nowFunc = time.Now
+
 // SystemClock は port.Clock（AC-6-5）の実装で、JST（Asia/Tokyo）の当日を返す
 // （AC-10-4）。ゼロ値のまま使用できる。
 type SystemClock struct{}
 
 // Today は現在時刻を JST に変換した「当日」を返す。
 func (SystemClock) Today() workmonth.Date {
-	return todayIn(time.Now(), jst)
+	return todayIn(nowFunc(), jst)
 }
 
 // todayIn は now を loc のタイムゾーンへ変換した「当日」を返す純関数。
