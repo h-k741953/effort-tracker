@@ -75,8 +75,9 @@ func TestToHTTPRequest(t *testing.T) {
 				RawPath:        "/work-months",
 				RawQueryString: "engineerId=e-1&limit=20",
 				// Function URL payload format 2.0 はヘッダー名を小文字で渡す。
-				// req.Header.Set による正規化（AC-9-7-a・AC-10-1）が固定形
-				// （X-Actor-Id 等）へ揃えることをここで検証する（W-1）。
+				// req.Header.Set による正規化（domain-api-http-contract.md
+				// AC-1-4・AC-10-1）が固定形（X-Actor-Id 等）へ揃えることを
+				// ここで検証する（W-1）。
 				Headers: map[string]string{
 					"x-actor-id":   "e-1",
 					"x-actor-role": "Approver",

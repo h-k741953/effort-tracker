@@ -67,20 +67,44 @@ func TestTodayIn_JSTBoundary(t *testing.T) {
 	}
 }
 
-// TestSystemClock_Today_DelegatesToTodayInWithNow は SystemClock.Today() が
-// todayIn(time.Now(), jst) へ委譲していることを検証する（AC-10-4・AC-6-5）。
-// 呼び出しの前後で time.Now() を挟むことで、Today() が同じ結果を返すことを
-// （日付境界を跨がない限り）決定的に確認する。日付境界を跨いだ場合は before /
-// after のいずれかと一致するはずであり、それ以外は不整合として扱う。
-func TestSystemClock_Today_DelegatesToTodayInWithNow(t *testing.T) {
-	before := viewOfDate(todayIn(time.Now(), jst))
+// TestSystemClock_Today_UsesJST は SystemClock.Today() が実際に出荷される
+// 経路（nowFunc() の結果を jst で解釈すること）を、固定時刻のテーブル駆動で
+// 検証する（AC-10-4・AC-6-5）。壁時計時刻（time.Now()）には依存しない。
+//
+// nowFunc をテスト用の固定時刻へ差し替えたうえで SystemClock{}.Today() を
+// 直接呼ぶため、以下のいずれの変異も決定的に Red になる:
+//   - Today() 内のロケーション指定 jst → time.UTC
+//   - jstLocationName の "Asia/Tokyo" → "UTC"
+func TestSystemClock_Today_UsesJST(t *testing.T) {
+	tests := []struct {
+		name string
+		utc  time.Time
+		want dateView
+	}{
+		{
+			name: "JST切替の1分前はJSTでまだ前日",
+			utc:  time.Date(2026, 8, 7, 14, 59, 0, 0, time.UTC),
+			want: dateView{Year: 2026, Month: 8, Day: 7},
+		},
+		{
+			name: "JST0時ちょうどはJSTで当日へ切り替わる",
+			utc:  time.Date(2026, 8, 7, 15, 0, 0, 0, time.UTC),
+			want: dateView{Year: 2026, Month: 8, Day: 8},
+		},
+	}
 
-	var c SystemClock
-	got := viewOfDate(c.Today())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := nowFunc
+			nowFunc = func() time.Time { return tt.utc }
+			t.Cleanup(func() { nowFunc = original })
 
-	after := viewOfDate(todayIn(time.Now(), jst))
+			var c SystemClock
+			got := viewOfDate(c.Today())
 
-	if got != before && got != after {
-		t.Errorf("SystemClock.Today() = %+v, want %+v または %+v の範囲内（AC-10-4）", got, before, after)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("SystemClock.Today() が期待するJSTの当日と不一致 (-want +got):\n%s（AC-10-4）", diff)
+			}
+		})
 	}
 }
