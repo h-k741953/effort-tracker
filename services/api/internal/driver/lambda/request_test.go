@@ -74,9 +74,12 @@ func TestToHTTPRequest(t *testing.T) {
 			event: events.LambdaFunctionURLRequest{
 				RawPath:        "/work-months",
 				RawQueryString: "engineerId=e-1&limit=20",
+				// Function URL payload format 2.0 はヘッダー名を小文字で渡す。
+				// req.Header.Set による正規化（AC-9-7-a・AC-10-1）が固定形
+				// （X-Actor-Id 等）へ揃えることをここで検証する（W-1）。
 				Headers: map[string]string{
-					"X-Actor-Id":   "e-1",
-					"X-Actor-Role": "Approver",
+					"x-actor-id":   "e-1",
+					"x-actor-role": "Approver",
 				},
 				RequestContext: events.LambdaFunctionURLRequestContext{
 					HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{
@@ -100,9 +103,9 @@ func TestToHTTPRequest(t *testing.T) {
 			event: events.LambdaFunctionURLRequest{
 				RawPath: "/work-months/c-1/2026-08/daily-records/2026-08-05",
 				Headers: map[string]string{
-					"Content-Type": "application/json",
-					"X-Actor-Id":   "e-1",
-					"X-Actor-Role": "Engineer",
+					"content-type": "application/json",
+					"x-actor-id":   "e-1",
+					"x-actor-role": "Engineer",
 				},
 				Body: `{"workingHours":8}`,
 				RequestContext: events.LambdaFunctionURLRequestContext{
@@ -172,6 +175,39 @@ func TestToHTTPRequest(t *testing.T) {
 
 			if diff := cmp.Diff(tt.want, viewOfRequest(t, got)); diff != "" {
 				t.Errorf("ToHTTPRequest の変換結果が不一致 (-want +got):\n%s（AC-10-1）", diff)
+			}
+		})
+	}
+}
+
+// TestToHTTPRequest_DecodeErrors は decodeBody のエラー経路を検証する
+// （AC-10-1・W-2）。IsBase64Encoded が真なのに実際は base64 として不正な
+// ボディが渡された場合に、ToHTTPRequest がエラーを返すことを固定する。
+func TestToHTTPRequest_DecodeErrors(t *testing.T) {
+	tests := []struct {
+		name  string
+		event events.LambdaFunctionURLRequest
+	}{
+		{
+			name: "IsBase64EncodedなのにボディがBase64として不正",
+			event: events.LambdaFunctionURLRequest{
+				RawPath:         "/work-months/c-1/2026-08/close",
+				Body:            "!!!",
+				IsBase64Encoded: true,
+				RequestContext: events.LambdaFunctionURLRequestContext{
+					HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{
+						Method: "POST",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := lambda.ToHTTPRequest(tt.event)
+			if err == nil {
+				t.Fatalf("ToHTTPRequest がエラーを返さなかった（AC-10-1）")
 			}
 		})
 	}
