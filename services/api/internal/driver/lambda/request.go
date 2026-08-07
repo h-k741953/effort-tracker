@@ -45,8 +45,8 @@ func ToHTTPRequest(event events.LambdaFunctionURLRequest) (*http.Request, error)
 	}
 
 	// event.Cookies（payload format 2.0 の cookie 配列）は意図的に捨てる。
-	// 契約（daily-record-entry.md D-2）は認可を X-Actor-Id / X-Actor-Role
-	// ヘッダーで行い、cookie を使わない。
+	// 契約（domain-api-http-contract.md D-2／AC-1-4／AC-1-6）は操作者の伝達を
+	// X-Actor-Id / X-Actor-Role ヘッダーで行い、cookie を使わない。
 
 	return req, nil
 }
