@@ -126,6 +126,13 @@ ENV PATH=/usr/local/go/bin:/home/node/go/bin:$PATH
 # ※ それでも実行時に取得が要る場合（未固定のバージョン等）は
 #    `sudo /usr/local/bin/init-firewall.sh` で許可リストを引き直す。
 #    キャッシュ済みの範囲で完結させたいときは `GOPROXY=off` を付ける。
+# ※ 正解の実体は services/api/go.mod 側であり、ここでの ARG はビルド時に
+#    キャッシュを温めるためだけの二重管理である。バージョンを上げるときは
+#    go.mod を先に変更し、この値を追随させること（逆はしない）。
+#    PGX_VERSION は driver/persistence（pgx / Neon 接続）が未着手で
+#    go.mod にまだ require が無いため、この ARG が値の暫定的な出所になって
+#    いる。driver/persistence 着手時に go.mod へ require を追加したら、
+#    以後はそちらを正解とする。
 ARG PGX_VERSION=v5.10.0
 ARG AWS_LAMBDA_GO_VERSION=v1.54.0
 ARG GO_CMP_VERSION=v0.7.0
