@@ -106,6 +106,40 @@ ENV GOPATH=/home/node/go
 ENV GOTOOLCHAIN=local
 ENV PATH=/usr/local/go/bin:/home/node/go/bin:$PATH
 
+# --- Go モジュールの事前取得（GOMODCACHE の温め） ---
+# init-firewall.sh は proxy.golang.org / sum.golang.org を allowlist に入れるが、
+# 追加するのは `dig` が返した「1つの IP」だけである（init-firewall.sh の該当ループ）。
+# 両ホストは大きな IP プールを DNS ラウンドロビンで返すため、実行時の取得は
+# 当たりを引いたときだけ通る。実測では 25 回連続で `no route to host` になった。
+# GitHub の IP レンジは CIDR で全て許可されているため gh / git は安定するが、
+# Go モジュールだけがこの穴に落ちる。
+#
+# そこで、ファイアウォール未適用のビルド時にモジュールキャッシュを温めておく。
+# GOPATH は image のレイヤーに残り（devcontainer.json がボリュームマウントするのは
+# .claude / commandhistory / .config/gh だけ）、実行時はネットワーク無しで解決できる。
+#
+# ※ 使い捨てモジュールで取得するのは、ビルドコンテキストが .devcontainer/ であり
+#    services/api/go.mod を COPY できないため。キャッシュ（zip と sumdb のタイル）
+#    さえ温まれば、どのモジュールから参照しても再利用される。
+# ※ バージョンを上げるときはここも更新すること。実行時に別バージョンを要求すると
+#    キャッシュに無く、再びファイアウォールの穴に落ちる。
+# ※ それでも実行時に取得が要る場合（未固定のバージョン等）は
+#    `sudo /usr/local/bin/init-firewall.sh` で許可リストを引き直す。
+#    キャッシュ済みの範囲で完結させたいときは `GOPROXY=off` を付ける。
+ARG PGX_VERSION=v5.10.0
+ARG AWS_LAMBDA_GO_VERSION=v1.54.0
+ARG GO_CMP_VERSION=v0.7.0
+RUN set -eux; \
+    mkdir -p /tmp/gomodwarm; \
+    cd /tmp/gomodwarm; \
+    go mod init warmup; \
+    go get "github.com/jackc/pgx/v5@${PGX_VERSION}"; \
+    go get "github.com/aws/aws-lambda-go@${AWS_LAMBDA_GO_VERSION}"; \
+    go get "github.com/google/go-cmp@${GO_CMP_VERSION}"; \
+    go mod download all; \
+    cd /; \
+    rm -rf /tmp/gomodwarm
+
 # node ユーザー用の npm prefix を設定
 # ※ これがないと自動アップデート時に「no write permission to npm prefix」が発生する。
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
