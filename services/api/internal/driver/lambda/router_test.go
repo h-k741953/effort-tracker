@@ -105,6 +105,51 @@ func TestRouter_DispatchesExactlyOneEndpoint(t *testing.T) {
 	}
 }
 
+// TestNewRouter_NilEndpoint_Panics は C-1(b) を検査する: Endpoints の
+// いずれかのフィールドが nil（＝配線漏れ）のとき、NewRouter は 404 へ
+// 黙って化けさせず panic する（コールドスタート時に失敗させる）。
+func TestNewRouter_NilEndpoint_Panics(t *testing.T) {
+	full := func() lambda.Endpoints {
+		return lambda.Endpoints{
+			GetWorkMonth:      noopHandler,
+			ListWorkMonths:    noopHandler,
+			EnterDailyRecord:  noopHandler,
+			DeleteDailyRecord: noopHandler,
+			CloseWorkMonth:    noopHandler,
+			ApproveWorkMonth:  noopHandler,
+			RejectWorkMonth:   noopHandler,
+		}
+	}
+
+	tests := []struct {
+		name string
+		zero func(*lambda.Endpoints)
+	}{
+		{"GetWorkMonth", func(e *lambda.Endpoints) { e.GetWorkMonth = nil }},
+		{"ListWorkMonths", func(e *lambda.Endpoints) { e.ListWorkMonths = nil }},
+		{"EnterDailyRecord", func(e *lambda.Endpoints) { e.EnterDailyRecord = nil }},
+		{"DeleteDailyRecord", func(e *lambda.Endpoints) { e.DeleteDailyRecord = nil }},
+		{"CloseWorkMonth", func(e *lambda.Endpoints) { e.CloseWorkMonth = nil }},
+		{"ApproveWorkMonth", func(e *lambda.Endpoints) { e.ApproveWorkMonth = nil }},
+		{"RejectWorkMonth", func(e *lambda.Endpoints) { e.RejectWorkMonth = nil }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			endpoints := full()
+			tt.zero(&endpoints)
+
+			defer func() {
+				if r := recover(); r == nil {
+					t.Fatalf("NewRouter が Endpoints.%s の nil ハンドラを panic せず受理した（配線漏れが404へ黙って化ける＝C-1(b)）", tt.name)
+				}
+			}()
+			lambda.NewRouter(endpoints)
+			t.Fatalf("到達しないはず（panic するべき）")
+		})
+	}
+}
+
 // TestRouter_UndefinedPathOrMethod_ReturnsNotFound は AC-12-15②を検査する
 // （契約 AC-1-11・AC-9 の error-code 表の NOT_FOUND 行・AC-11-13）。
 func TestRouter_UndefinedPathOrMethod_ReturnsNotFound(t *testing.T) {
@@ -120,6 +165,7 @@ func TestRouter_UndefinedPathOrMethod_ReturnsNotFound(t *testing.T) {
 		{"E-6のパスに定義のないメソッド(GET)", http.MethodGet, "/work-months/ctr-0001/2026-07/approve"},
 		{"E-7のパスに定義のないメソッド(GET)", http.MethodGet, "/work-months/ctr-0001/2026-07/reject"},
 		{"定義のないパス", http.MethodGet, "/unknown-resource"},
+		{"登録済みパターンの部分木にぶら下がる未定義パス", http.MethodGet, "/work-months/ctr-0001/2026-07/unknown"},
 	}
 
 	for _, tt := range tests {

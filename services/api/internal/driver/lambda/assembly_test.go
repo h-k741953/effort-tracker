@@ -67,6 +67,11 @@ func TestAssembly_GetWorkMonth_WiresGatewayPresenterAndPathVariables(t *testing.
 	if body.Generated {
 		t.Errorf("generated = true, want false（0行＝未生成の応答のはず）")
 	}
+	// (iv) 応答側からもパス変数の取り違えが無いことを固定する（レビュー往復1
+	// I-2。body.ContractID をデコードするだけで検査していなかった）。
+	if body.ContractID != "ctr-assembly-1" {
+		t.Errorf("応答の contractId = %q, want %q", body.ContractID, "ctr-assembly-1")
+	}
 
 	// (i) gateway が結線されている。
 	if got := db.callCount(); got < 1 {
@@ -121,5 +126,71 @@ func TestAssembly_EnterDailyRecord_WiresGatewayAndClock(t *testing.T) {
 	// (ii) Clock が結線されている。
 	if clock.calls < 1 {
 		t.Fatalf("fakeClock.Today() が呼ばれていない（Clock が結線されていない）")
+	}
+
+	// (iv) 年月側のパス変数も取り違えていない（レビュー往復1 I-3。従来 hasArg
+	// は string しか見ておらず、年月は int で渡るため直接観測できていなかった）。
+	if !db.hasArg(2026) || !db.hasArg(7) {
+		t.Errorf("SQL 実行 Fake の記録に年月 2026-07 が現れない（パス変数の取り違え）")
+	}
+}
+
+// TestAssembly_ListWorkMonths_WiresQueryAndListPresenter は AC-12-15④の
+// (i)(iii)(iv)を、E-2（ListWorkMonths）で検査する（レビュー往復1 C-1(a)）。
+// AC-10-8②が名指しした唯一の分岐＝ListWorkMonthsPresenter を通る唯一の
+// エンドポイントを固定する。
+func TestAssembly_ListWorkMonths_WiresQueryAndListPresenter(t *testing.T) {
+	db := newFakeDB()
+	// 行取得クエリへの応答（1件）。
+	db.pushQuery(newFakeRows(
+		workMonthListRow("ctr-assembly-3", "サンプル契約3", 2026, 7, "PendingApproval"),
+	), nil)
+	// 件数取得クエリへの応答。
+	db.pushQuery(newFakeRows(queryRow{1}), nil)
+
+	router := lambda.NewRouter(lambda.Endpoints{
+		GetWorkMonth:      noopHandler,
+		ListWorkMonths:    lambda.NewListWorkMonthsHandler(lambda.BuildListWorkMonthsInvoker(db)),
+		EnterDailyRecord:  noopHandler,
+		DeleteDailyRecord: noopHandler,
+		CloseWorkMonth:    noopHandler,
+		ApproveWorkMonth:  noopHandler,
+		RejectWorkMonth:   noopHandler,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/work-months?engineerId=eng-assembly-3", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	// (iii) presenter（ListWorkMonthsPresenter）が結線されている。
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Items []struct {
+			ContractID string `json:"contractId"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("応答ボディの JSON デコードに失敗した（AC-10-2 の一覧の形になっていない）: %v（body=%s）", err, rec.Body.String())
+	}
+	if len(body.Items) != 1 || body.Items[0].ContractID != "ctr-assembly-3" {
+		t.Fatalf("items が期待と不一致: %+v", body)
+	}
+	if body.Total != 1 {
+		t.Errorf("total = %d, want 1", body.Total)
+	}
+
+	// (i) gateway（WorkMonthQuery）が結線されている。
+	if got := db.callCount(); got < 1 {
+		t.Fatalf("SQL 実行 Fake への記録が無い（gateway が結線されていない）")
+	}
+
+	// (iv) ルーティングのパス変数の名前と controller の取り出しが一致している
+	// （E-2 はクエリ文字列 engineerId だが、①〜③が噛み合っていることの検査は
+	// 同じ意図）。
+	if !db.hasArg("eng-assembly-3") {
+		t.Errorf("SQL 実行 Fake の記録に engineerId %q が現れない", "eng-assembly-3")
 	}
 }

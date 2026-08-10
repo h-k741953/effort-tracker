@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/h-k741953/effort-tracker/services/api/internal/adapter/presenter"
@@ -134,6 +135,125 @@ func TestGetWorkMonthHandler_PresenterIsGeneratedPerRequest(t *testing.T) {
 
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, newGetWorkMonthRequest())
+	if rec2.Code != http.StatusInternalServerError {
+		t.Fatalf("2回目: status = %d, want 500（presenter をプロセス内で共有していると1回目の結果を引きずって200のままになる＝AC-9-13-a）: body=%s", rec2.Code, rec2.Body.String())
+	}
+}
+
+// ---- 以下、W-1（レビュー往復1）: NewEnterDailyRecordHandler にも同じ対を
+// 適用する。get_work_month_handler.go 用の対（
+// TestGetWorkMonthHandler_ResultlessInvoker_And_SucceedingInvoker・
+// TestGetWorkMonthHandler_PresenterIsGeneratedPerRequest）と同じ検査意図を、
+// EnterDailyRecordInvoker（E-3）で固定する。 ----
+
+// sequencedEnterDailyRecordInvoker は Execute が呼ばれても、あらかじめ
+// 指定したとおりにしか output.Present を呼ばない、手書きの invoker
+// （AC-12-2）。sequencedGetWorkMonthInvoker と同じ形。
+type sequencedEnterDailyRecordInvoker struct {
+	output  port.WorkMonthOutputPort
+	present bool
+}
+
+func (s sequencedEnterDailyRecordInvoker) Execute(_ context.Context, _ port.EnterDailyRecordInput) {
+	if s.present {
+		s.output.Present(port.WorkMonthOutput{
+			ContractID:   "ctr-0001",
+			YearMonth:    "2026-07",
+			State:        "Draft",
+			DailyRecords: []port.DailyRecordOutput{},
+		})
+	}
+}
+
+// buildSequencedEnterDailyRecordInvoker は
+// buildSequencedGetWorkMonthInvoker と同じ形（呼ばれるたびに presentOn の
+// 対応する要素を見て、その回に Present を呼ぶかどうかを決める）。
+func buildSequencedEnterDailyRecordInvoker(presentOn ...bool) func(port.WorkMonthOutputPort) lambda.EnterDailyRecordInvoker {
+	call := 0
+	return func(output port.WorkMonthOutputPort) lambda.EnterDailyRecordInvoker {
+		idx := call
+		call++
+		present := idx < len(presentOn) && presentOn[idx]
+		return sequencedEnterDailyRecordInvoker{output: output, present: present}
+	}
+}
+
+// newEnterDailyRecordRequest は E-3 相当のリクエストを組み立てる。ルーティング
+// （①）は経由しないため、パス変数は r.SetPathValue で直接与える
+// （AC-10-8②は①から独立して呼び出せることを要求する）。呼ぶたびに新しい
+// io.Reader を持つ *http.Request を返す（ボディは1回しか読めないため）。
+func newEnterDailyRecordRequest() *http.Request {
+	r := httptest.NewRequest(http.MethodPut, "/work-months/ctr-0001/2026-07/daily-records/2026-07-01", strings.NewReader(`{"workingHours":{"hours":8,"minutes":0}}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("X-Actor-Id", "eng-0001")
+	r.Header.Set("X-Actor-Role", "Engineer")
+	r.SetPathValue("contractId", "ctr-0001")
+	r.SetPathValue("yearMonth", "2026-07")
+	r.SetPathValue("date", "2026-07-01")
+	return r
+}
+
+// TestEnterDailyRecordHandler_ResultlessInvoker_And_SucceedingInvoker は
+// AC-12-15③の対を、EnterDailyRecordInvoker（E-3）で検査する（W-1）。
+func TestEnterDailyRecordHandler_ResultlessInvoker_And_SucceedingInvoker(t *testing.T) {
+	tests := []struct {
+		name       string
+		presentOn  []bool
+		wantStatus int
+		wantCode   string // 空文字なら error.code を検査しない
+	}{
+		{
+			name:       "invokerがpresenterを一度も呼ばない→INTERNAL_ERROR",
+			presentOn:  []bool{false},
+			wantStatus: http.StatusInternalServerError,
+			wantCode:   "INTERNAL_ERROR",
+		},
+		{
+			name:       "invokerがpresenterを1回呼ぶ→200",
+			presentOn:  []bool{true},
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := lambda.NewEnterDailyRecordHandler(buildSequencedEnterDailyRecordInvoker(tt.presentOn...))
+
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, newEnterDailyRecordRequest())
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d（AC-9-13-c）: body=%s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.wantCode != "" {
+				var body presenter.ErrorResponse
+				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+					t.Fatalf("応答ボディの JSON デコードに失敗した: %v（body=%s）", err, rec.Body.String())
+				}
+				if body.Error.Code != tt.wantCode {
+					t.Errorf("error.code = %q, want %q", body.Error.Code, tt.wantCode)
+				}
+			}
+		})
+	}
+}
+
+// TestEnterDailyRecordHandler_PresenterIsGeneratedPerRequest は
+// AC-12-15③のもう一方の対を、EnterDailyRecordInvoker（E-3）で検査する
+// （W-1）: 1回目は成功・2回目は「結果なし」となる invoker を同一の handler
+// へ2回投げ、2回目の応答が INTERNAL_ERROR になること（presenter が
+// リクエストごとに生成されていること＝AC-9-13-a）を検査する。
+func TestEnterDailyRecordHandler_PresenterIsGeneratedPerRequest(t *testing.T) {
+	handler := lambda.NewEnterDailyRecordHandler(buildSequencedEnterDailyRecordInvoker(true, false))
+
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, newEnterDailyRecordRequest())
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("1回目: status = %d, want 200: body=%s", rec1.Code, rec1.Body.String())
+	}
+
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, newEnterDailyRecordRequest())
 	if rec2.Code != http.StatusInternalServerError {
 		t.Fatalf("2回目: status = %d, want 500（presenter をプロセス内で共有していると1回目の結果を引きずって200のままになる＝AC-9-13-a）: body=%s", rec2.Code, rec2.Body.String())
 	}
