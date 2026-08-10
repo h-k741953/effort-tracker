@@ -1,6 +1,7 @@
 package lambda
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/h-k741953/effort-tracker/services/api/internal/adapter/presenter"
@@ -34,7 +35,21 @@ type Endpoints struct {
 // （AC-1-11・AC-9・AC-11-13）。`code`／ステータスの対応表は持たず、
 // presenter.ErrRouteNotFound を presenter へ渡すことで対応表を presenter に
 // 一元化したまま保つ（AC-11-10）。
+//
+// Endpoints のいずれかのフィールドが nil（＝ driver 内の配線漏れ）の場合は
+// panic する（コールドスタート時に失敗させる。clock.go の mustLoadLocation と
+// 同じ形）。nil のまま受理すると methodDispatch がそのパス・メソッドを
+// 「未定義」と同一視し、配線漏れが契約 AC-1-11 の 404 / NOT_FOUND と
+// 見分けが付かなくなる（C-1(b)）。
 func NewRouter(endpoints Endpoints) http.Handler {
+	requireEndpoint("GetWorkMonth", endpoints.GetWorkMonth)
+	requireEndpoint("ListWorkMonths", endpoints.ListWorkMonths)
+	requireEndpoint("EnterDailyRecord", endpoints.EnterDailyRecord)
+	requireEndpoint("DeleteDailyRecord", endpoints.DeleteDailyRecord)
+	requireEndpoint("CloseWorkMonth", endpoints.CloseWorkMonth)
+	requireEndpoint("ApproveWorkMonth", endpoints.ApproveWorkMonth)
+	requireEndpoint("RejectWorkMonth", endpoints.RejectWorkMonth)
+
 	mux := http.NewServeMux()
 
 	mux.Handle("/work-months", methodDispatch(map[string]http.Handler{
@@ -78,16 +93,19 @@ func methodDispatch(handlers map[string]http.Handler) http.HandlerFunc {
 
 // notFoundHandler は未定義のパス・メソッドへの応答（AC-1-11・AC-9・AC-11-13）。
 // presenter.ErrRouteNotFound を presenter へ渡すだけで、`code`／ステータスの
-// 対応表は自前で持たない（AC-11-10）。
+// 対応表は自前で持たない（AC-11-10）。PresentError は必ず result を設定する
+// ため、result の有無を判定する分岐は持たない（到達不能な分岐を作らない）。
 func notFoundHandler(w http.ResponseWriter, _ *http.Request) {
 	out := presenter.NewWorkMonthPresenter()
 	out.PresentError(presenter.ErrRouteNotFound)
-	result, ok := out.Result()
-	if !ok {
-		// PresentError は必ず result を設定するため到達しない。
-		result = presenter.Result{StatusCode: http.StatusInternalServerError, Body: presenter.ErrorResponse{
-			Error: presenter.ErrorBody{Code: "INTERNAL_ERROR", Message: "internal error"},
-		}}
-	}
+	result, _ := out.Result()
 	writeResult(w, result)
+}
+
+// requireEndpoint は endpoints の1フィールドが nil でないことを確認する
+// （C-1(b)）。nil なら配線漏れとして panic する。
+func requireEndpoint(name string, h http.Handler) {
+	if h == nil {
+		panic(fmt.Sprintf("driver/lambda: NewRouter に Endpoints.%s が結線されていない（nil handler）", name))
+	}
 }

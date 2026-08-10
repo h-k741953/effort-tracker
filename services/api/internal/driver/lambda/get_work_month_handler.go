@@ -26,22 +26,10 @@ type GetWorkMonthInvoker interface {
 }
 
 // NewGetWorkMonthHandler は GetWorkMonth（E-1）の http.Handler を返す
-// （AC-10-8②）。リクエストごとに出力ポート（presenter）を新しく生成し
-// （AC-9-13-a）、buildInvoker でその出力ポートに束ねた invoker を組み立てて
-// controller を呼ぶ。invoker が一度も Present/PresentError を呼ばなければ
-// INTERNAL_ERROR とする（AC-9-13-c）。
+// （AC-10-8②）。共通の結線（リクエストごとの presenter 生成・
+// INTERNAL_ERROR への委譲）は newWorkMonthHandler が担う（W-2）。
 func NewGetWorkMonthHandler(buildInvoker func(port.WorkMonthOutputPort) GetWorkMonthInvoker) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		output := presenter.NewWorkMonthPresenter()
-		invoker := buildInvoker(output)
-
+	return newWorkMonthHandler(buildInvoker, func(r *http.Request, invoker GetWorkMonthInvoker, output *presenter.WorkMonthPresenter) {
 		controller.HandleGetWorkMonth(r, invoker, output)
-
-		result, ok := output.Result()
-		if !ok {
-			writeInternalErrorResult(w)
-			return
-		}
-		writeResult(w, result)
 	})
 }
