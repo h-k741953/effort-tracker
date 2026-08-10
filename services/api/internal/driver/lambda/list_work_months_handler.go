@@ -14,6 +14,14 @@ import (
 // （port.ListWorkMonthsOutputPort・*presenter.ListWorkMonthsPresenter＝
 // AC-9-13-d）ため、handler.go の newWorkMonthHandler とは型引数を共有せず、
 // 本ファイルに単独で置く（AC-10-8②の「唯一の分岐」＝レビュー往復1 C-1(a)）。
+//
+// 手続き（リクエストごとの presenter 生成 → invoker の組み立て → controller の
+// 呼び出し → 結果の直列化 or INTERNAL_ERROR への委譲）は newWorkMonthHandler と
+// 同型で重複するが、意図して1本化していない（レビュー往復2 I-2）。1本化するには
+// 出力ポートの型ごとに変換用のクロージャを各呼び出し側へ置くことになり、
+// 取り除ける重複（4行）より増える間接の方が大きい。AC-10-8②は「これを1つの
+// 関数にまとめることは要求しない」と明記しており、両者の振る舞いは
+// AC-12-15③の対（request_wiring_test.go）で個別に固定済みである。
 
 // ListWorkMonthsInvoker は ListWorkMonths（E-2）の呼び出し先が満たす最小の
 // interface（AC-9-8-a と同じ形を driver/lambda 側で宣言）。
