@@ -16,8 +16,11 @@ package lambda_test
 //       区別できる contractId を使い、fakeDB の記録にその値が現れる。
 //
 // SQL 文そのものの正しさ・列の意味・原子性・presenter の並行独立性は対象外
-// （AC-13-19）。fakeDB は「0行（未生成）」の応答しか使わないため、
-// gateway/work_month_repository.go の Scan は実際には呼ばれない。
+// （AC-13-19）。fakeDB には契約の行（contractRow）と一覧の行
+// （workMonthListRow）を積むため Scan は実際に呼ばれる。ただし観測するのは
+// 「記録が1回以上あること」と「引数にパス変数の値が現れること」だけであり、
+// 列の意味そのものは検査しない（AC-13-18）。勤務月ヘッダは 0行（未生成）の
+// 応答しか使わないため、その Scan だけは呼ばれない。
 
 import (
 	"encoding/json"
