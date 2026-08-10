@@ -8,9 +8,11 @@ package lambda_test
 // gateway.DB / gateway.Rows / gateway.Tx に対する Fake の Scan 引数の並びは
 // services/api/internal/adapter/gateway/doubles_test.go が既に固定した並び
 // （contractSelectQuery の7列・workMonthHeaderSelectQuery の12列）にそのまま
-// 合わせる。SQL 文そのものの正しさは検査しない（AC-13-18）。本ファイルの
-// テストは「0行（未生成）」の応答しか使わないため、Scan は事実上呼ばれない
-// （fakeRows.Next() が最初から false を返す）。
+// 合わせる。SQL 文そのものの正しさは検査しない（AC-13-18）。契約の行
+// （contractRow）と一覧の行（workMonthListRow）は実際に積まれるため Scan も
+// 実際に呼ばれる。勤務月ヘッダのように 0行を返す応答（newFakeRows() を
+// 引数なしで呼んだもの）でだけ、fakeRows.Next() が最初から false を返して
+// Scan に到達しない。
 
 import (
 	"context"
@@ -214,12 +216,31 @@ func (db *fakeDB) hasArg(want any) bool {
 	all := append(append(append([]callRecord{}, db.queryLog...), db.execLog...), db.tx.execCalls...)
 	for _, call := range all {
 		for _, arg := range call.args {
-			if arg == want {
+			if sameArg(arg, want) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// sameArg は SQL 引数と期待値を比較する（レビュー往復2 I-3）。any 同士を `==`
+// で比べると、比較不可能な動的型（スライス・マップ・関数）が SQL 引数に
+// 現れたときに実行時 panic するため、比較できる型を型スイッチで明示的に
+// 受ける。反射（reflect.DeepEqual）は使わない（標準 testing + go-cmp のみ＝
+// ADR 0007）。対応していない型の期待値は false を返し、検査が黙って通ることを
+// 避ける（呼び出し側は t.Errorf で落ちる）。
+func sameArg(arg, want any) bool {
+	switch w := want.(type) {
+	case string:
+		v, ok := arg.(string)
+		return ok && v == w
+	case int:
+		v, ok := arg.(int)
+		return ok && v == w
+	default:
+		return false
+	}
 }
 
 // ---- ④のための port.Clock の Fake -----------------------------------------
