@@ -126,6 +126,13 @@ func contractRow(id, displayName, engineerID string, lowerH, lowerM, upperH, upp
 	return queryRow{id, displayName, engineerID, lowerH, lowerM, upperH, upperM}
 }
 
+// workMonthListRow は一覧（E-2）の行を Scan の並びどおりに組み立てる
+// （契約識別子・契約表示名・年・月・状態の5列。
+// adapter/gateway/work_month_query.go の List の Scan 順に合わせる）。
+func workMonthListRow(contractID, displayName string, year, month int, state string) queryRow {
+	return queryRow{contractID, displayName, year, month, state}
+}
+
 // fakeTx は gateway.Tx に対する手書きの Fake。Exec の呼び出しを記録するだけで、
 // 常に成功する（原子性そのもの・SQL 文の正しさは検査しない＝AC-13-18）。
 type fakeTx struct {
@@ -200,13 +207,14 @@ func (db *fakeDB) callCount() int {
 	return len(db.queryLog) + len(db.execLog) + len(db.tx.execCalls)
 }
 
-// hasArg は Query・Exec・Tx.Exec のいずれかの記録に、引数として want（文字列）
-// が現れているかを返す（AC-12-15④(iv) の検査に使う）。
-func (db *fakeDB) hasArg(want string) bool {
+// hasArg は Query・Exec・Tx.Exec のいずれかの記録に、引数として want が
+// 現れているかを返す（AC-12-15④(iv) の検査に使う）。文字列（contractId）だけ
+// でなく int（年・月。レビュー往復1 I-3）も比較できるよう any で受け取る。
+func (db *fakeDB) hasArg(want any) bool {
 	all := append(append(append([]callRecord{}, db.queryLog...), db.execLog...), db.tx.execCalls...)
 	for _, call := range all {
 		for _, arg := range call.args {
-			if s, ok := arg.(string); ok && s == want {
+			if arg == want {
 				return true
 			}
 		}
