@@ -258,3 +258,117 @@ func TestEnterDailyRecordHandler_PresenterIsGeneratedPerRequest(t *testing.T) {
 		t.Fatalf("2回目: status = %d, want 500（presenter をプロセス内で共有していると1回目の結果を引きずって200のままになる＝AC-9-13-a）: body=%s", rec2.Code, rec2.Body.String())
 	}
 }
+
+// ---- 以下、W-1（レビュー往復2）: NewListWorkMonthsHandler にも同じ対を
+// 適用する。E-2 は出力ポートの型が他の6エンドポイントと異なり
+// （port.ListWorkMonthsOutputPort＝AC-9-13-d）、②の本体を
+// list_work_months_handler.go に別途持つため、上の2つの対では固定できない。
+// 対が無いと「E-2 の presenter をプロセス内で共有する」実装も「結果なし →
+// INTERNAL_ERROR の委譲を外した」実装も Green になる（往復2 で実測した
+// 偽 Green）。 ----
+
+// sequencedListWorkMonthsInvoker は Execute が呼ばれても、あらかじめ指定した
+// とおりにしか output.Present を呼ばない、手書きの invoker（AC-12-2）。
+// sequencedGetWorkMonthInvoker と同じ形だが、出力ポートの型が異なる
+// （port.ListWorkMonthsOutputPort＝AC-9-13-d）。
+type sequencedListWorkMonthsInvoker struct {
+	output  port.ListWorkMonthsOutputPort
+	present bool
+}
+
+func (s sequencedListWorkMonthsInvoker) Execute(_ context.Context, _ port.ListWorkMonthsInput) {
+	if s.present {
+		s.output.Present(port.ListWorkMonthsOutput{
+			Items:  []port.ListWorkMonthsOutputRow{},
+			Total:  0,
+			Limit:  20,
+			Offset: 0,
+		})
+	}
+}
+
+// buildSequencedListWorkMonthsInvoker は buildSequencedGetWorkMonthInvoker と
+// 同じ形（呼ばれるたびに presentOn の対応する要素を見て、その回に Present を
+// 呼ぶかどうかを決める）。
+func buildSequencedListWorkMonthsInvoker(presentOn ...bool) func(port.ListWorkMonthsOutputPort) lambda.ListWorkMonthsInvoker {
+	call := 0
+	return func(output port.ListWorkMonthsOutputPort) lambda.ListWorkMonthsInvoker {
+		idx := call
+		call++
+		present := idx < len(presentOn) && presentOn[idx]
+		return sequencedListWorkMonthsInvoker{output: output, present: present}
+	}
+}
+
+// newListWorkMonthsRequest は E-2 相当のリクエストを組み立てる。engineerId を
+// 指定するため操作者ヘッダは要らない（AC-9-7-a②）。ルーティング（①）は
+// 経由しない（AC-10-8②は①から独立して呼び出せることを要求する）。
+func newListWorkMonthsRequest() *http.Request {
+	return httptest.NewRequest(http.MethodGet, "/work-months?engineerId=eng-0001", nil)
+}
+
+// TestListWorkMonthsHandler_ResultlessInvoker_And_SucceedingInvoker は
+// AC-12-15③の対を、ListWorkMonthsInvoker（E-2）で検査する（W-1）。
+func TestListWorkMonthsHandler_ResultlessInvoker_And_SucceedingInvoker(t *testing.T) {
+	tests := []struct {
+		name       string
+		presentOn  []bool
+		wantStatus int
+		wantCode   string // 空文字なら error.code を検査しない
+	}{
+		{
+			name:       "invokerがpresenterを一度も呼ばない→INTERNAL_ERROR",
+			presentOn:  []bool{false},
+			wantStatus: http.StatusInternalServerError,
+			wantCode:   "INTERNAL_ERROR",
+		},
+		{
+			name:       "invokerがpresenterを1回呼ぶ→200",
+			presentOn:  []bool{true},
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := lambda.NewListWorkMonthsHandler(buildSequencedListWorkMonthsInvoker(tt.presentOn...))
+
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, newListWorkMonthsRequest())
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d（AC-9-13-c）: body=%s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.wantCode != "" {
+				var body presenter.ErrorResponse
+				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+					t.Fatalf("応答ボディの JSON デコードに失敗した: %v（body=%s）", err, rec.Body.String())
+				}
+				if body.Error.Code != tt.wantCode {
+					t.Errorf("error.code = %q, want %q", body.Error.Code, tt.wantCode)
+				}
+			}
+		})
+	}
+}
+
+// TestListWorkMonthsHandler_PresenterIsGeneratedPerRequest は AC-12-15③の
+// もう一方の対を、ListWorkMonthsInvoker（E-2）で検査する（W-1）: 1回目は
+// 成功・2回目は「結果なし」となる invoker を同一の handler へ2回投げ、
+// 2回目の応答が INTERNAL_ERROR になること（presenter がリクエストごとに
+// 生成されていること＝AC-9-13-a）を検査する。
+func TestListWorkMonthsHandler_PresenterIsGeneratedPerRequest(t *testing.T) {
+	handler := lambda.NewListWorkMonthsHandler(buildSequencedListWorkMonthsInvoker(true, false))
+
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, newListWorkMonthsRequest())
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("1回目: status = %d, want 200: body=%s", rec1.Code, rec1.Body.String())
+	}
+
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, newListWorkMonthsRequest())
+	if rec2.Code != http.StatusInternalServerError {
+		t.Fatalf("2回目: status = %d, want 500（presenter をプロセス内で共有していると1回目の結果を引きずって200のままになる＝AC-9-13-a）: body=%s", rec2.Code, rec2.Body.String())
+	}
+}
