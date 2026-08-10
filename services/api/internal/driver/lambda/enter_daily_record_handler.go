@@ -19,22 +19,10 @@ type EnterDailyRecordInvoker interface {
 }
 
 // NewEnterDailyRecordHandler は EnterDailyRecord（E-3）の http.Handler を
-// 返す（AC-10-8②）。リクエストごとに出力ポート（presenter）を新しく生成し
-// （AC-9-13-a）、buildInvoker でその出力ポートに束ねた invoker を組み立てて
-// controller を呼ぶ。invoker が一度も Present/PresentError を呼ばなければ
-// INTERNAL_ERROR とする（AC-9-13-c）。
+// 返す（AC-10-8②）。共通の結線（リクエストごとの presenter 生成・
+// INTERNAL_ERROR への委譲）は newWorkMonthHandler が担う（W-2）。
 func NewEnterDailyRecordHandler(buildInvoker func(port.WorkMonthOutputPort) EnterDailyRecordInvoker) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		output := presenter.NewWorkMonthPresenter()
-		invoker := buildInvoker(output)
-
+	return newWorkMonthHandler(buildInvoker, func(r *http.Request, invoker EnterDailyRecordInvoker, output *presenter.WorkMonthPresenter) {
 		controller.HandleEnterDailyRecord(r, invoker, output)
-
-		result, ok := output.Result()
-		if !ok {
-			writeInternalErrorResult(w)
-			return
-		}
-		writeResult(w, result)
 	})
 }

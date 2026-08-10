@@ -42,3 +42,59 @@ func BuildEnterDailyRecordInvoker(db gateway.DB, clock port.Clock) func(port.Wor
 		return interactor.NewEnterDailyRecord(workMonths, contracts, clock, output)
 	}
 }
+
+// BuildDeleteDailyRecordInvoker は gateway.DB から DeleteDailyRecord（E-4）の
+// interactor を組み立てる関数を返す（AC-10-8③）。
+func BuildDeleteDailyRecordInvoker(db gateway.DB) func(port.WorkMonthOutputPort) DeleteDailyRecordInvoker {
+	workMonths := gateway.NewWorkMonthRepository(db)
+	contracts := gateway.NewContractRepository(db)
+
+	return func(output port.WorkMonthOutputPort) DeleteDailyRecordInvoker {
+		return interactor.NewDeleteDailyRecord(workMonths, contracts, output)
+	}
+}
+
+// BuildCloseWorkMonthInvoker は gateway.DB から CloseWorkMonth（E-5）の
+// interactor を組み立てる関数を返す（AC-10-8③）。
+func BuildCloseWorkMonthInvoker(db gateway.DB) func(port.WorkMonthOutputPort) CloseWorkMonthInvoker {
+	workMonths := gateway.NewWorkMonthRepository(db)
+	contracts := gateway.NewContractRepository(db)
+
+	return func(output port.WorkMonthOutputPort) CloseWorkMonthInvoker {
+		return interactor.NewCloseWorkMonth(workMonths, contracts, output)
+	}
+}
+
+// BuildApproveWorkMonthInvoker は gateway.DB から ApproveWorkMonth（E-6）の
+// interactor を組み立てる関数を返す（AC-10-8③）。
+func BuildApproveWorkMonthInvoker(db gateway.DB) func(port.WorkMonthOutputPort) ApproveWorkMonthInvoker {
+	workMonths := gateway.NewWorkMonthRepository(db)
+	contracts := gateway.NewContractRepository(db)
+
+	return func(output port.WorkMonthOutputPort) ApproveWorkMonthInvoker {
+		return interactor.NewApproveWorkMonth(workMonths, contracts, output)
+	}
+}
+
+// BuildRejectWorkMonthInvoker は gateway.DB から RejectWorkMonth（E-7）の
+// interactor を組み立てる関数を返す（AC-10-8③）。
+func BuildRejectWorkMonthInvoker(db gateway.DB) func(port.WorkMonthOutputPort) RejectWorkMonthInvoker {
+	workMonths := gateway.NewWorkMonthRepository(db)
+	contracts := gateway.NewContractRepository(db)
+
+	return func(output port.WorkMonthOutputPort) RejectWorkMonthInvoker {
+		return interactor.NewRejectWorkMonth(workMonths, contracts, output)
+	}
+}
+
+// BuildListWorkMonthsInvoker は gateway.DB から ListWorkMonths（E-2）の
+// interactor を組み立てる関数を返す（AC-10-8③）。他の6エンドポイントとは
+// 異なり port.WorkMonthQuery だけに依存する（AC-7-16。repository には
+// 依存しない）。
+func BuildListWorkMonthsInvoker(db gateway.DB) func(port.ListWorkMonthsOutputPort) ListWorkMonthsInvoker {
+	query := gateway.NewWorkMonthQuery(db)
+
+	return func(output port.ListWorkMonthsOutputPort) ListWorkMonthsInvoker {
+		return interactor.NewListWorkMonths(query, output)
+	}
+}
