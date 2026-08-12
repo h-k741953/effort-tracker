@@ -130,6 +130,13 @@ func TestLoadConfig_RequiresLookedUpSettings(t *testing.T) {
 // 探索が要求した名前を記録し、その名前を1つずつ欠けさせて（他には値を与えて）
 // エラーを起こす。値が漏れる実装（接続文字列や取得値をそのまま文言へ入れる）
 // はここで Red になる。
+//
+// **欠落は「値を返さない」ではなく「見つからなかった印（ok=false）と一緒に値も
+// 返す」形で模す。** 探索が返す値は探索の内部事情であり、見つからなかったこと
+// を無視して値を文言へ入れる実装（`%s=%q` で取得値を添える等）がある。空文字を
+// 返す形では、その実装が漏らすものが空文字になり検査が空回りする。したがって
+// **欠けている名前も含む全名の値**が文言に現れないことを見る（AC-10-13 ③）。
+// 必須設定が1つしか無い間は、これが (iii) を実際に走らせる唯一の形である。
 func TestLoadConfig_ErrorDoesNotLeakLookedUpValues(t *testing.T) {
 	rec := &recordingLookup{
 		value: func(name string) (string, bool) { return valueFor(name), true },
@@ -149,7 +156,9 @@ func TestLoadConfig_ErrorDoesNotLeakLookedUpValues(t *testing.T) {
 			absent := &recordingLookup{
 				value: func(name string) (string, bool) {
 					if name == missing {
-						return "", false
+						// 見つからなかった（ok=false）。値も返すのは、ok を
+						// 無視して値を文言へ入れる実装をここで捕まえるため。
+						return valueFor(name), false
 					}
 					return valueFor(name), true
 				},
@@ -162,11 +171,10 @@ func TestLoadConfig_ErrorDoesNotLeakLookedUpValues(t *testing.T) {
 			}
 			errored++
 
+			// 欠けている名前を除外しない。除外すると、必須設定が1つしか無い
+			// 現在の実装ではアサーションが一度も走らない（空回りする）。
 			msg := err.Error()
 			for _, name := range names {
-				if name == missing {
-					continue
-				}
 				if strings.Contains(msg, valueFor(name)) {
 					t.Errorf("エラーの文言に探索で得た値がそのまま含まれている: %q", msg)
 				}
