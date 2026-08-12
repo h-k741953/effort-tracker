@@ -114,9 +114,13 @@ func TestLoadConfig_RequiresLookedUpSettings(t *testing.T) {
 
 			// (ii)「設定が組み立つ」の観測。型名・フィールド名に依存させないため、
 			// 返った値が型のゼロ値でないことだけを見る。
+			//
+			// 出力は %v にする。%#v は Config.String() の伏せ字（[REDACTED]）を
+			// 迂回して非公開フィールドをそのまま出すため、伏せ字を用意した型
+			// （AC-10-13 ③・docs/rules/security.md）と整合しない。
 			v := reflect.ValueOf(cfg)
 			if !v.IsValid() || v.IsZero() {
-				t.Errorf("必要な設定が揃っているのに、組み立てた設定がゼロ値だった: %#v", cfg)
+				t.Errorf("必要な設定が揃っているのに、組み立てた設定がゼロ値だった: %v", cfg)
 			}
 		})
 	}
