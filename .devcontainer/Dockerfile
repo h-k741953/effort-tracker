@@ -129,10 +129,9 @@ ENV PATH=/usr/local/go/bin:/home/node/go/bin:$PATH
 # ※ 正解の実体は services/api/go.mod 側であり、ここでの ARG はビルド時に
 #    キャッシュを温めるためだけの二重管理である。バージョンを上げるときは
 #    go.mod を先に変更し、この値を追随させること（逆はしない）。
-#    PGX_VERSION は driver/persistence（pgx / Neon 接続）が未着手で
-#    go.mod にまだ require が無いため、この ARG が値の暫定的な出所になって
-#    いる。driver/persistence 着手時に go.mod へ require を追加したら、
-#    以後はそちらを正解とする。
+#    PGX_VERSION も driver/persistence（pgx / Neon 接続）の着手により
+#    services/api/go.mod へ require が入ったため、他の ARG と同じく go.mod が
+#    正解の実体である。この ARG はキャッシュを温めるための追随側にすぎない。
 ARG PGX_VERSION=v5.10.0
 ARG AWS_LAMBDA_GO_VERSION=v1.54.0
 ARG GO_CMP_VERSION=v0.7.0
