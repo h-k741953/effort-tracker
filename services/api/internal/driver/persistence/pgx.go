@@ -47,6 +47,15 @@ import (
 // エラーは pgx 由来のものをそのまま返す（AC-10-13 ②）。**設定の値を文言へ
 // 足さない**（AC-10-13 ③）。
 func Connect(ctx context.Context, cfg Config) (gateway.DB, error) {
+	// 接続文字列が空なら**接続を試みずに**エラーを返す（AC-10-12 の再掲）。
+	// Config は公開型であり、フィールドが非公開でもゼロ値はパッケージ外から
+	// 構築できる。空の接続文字列を渡された pgx は libpq 互換の既定値
+	// （PGHOST 等の環境変数・既定ホスト）へ落ちるため、この検査が無いと
+	// LoadConfig を経由しない呼び出しで「既定値へ黙って落ちる」経路が復活する。
+	if cfg.databaseURL == "" {
+		return nil, ErrMissingSetting
+	}
+
 	pool, err := pgxpool.New(ctx, cfg.databaseURL)
 	if err != nil {
 		return nil, err
