@@ -32,6 +32,22 @@ import (
 // （AC-10-3・docs/rules/security.md）。
 const databaseURLEnv = "DATABASE_URL"
 
+// maxOpenConnections は1つの実行環境（プロセス）あたり同時に開く接続の
+// 上限である（AC-10-19 ①②。決定15）。
+//
+// Lambda の1つの実行環境は同時に1要求しか処理しないため、同時実行数と
+// 接続本数が1対1に対応し、Neon 側で同時に開かれる本数の上限は予約同時
+// 実行数（docs/rules/cost-guardrails.md）だけで決まる。**この値そのものは
+// docs/rules/cost-guardrails.md へ足さない**（本行が定めるのは「実行あたり
+// 1本」という構造であり、値の実体は同ファイルの予約同時実行数の1箇所の
+// まま＝ADR 0004）。
+//
+// 本数の出所はこの1箇所だけとし（AC-10-19 ②）、環境変数からは読まない
+// （AC-10-19 ④。外から変えられる形にしない）。LoadConfig がこの値を
+// Config.maxConns へ載せ、Connect（pgx.go）がそれを使って接続の確立を
+// 行う。
+const maxOpenConnections = 1
+
 // ErrMissingSetting は必要な設定が未設定または空であることを表す
 // （AC-10-12。既定値へ黙って落ちない）。
 //
@@ -59,6 +75,12 @@ type Config struct {
 	// databaseURL は Neon への接続文字列。**実値をコードに書かない**
 	// （AC-10-3）。環境変数からのみ与えられる。
 	databaseURL string
+
+	// maxConns は同時に開く接続の上限（AC-10-19 ③）。LoadConfig が
+	// maxOpenConnections から代入し、環境変数からは読まない（AC-10-19 ④）。
+	// 接続文字列とは別のフィールドとして持つ（接続文字列へ埋め込む形は
+	// 採らない。tester が決めた形）。
+	maxConns int
 }
 
 // String は Config を誤って出力したときに接続文字列が漏れないようにするための
@@ -89,5 +111,5 @@ func LoadConfig(lookup func(name string) (string, bool)) (Config, error) {
 		return Config{}, fmt.Errorf("%w: %s", ErrMissingSetting, databaseURLEnv)
 	}
 
-	return Config{databaseURL: databaseURL}, nil
+	return Config{databaseURL: databaseURL, maxConns: maxOpenConnections}, nil
 }
