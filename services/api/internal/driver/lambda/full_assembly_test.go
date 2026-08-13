@@ -32,6 +32,11 @@ package lambda_test
 //   (iv)  E-1 と E-2  — 成功時の本体が勤務月1件と一覧で異なる（AC-9-13-d・
 //                       契約 AC-10-1 / AC-10-2）。
 //
+// 応答に加えて、AC-10-16 が引数で受け取った port.Clock を実際に渡していることを
+// 観測する（レビュー往復1 W-1。wantsClock を立てた E-3 で手書き Clock の呼び出し
+// 回数を見る）。応答だけでは、対象日が固定の「当日」より前である限り実時刻の
+// Clock でも同じ応答になるため区別できない。観測の形は AC-12-15 ④ (ii) に合わせる。
+//
 // 担保しないもの: Lambda ランタイムへの登録・実行、実接続、本番で実際に
 // 注入される実装、main() に残った部分（AC-13-24）。SQL 文そのものの正しさ・
 // 原子性・並び順も観測しない（AC-13-18・AC-13-24 ⑤）。
@@ -67,6 +72,13 @@ type fullAssemblyCase struct {
 	headers map[string]string
 	body    string
 	want    wantResponse
+	// wantsClock は「このエンドポイントが AC-10-16 で渡された port.Clock を
+	// 実際に使う」ことを表す（AC-10-16 が Clock を引数として受け取ることの
+	// 観測。レビュー往復1 W-1）。応答だけを見ると、対象日が固定の「当日」より
+	// 前である限り実時刻の Clock でも同じ応答になるため、NewHandler が受け取った
+	// Clock を渡していることは応答からは区別できない。観測の形は AC-12-15 ④ (ii)
+	// （assembly_test.go）に合わせ、手書き Fake の呼び出し回数で見る。
+	wantsClock bool
 }
 
 // fixedToday は手書きの Clock が返す固定の「当日」。基準タイムゾーンの値は
@@ -170,6 +182,9 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 				"X-Actor-Role": "Engineer",
 			},
 			body: `{"workingHours":{"hours":8,"minutes":0}}`,
+			// 稼働実績の入力は対象日が「当日」より後かを判定するため
+			// （AC-6-5）、7つのうちこの1本だけが port.Clock を使う。
+			wantsClock: true,
 			want: wantResponse{
 				status: http.StatusOK,
 				bodyJSON: `{
@@ -320,6 +335,14 @@ func TestFullAssembly_EachEndpointRespondsDistinctly(t *testing.T) {
 			handler.ServeHTTP(rec, req)
 
 			assertResponse(t, rec, tt.want)
+
+			// AC-10-16 が受け取った port.Clock を実際に渡していること
+			// （レビュー往復1 W-1）。応答は対象日が固定の「当日」より前である
+			// 限り実時刻の Clock でも変わらないため、応答とは別に呼び出しを
+			// 観測する（AC-12-15 ④ (ii) と同じ形）。
+			if tt.wantsClock && clock.calls < 1 {
+				t.Errorf("手書きの Clock が呼ばれていない（NewHandler が受け取った port.Clock を渡していない＝AC-10-16）")
+			}
 		})
 	}
 }

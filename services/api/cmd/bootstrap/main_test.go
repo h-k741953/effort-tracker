@@ -82,6 +82,18 @@ func (r *startupRecorder) lookupNothing() func(name string) (string, bool) {
 	}
 }
 
+// lookupUnsetButReturning は「値は返すが、未設定（ok=false）と答える」探索。
+// 設定の組み立ては失敗しつつ、探索は値を返した状態になる。(v)（返るエラーの
+// 文言に探索が返した値が含まれない）を、設定の組み立てに失敗する経路でも
+// **実際に観測できる形**にするために要る（レビュー往復1 W-2。空文字を返す探索の
+// ままでは、探索が値を一度も返さないため文言の検査が失敗し得なかった）。
+func (r *startupRecorder) lookupUnsetButReturning(value string) func(name string) (string, bool) {
+	return func(name string) (string, bool) {
+		r.lookupNames = append(r.lookupNames, name)
+		return value, false
+	}
+}
+
 // connectReturning は接続の確立の差し替え。
 func (r *startupRecorder) connectReturning(db gateway.DB, err error) func(context.Context, persistence.Config) (gateway.DB, error) {
 	return func(_ context.Context, _ persistence.Config) (gateway.DB, error) {
@@ -270,10 +282,10 @@ func TestRun_ConnectFails_SkipsRegister(t *testing.T) {
 	}
 }
 
-// TestRun_MissingSetting_ErrorDoesNotLeakLookupValue は (v) を、探索が値を返した
-// うえで設定が揃わない経路でも固定する。空文字を返す探索（ok=true）は
-// 「未設定または空」に当たる（AC-10-12）。
-func TestRun_MissingSetting_ErrorDoesNotLeakLookupValue(t *testing.T) {
+// TestRun_EmptySetting_SkipsConnectAndRegister は (ii) を、空文字を返す探索
+// （ok=true）でも固定する。「未設定または空」は同じく設定が揃わない扱いになる
+// （AC-10-12。既定値へ黙って落ちない）。
+func TestRun_EmptySetting_SkipsConnectAndRegister(t *testing.T) {
 	rec := &startupRecorder{}
 
 	err := Run(
@@ -287,8 +299,35 @@ func TestRun_MissingSetting_ErrorDoesNotLeakLookupValue(t *testing.T) {
 	if rec.connectCalls != 0 || rec.registerCalls != 0 {
 		t.Errorf("接続 %d 回・登録 %d 回, want 0 回・0 回", rec.connectCalls, rec.registerCalls)
 	}
+}
+
+// TestRun_MissingSetting_ErrorDoesNotLeakLookupValue は (v) を、設定の組み立てに
+// 失敗する経路でも固定する。
+//
+// **探索には値を返させたうえで未設定（ok=false）と答えさせる**（レビュー往復1
+// W-2）。空文字を返す探索のままでは、探索が dummyLookupValue を一度も返さない
+// ため、実装が何をしても文言の検査が失敗し得なかった（担保できていない事柄を
+// 担保していると書いた状態だった）。この形なら LoadConfig は失敗しつつ、探索は
+// 値を返した状態になり、検査が実際に効く。
+func TestRun_MissingSetting_ErrorDoesNotLeakLookupValue(t *testing.T) {
+	rec := &startupRecorder{}
+
+	err := Run(
+		rec.lookupUnsetButReturning(dummyLookupValue),
+		rec.connectReturning(&bootDB{}, nil),
+		rec.register,
+	)
+	if err == nil {
+		t.Fatalf("Run がエラーを返さなかった（未設定なら既定値へ黙って落ちない＝AC-10-12）")
+	}
+	if rec.connectCalls != 0 || rec.registerCalls != 0 {
+		t.Errorf("接続 %d 回・登録 %d 回, want 0 回・0 回", rec.connectCalls, rec.registerCalls)
+	}
+	if len(rec.lookupNames) == 0 {
+		t.Fatalf("差し替えた探索が1度も呼ばれていない（値を返させた検査が空回りする）")
+	}
 	if strings.Contains(err.Error(), dummyLookupValue) {
-		t.Errorf("エラーの文言に探索が返した値が含まれている（AC-10-13 ③）: %v", err)
+		t.Errorf("エラーの文言に探索が返した値が含まれている（AC-10-13 ③・docs/rules/security.md）: %v", err)
 	}
 }
 
