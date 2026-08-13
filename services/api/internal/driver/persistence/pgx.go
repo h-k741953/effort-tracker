@@ -56,7 +56,20 @@ func Connect(ctx context.Context, cfg Config) (gateway.DB, error) {
 		return nil, ErrMissingSetting
 	}
 
-	pool, err := pgxpool.New(ctx, cfg.databaseURL)
+	// 接続設定を解析し、同時に開く接続の上限を cfg.maxConns（AC-10-19 ③・
+	// 決定15）で明示的に上書きする。pgxpool.New(ctx, connString) をそのまま
+	// 使うと、ライブラリの既定値（max(4, runtime.NumCPU())）に落ち、
+	// AC-10-19 ①「上限は1」「ライブラリの既定値へ落ちない」を満たさない。
+	// MaxConns は int32 だが、この値の出所は maxOpenConnections（本パッケージ
+	// 内の1箇所）のままであり、ここでは pgx が要求する型へ変換するだけで
+	// ある（AC-10-19 ②の「出所を1つにする」は崩さない）。
+	poolCfg, err := pgxpool.ParseConfig(cfg.databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	poolCfg.MaxConns = int32(cfg.maxConns)
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, err
 	}
