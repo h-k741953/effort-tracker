@@ -122,6 +122,23 @@ func TestLoadConfig_RequiresLookedUpSettings(t *testing.T) {
 			if !v.IsValid() || v.IsZero() {
 				t.Errorf("必要な設定が揃っているのに、組み立てた設定がゼロ値だった: %v", cfg)
 			}
+
+			// (ii) 続き: 「組み立つ」の中身を直接見る。IsZero だけでは、接続文字列
+			// 以外のフィールド（例: AC-10-19 の同時接続数）がゼロ値でなくなった
+			// 時点で、接続文字列を載せ忘れても検出できない（往復1 W-1）。**接続
+			// 文字列そのものを取り出す公開アクセサは足さない**（AC-10-13 ③・
+			// docs/rules/security.md）が、本テストは driver/persistence の内部
+			// テストパッケージ（package persistence）に置くため、非公開の
+			// フィールド・識別子をそのまま読んでよい（AC-12-16 ③(ii) が明記する
+			// 扱いを ①(ii) の検査にも適用する）。期待値は環境変数の**名前**を
+			// 書かずに、差し替えた探索が実際に記録した名前から valueFor で導く
+			// （AC-12-16 ①）。
+			if len(rec.names) == 0 {
+				t.Fatalf("環境変数の探索が一度も呼ばれていない（設定を組み立てられない）")
+			}
+			if want := valueFor(rec.names[0]); cfg.databaseURL != want {
+				t.Errorf("組み立てた設定に、探索から得た接続文字列がそのまま載っていない: got %q, want %q", cfg.databaseURL, want)
+			}
 		})
 	}
 }
