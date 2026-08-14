@@ -21,9 +21,11 @@ AIは自分の書いたコードが正しいかを、**自分では判断でき�
 | `make test-scripts` | `.github/scripts` のチェッカを fixture で検査（`make test` に含む） |
 | `make test-hooks` | `.claude/hooks` のチェッカを fixture で検査（`make test` に含む） |
 | `make test-commands` | `.claude/scripts`（スラッシュコマンドの機械判定部）のチェッカを fixture で検査（`make test` に含む） |
+| `make test-go-module-pins` | `.github/scripts/check-go-module-pins.sh`（Dockerfile ⇔ go.mod の pin 整合検査）のロジックを fixture で検査（`make test` に含む） |
 | `make lint` | 全レイヤーの Lint / 型チェック |
 | `make verify` | `lint` + `test` + `check-domain-deps` + `scan-secrets` |
 | `make check-domain-deps` | ドメイン層の依存検査 |
+| `make check-go-module-pins` | `.devcontainer/Dockerfile` の ARG pin と `services/api/go.mod` の direct require の整合検査 |
 | `make scan-secrets` | gitleaks によるシークレット検出（作業ツリー + 履歴） |
 | `make fmt` | 自動整形 |
 
@@ -44,7 +46,7 @@ AIは自分の書いたコードが正しいかを、**自分では判断でき�
 
 これは好みではなく制約である。`init-firewall.sh` が実行時の外向き通信を allowlist 方式で遮断しており、`go.dev` / `storage.googleapis.com` / `releases.hashicorp.com` / `deb.debian.org` はいずれも許可されていない。**コンテナ起動後にツールチェーンを入れることはできない。** ビルド中はファイアウォールが未適用なので、そこで入れる。
 
-Go モジュールの取得のみ、allowlist に `proxy.golang.org` と `sum.golang.org` を追加して対応している。両方を許可することで `GOSUMDB` を有効なまま運用でき、`GOPROXY=direct` + `GOSUMDB=off` という回避策を避けている。チェックサム透明性ログの検証を維持するための判断である。
+allowlist には `proxy.golang.org` と `sum.golang.org` も入っているが、**これは実行時にモジュールを取得できることを意味しない。** `init-firewall.sh` が追加するのは起動時に `dig` が返した1個の IP だけであり、両ホストは Google CDN 上で A レコードをローテートするため、実行時の取得は成立しないのが既定である（2026-08-14 実測。原因の詳細は `docs/specs/devcontainer-go-module-policy.md` P-2）。実際にモジュールを解決しているのは `.devcontainer/Dockerfile` のビルド時事前取得（ファイアウォール未適用のビルド中に `go get` して `GOMODCACHE` を温める）で、ツールチェーンをビルド時に入れる上記の理由づけと同じ延長にある。`GOSUMDB` は有効なまま運用でき `GOSUMDB=off` は採っていないが、根拠は「allowlist で2ホストを許可しているから」ではなく「ビルド時に検証込みで取得しているから」（`go mod verify` = `all modules verified`）である。依存の追加・更新の手順は `docs/rules/commands.md`、原因・方針・採らなかった案の正解は `docs/specs/devcontainer-go-module-policy.md` を参照。
 
 ### CI ログの取得
 
@@ -259,7 +261,7 @@ PR に残すのは*決定した仕様*ではなく*経緯・証跡*であり、A
 | `web` | `Web (lint / test)` | `make lint-web` / `make test-web` |
 | `secrets` | `Secrets (gitleaks)` | `make scan-secrets` |
 | `terraform` | `Terraform (fmt / validate)` | `make lint-tf` |
-| `scripts` | `Scripts (checker logic)` | `make test-scripts`（`.github/scripts` のチェッカを fixture で検査） + `make test-hooks`（`.claude/hooks` のチェッカを fixture で検査） + `make test-commands`（`.claude/scripts` のチェッカ＝スラッシュコマンドの機械判定部を fixture で検査） |
+| `scripts` | `Scripts (checker logic)` | `make test-scripts`（`.github/scripts` のチェッカを fixture で検査） + `make test-hooks`（`.claude/hooks` のチェッカを fixture で検査） + `make test-commands`（`.claude/scripts` のチェッカ＝スラッシュコマンドの機械判定部を fixture で検査） + `make test-go-module-pins`（`check-go-module-pins.sh` のロジックを fixture で検査） + `make check-go-module-pins`（Dockerfile ⇔ go.mod の pin 整合を実ファイルで検査） |
 
 **コードに対する検査を CI 側にだけ作らない。** 作った瞬間、ローカルの Green が信用できなくなる。
 

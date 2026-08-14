@@ -149,6 +149,17 @@ jobs:
       - name: make check-skills
         run: make check-skills
 
+      # test-go-module-pins（.github/scripts/check-go-module-pins.sh の fixture）と
+      # check-go-module-pins（実 .devcontainer/Dockerfile ⇔ services/api/go.mod の
+      # 整合検査）も、上と同じ理由で新規ジョブを起こさず本ジョブへ相乗りさせる。
+      # このチェッカは go を使わない純粋なテキストフィルタなので（AC-5-3）、
+      # setup-go は要らない。docs/specs/devcontainer-go-module-policy.md AC-9-3。
+      - name: make test-go-module-pins
+        run: make test-go-module-pins
+
+      - name: make check-go-module-pins
+        run: make check-go-module-pins
+
   # ---------------------------------------------------------------------------
   # シークレット検出
   # ---------------------------------------------------------------------------

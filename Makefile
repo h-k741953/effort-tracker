@@ -24,12 +24,12 @@ help: ## このヘルプを表示
 # =============================================================================
 
 .PHONY: verify
-verify: lint test check-domain-deps check-skills scan-secrets ## 全検査（コミット前・PR前に実行）
+verify: lint test check-domain-deps check-skills check-go-module-pins scan-secrets ## 全検査（コミット前・PR前に実行）
 	@echo ""
 	@echo "==> verify: 全検査を通過"
 
 .PHONY: test
-test: test-api test-web test-scripts test-hooks test-commands test-skills ## 全レイヤーのテスト
+test: test-api test-web test-scripts test-hooks test-commands test-skills test-go-module-pins ## 全レイヤーのテスト
 
 .PHONY: lint
 lint: lint-api lint-web lint-tf ## 全レイヤーの Lint / 型チェック
@@ -248,6 +248,31 @@ check-skills: ## .claude/skills/*/SKILL.md の形式（frontmatter + docs/ 参�
 test-skills: ## check-skills.sh のロジックを fixture で検査
 	@echo "==> test-skills"
 	@bash .claude/scripts/test-check-skills.sh
+
+# =============================================================================
+# Go モジュール pin の整合検査（.devcontainer/Dockerfile ⇔ services/api/go.mod）
+#
+# check-go-module-pins は、Dockerfile の ARG pin（GOMODCACHE を温めるための
+# 事前取得に使う版）と go.mod の direct require が一致しているかを検査する
+# （docs/specs/devcontainer-go-module-policy.md AC-5〜AC-7）。ARG は go.mod の
+# 追随側の二重管理であり、放置すれば必ずずれる（同仕様 P-3）。
+#
+# test-scripts へ合流させないのは、対象種別が違うため。test-scripts が対象と
+# するのは CI から呼ばれる *プロセス検査のチェッカ*（往復証跡の形式等）だが、
+# こちらは **リポジトリ内の設定ファイル間の整合検査**であり、プロセスも
+# 外部入力も見ない。check-skills / test-skills と同じ理由で、Makefile の
+# コメント区分と実体をずらさないよう専用ターゲットへ分ける。
+# =============================================================================
+
+.PHONY: check-go-module-pins
+check-go-module-pins: ## Dockerfile の ARG pin と go.mod の direct require の整合を検査
+	@echo "==> check-go-module-pins"
+	@bash .github/scripts/check-go-module-pins.sh .devcontainer/Dockerfile services/api/go.mod
+
+.PHONY: test-go-module-pins
+test-go-module-pins: ## check-go-module-pins.sh のロジックを fixture で検査
+	@echo "==> test-go-module-pins"
+	@bash .github/scripts/test-check-go-module-pins.sh
 
 # =============================================================================
 # セキュリティ
