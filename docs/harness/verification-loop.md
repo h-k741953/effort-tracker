@@ -23,7 +23,7 @@ AIは自分の書いたコードが正しいかを、**自分では判断でき�
 | `make test-commands` | `.claude/scripts`（スラッシュコマンドの機械判定部）のチェッカを fixture で検査（`make test` に含む） |
 | `make test-go-module-pins` | `.github/scripts/check-go-module-pins.sh`（Dockerfile ⇔ go.mod の pin 整合検査）のロジックを fixture で検査（`make test` に含む） |
 | `make lint` | 全レイヤーの Lint / 型チェック |
-| `make verify` | `lint` + `test` + `check-domain-deps` + `scan-secrets` |
+| `make verify` | `lint` + `test` + `check-domain-deps` + `check-skills` + `check-go-module-pins` + `scan-secrets` |
 | `make check-domain-deps` | ドメイン層の依存検査 |
 | `make check-go-module-pins` | `.devcontainer/Dockerfile` の ARG pin と `services/api/go.mod` の direct require の整合検査 |
 | `make scan-secrets` | gitleaks によるシークレット検出（作業ツリー + 履歴） |
