@@ -306,6 +306,36 @@ expect_ok "7-6: indirect require の pin 欠落は違反にしない" \
   "${WORK}/c76/Dockerfile" "${WORK}/c76/go.mod"
 
 # ==============================================================================
+# 7-6b（回帰・レビュー往復2 C-1）: `// indirect` 以外のコメントを持つ
+# direct require は対象に残る → pin が無ければ MISSING_PIN, rc=3
+# ==============================================================================
+# AC-6-4 は「行末に `// indirect` を持つ require は対象外」であり、コメントに
+# `indirect` という語を含むだけでは対象外にならない（部分文字列一致は危険側
+# ＝見逃す側に倒れる）。`// used indirectly via helper` のような direct require
+# の pin し忘れを、間違って OK にしないことを固定する。
+
+mkdir -p "${WORK}/c76b"
+cat > "${WORK}/c76b/Dockerfile" <<'EOF'
+ARG ALPHA_VERSION=v1.2.3
+
+RUN \
+    go get "example.org/alpha@${ALPHA_VERSION}"
+EOF
+cat > "${WORK}/c76b/go.mod" <<'EOF'
+module example.org/target
+
+go 1.22
+
+require (
+	example.org/alpha v1.2.3
+	example.org/beta v2.0.0 // used indirectly via helper
+)
+EOF
+expect_pin_drift "7-6b: // indirect 以外のコメントを持つ direct require は対象に残る（MISSING_PIN）" \
+  "${WORK}/c76b/Dockerfile" "${WORK}/c76b/go.mod" \
+  "MISSING_PIN: example.org/beta v2.0.0"
+
+# ==============================================================================
 # 7-7: Dockerfile から pin の組が1つも取れない → NO_PIN, rc=1（成功に倒さない）
 # ==============================================================================
 # RUN 行に「go get」という文字列そのものを含めない（AC-6-2 は「コメント以外に
@@ -432,10 +462,16 @@ go 1.22
 require example.org/alpha v1.2.3
 EOF
 
+# needle は "PATH:" とパス文字列を結合した1本にする（レビュー往復2 I-5）。
+# 別々の needle だと「PATH: というキーがどこかにある」ことと「そのパスが
+# どこかにある」ことしか固定できず、両者が同じ行で結びついていることまでは
+# 検査できない。結合した needle にすると AC-7-11 の出力契約
+# （`PATH: <パス>`）を正確に固定できる。
+
 MISSING_DOCKERFILE="${WORK}/c711/does-not-exist-Dockerfile"
 expect_indeterminate "7-11a: 第1引数（Dockerfile）のパスが存在しない" \
   "$MISSING_DOCKERFILE" "${WORK}/c711/go.mod" \
-  "PATH:" "$MISSING_DOCKERFILE"
+  "PATH: $MISSING_DOCKERFILE"
 
 cat > "${WORK}/c711/Dockerfile" <<'EOF'
 ARG ALPHA_VERSION=v1.2.3
@@ -446,7 +482,7 @@ EOF
 MISSING_GOMOD="${WORK}/c711/does-not-exist-go.mod"
 expect_indeterminate "7-11b: 第2引数（go.mod）のパスが存在しない" \
   "${WORK}/c711/Dockerfile" "$MISSING_GOMOD" \
-  "PATH:" "$MISSING_GOMOD"
+  "PATH: $MISSING_GOMOD"
 
 # ==============================================================================
 # 7-12: 引数が足りない（0個 / 1個） → INDETERMINATE, rc=1（詳細行は — なので検査しない）
@@ -495,13 +531,23 @@ EOF
 expect_ok "7-13: 危険な文字を含むコメント行があっても判定を壊さない" \
   "${WORK}/c713/Dockerfile" "${WORK}/c713/go.mod"
 
+# 直前の expect_ok（run_target）の RC を前提条件に含める（レビュー往復2 W-1）。
+# 「副作用ファイルが無いこと」だけを見て ok にすると、本体が固まったまま
+# 何も実行されなかった場合（RC 不一致）でも空回りで pass してしまう。
+# RC=0（かつ VERDICT: OK、上の expect_ok 内で検査済み）であることを土台にし、
+# そのうえで副作用ファイルが存在しないことを確認する。
+ok=1
+[ "$RC" = "0" ] || ok=0
 if [ -e "${WORK}/PWNED_SIDE_EFFECT.txt" ] || \
    find "$WORK" -maxdepth 4 -name 'PWNED_SIDE_EFFECT.txt' -print -quit 2>/dev/null | grep -q .; then
-  fail=$((fail + 1))
-  echo "  FAIL 7-13: 入力中の \$(touch ...) が実際に実行されてしまった（副作用ファイルが存在する）"
-else
+  ok=0
+fi
+if [ "$ok" = 1 ]; then
   pass=$((pass + 1))
-  echo "  ok   7-13: 危険な文字が評価されず副作用ファイルが生成されていない"
+  echo "  ok   7-13: 危険な文字が評価されず副作用ファイルが生成されていない（かつ判定は OK のまま）"
+else
+  fail=$((fail + 1))
+  echo "  FAIL 7-13: RC=$RC、または入力中の \$(touch ...) が実際に実行されてしまった（副作用ファイルが存在する）"
 fi
 
 # ==============================================================================
@@ -552,23 +598,86 @@ expect_ok "7-14b: go.mod のみ CRLF（\\r を版文字列へ混入させない�
   "${WORK}/c714b/Dockerfile" "${WORK}/c714b/go.mod"
 
 # ==============================================================================
+# 7-15: 危険な文字を主経路（ARG 値・require の版トークン）に置いても評価されない
+#       （レビュー往復2 W-2）
+# ==============================================================================
+# 7-13 はコメント行にしか危険な文字を置いておらず、コメント行は本体の入口
+# （# 判定・require 行の対象外判定）で早期に弾かれるため、AC-5-4 が守るべき
+# 主経路（ARG の値、require の版トークン、形式不一致の判定を経て詳細行へ
+# 出力される値）を1本も通っていなかった。ここでは `:>PWNED_*.txt`（空白を
+# 含まない、評価されれば実際にファイルを作るリダイレクト）を ARG 値・
+# require の版トークンへ直接埋め込み、(a) 詳細行にリテラルとして現れること、
+# (b) 副作用ファイルが生成されていないこと、の両方を固定する。
+
+# 7-15a: ARG 値に危険な文字 → PIN_VERSION の解決を経て VERSION_MISMATCH の
+#        詳細行にリテラルのまま現れる（ARG 解決は変数代入のみで eval しない）。
+mkdir -p "${WORK}/c715a"
+rm -f "${WORK}/PWNED_ARG.txt"
+cat > "${WORK}/c715a/Dockerfile" <<'EOF'
+ARG ALPHA_VERSION=v1.2.3$(:>PWNED_ARG.txt)
+
+RUN \
+    go get "example.org/alpha@${ALPHA_VERSION}"
+EOF
+cat > "${WORK}/c715a/go.mod" <<'EOF'
+module example.org/target
+
+go 1.22
+
+require example.org/alpha v9.9.9
+EOF
+run_target "${WORK}/c715a/Dockerfile" "${WORK}/c715a/go.mod"
+ok=1
+[ "$RC" = "3" ] || ok=0
+assert_verdict "PIN_DRIFT" || ok=0
+assert_detail_key 'VERSION_MISMATCH: example.org/alpha dockerfile=v1.2.3$(:>PWNED_ARG.txt) gomod=v9.9.9' || ok=0
+if [ -e "${WORK}/PWNED_ARG.txt" ] || \
+   find "$WORK" -maxdepth 4 -name 'PWNED_ARG.txt' -print -quit 2>/dev/null | grep -q .; then
+  ok=0
+fi
+report "7-15a: ARG 値の危険な文字は評価されずそのまま版文字列として現れる" "$ok" "3"
+
+# 7-15b: require の版トークンに危険な文字 → pin が無いので MISSING_PIN の
+#        詳細行にリテラルのまま現れる（go.mod 側は read によるトークン化のみ）。
+mkdir -p "${WORK}/c715b"
+rm -f "${WORK}/PWNED_MOD.txt"
+cat > "${WORK}/c715b/Dockerfile" <<'EOF'
+ARG ALPHA_VERSION=v1.2.3
+
+RUN \
+    go get "example.org/alpha@${ALPHA_VERSION}"
+EOF
+cat > "${WORK}/c715b/go.mod" <<'EOF'
+module example.org/target
+
+go 1.22
+
+require (
+	example.org/alpha v1.2.3
+	example.org/beta v1.0.0$(:>PWNED_MOD.txt)
+)
+EOF
+run_target "${WORK}/c715b/Dockerfile" "${WORK}/c715b/go.mod"
+ok=1
+[ "$RC" = "3" ] || ok=0
+assert_verdict "PIN_DRIFT" || ok=0
+assert_detail_key 'MISSING_PIN: example.org/beta v1.0.0$(:>PWNED_MOD.txt)' || ok=0
+if [ -e "${WORK}/PWNED_MOD.txt" ] || \
+   find "$WORK" -maxdepth 4 -name 'PWNED_MOD.txt' -print -quit 2>/dev/null | grep -q .; then
+  ok=0
+fi
+report "7-15b: require の版トークンの危険な文字は評価されずそのまま現れる" "$ok" "3"
+
+# ==============================================================================
 # AC-8-6: 違反側が Red になることの固定（通る側だけを見ない）
 # ==============================================================================
-# 7-2 / 7-3 / 7-4 は上ですでに「期待した詳細行キーで落ちる」ことを検査して
-# いる（expect_pin_drift が VERSION_MISMATCH / MISSING_PIN / MODULE_NOT_REQUIRED
-# のキーを明示的に要求する）。ここでは同じ違反を「OK として扱っていないか」を
-# 追加で明示的に固定する（検査が何も見ていなければ OK になってしまう）。
-
-for c in c72 c73 c74; do
-  run_target "${WORK}/${c}/Dockerfile" "${WORK}/${c}/go.mod"
-  if assert_verdict "OK"; then
-    fail=$((fail + 1))
-    echo "  FAIL AC-8-6[$c]: 違反入力が OK として通ってしまった"
-  else
-    pass=$((pass + 1))
-    echo "  ok   AC-8-6[$c]: 違反入力は OK にならない"
-  fi
-done
+# 「OK でないこと」だけを見る検査（assert_verdict "OK" の否定）は、検査本体が
+# 存在しない・無出力でも満たされてしまい、落ちようのない空回りになる
+# （レビュー往復2 W-1）。AC-8-6 の充足根拠は 7-2 / 7-3 / 7-4 が既に持っている
+# ことをここに明示する。expect_pin_drift は rc=3 と VERDICT: PIN_DRIFT を
+# 肯定形で要求し、かつ VERSION_MISMATCH / MISSING_PIN / MODULE_NOT_REQUIRED の
+# 詳細行キーまで固定しているため、このループを重ねて足しても検査力は増えず、
+# 削除する（許容されるケース削除。仕様の充足は他ケースが担保している）。
 
 echo ""
 if [ "$fail" -ne 0 ]; then
