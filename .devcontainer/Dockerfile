@@ -107,6 +107,7 @@ ENV GOTOOLCHAIN=local
 ENV PATH=/usr/local/go/bin:/home/node/go/bin:$PATH
 
 # --- Go モジュールの事前取得（GOMODCACHE の温め） ---
+# 原因・方針・帰結の正解は docs/specs/devcontainer-go-module-policy.md にある（今後の加筆は同仕様側へ）。
 # init-firewall.sh は proxy.golang.org / sum.golang.org を allowlist に入れるが、
 # 追加するのは `dig` が返した「1つの IP」だけである（init-firewall.sh の該当ループ）。
 # 両ホストは大きな IP プールを DNS ラウンドロビンで返すため、実行時の取得は
