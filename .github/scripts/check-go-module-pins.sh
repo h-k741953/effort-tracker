@@ -25,14 +25,18 @@
 #       UserPromptSubmit hook のブロックに予約されているため使わない）。
 set -uo pipefail
 
-DEFAULT_DOCKERFILE=".devcontainer/Dockerfile"
-DEFAULT_GOMOD="services/api/go.mod"
+# このスクリプトは既定値を持たない（AC-5-1）。第1・第2引数は常に必須で、
+# 呼び出し側（make / fixture）が明示的に渡す。以下は 7-12 の stderr
+# メッセージにのみ使うヒント文字列であり、引数省略時のフォールバック値
+# ではない（レビュー往復2 I-2）。
+HINT_DOCKERFILE=".devcontainer/Dockerfile"
+HINT_GOMOD="services/api/go.mod"
 
 # --- 7-12: 引数が足りない（0個 / 1個） -----------------------------------------
 if [ "$#" -lt 2 ]; then
   echo "VERDICT: INDETERMINATE"
   echo "第1引数（Dockerfile パス）と第2引数（go.mod パス）の両方が要る。" >&2
-  echo "既定値は ${DEFAULT_DOCKERFILE} / ${DEFAULT_GOMOD}。" >&2
+  echo "典型的には ${HINT_DOCKERFILE} / ${HINT_GOMOD}。" >&2
   exit 1
 fi
 
@@ -96,9 +100,11 @@ while IFS= read -r raw_line || [ -n "$raw_line" ]; do
     continue
   fi
 
-  # 末尾の空白・`\`・`;` を繰り返し落とす（継続行・複文の区切りを許す）。
+  # 末尾の空白・`\`・`;` を、これ以上変化しなくなるまで（不動点まで）
+  # 繰り返し落とす（継続行・複文の区切りを許す。レビュー往復2 I-4: 固定回数
+  # ループだと「なぜ4回か」が読み手に伝わらないため while + 不動点にする）。
   core="$trimmed"
-  for _ in 1 2 3 4; do
+  while :; do
     prev="$core"
     core="${core%"${core##*[![:space:]]}"}"   # 末尾空白
     core="${core%\\}"                          # 末尾 backslash
@@ -198,8 +204,14 @@ while IFS= read -r raw_line || [ -n "$raw_line" ]; do
   core="${core%"${core##*[![:space:]]}"}"
   [ -z "$core" ] && continue
 
+  # AC-6-4「行末に `// indirect` を持つ」は、コメント全体を trim した結果が
+  # `indirect` に完全一致する場合のみを指す。部分文字列一致（例:
+  # `// used indirectly via helper`）は direct require のまま扱う（安全側。
+  # 誤って direct 扱いしても MISSING_PIN で止まるだけで、見逃しにはならない）。
+  comment_trimmed="${comment#"${comment%%[![:space:]]*}"}"
+  comment_trimmed="${comment_trimmed%"${comment_trimmed##*[![:space:]]}"}"
   is_indirect=0
-  if [[ "$comment" == *indirect* ]]; then
+  if [ "$comment_trimmed" = "indirect" ]; then
     is_indirect=1
   fi
 
@@ -226,7 +238,13 @@ fi
 
 declare -a VIOLATIONS=()
 
-for mod in "${!PIN_VERSION[@]}"; do
+# 連想配列のキー列挙順は bash のハッシュ実装依存で、実行のたびに変わりうる
+# （レビュー往復2 I-3）。診断を安定させるため、モジュールパスでソートしてから
+# 走査する。判定結果（違反の集合）はソートの有無に関わらず不変。
+mapfile -t pin_mods_sorted < <(printf '%s\n' "${!PIN_VERSION[@]}" | sort)
+mapfile -t req_mods_sorted < <(printf '%s\n' "${!REQ_VERSION[@]}" | sort)
+
+for mod in "${pin_mods_sorted[@]}"; do
   dver="${PIN_VERSION["$mod"]}"
   if [ -z "${REQ_VERSION["$mod"]+set}" ]; then
     VIOLATIONS+=("MODULE_NOT_REQUIRED: $mod $dver")
@@ -238,7 +256,7 @@ for mod in "${!PIN_VERSION[@]}"; do
   fi
 done
 
-for mod in "${!REQ_VERSION[@]}"; do
+for mod in "${req_mods_sorted[@]}"; do
   if [ -z "${PIN_VERSION["$mod"]+set}" ]; then
     VIOLATIONS+=("MISSING_PIN: $mod ${REQ_VERSION["$mod"]}")
   fi
