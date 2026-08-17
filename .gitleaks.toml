@@ -1,0 +1,9 @@
+# gitleaks 8.30.1 設定。
+# apps/web/.next 配下（Next.js のビルド生成物）のみを走査対象から除外する。
+# 根拠・範囲の限界: docs/specs/web-app-scaffold.md AC-11。
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']

@@ -139,6 +139,18 @@ jobs:
       - name: Install apps/web dependencies (for test-scripts → test-makefile-web.sh)
         run: cd apps/web && npm ci
 
+      # test-scripts は test-gitleaks-allowlist.sh も合流させている
+      # （docs/specs/web-app-scaffold.md AC-11-6-e の制約で専用ターゲットを
+      # 新設できないため）。動的検査のため gitleaks の実行バイナリが要る。
+      # secrets ジョブと同じ導入手順・同じ GITLEAKS_VERSION を使い、
+      # バージョン管理を二重化しない。
+      - name: Install gitleaks ${{ env.GITLEAKS_VERSION }}
+        run: |
+          curl -fsSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+          gitleaks version
+
       - name: make test-scripts
         run: make test-scripts
 
