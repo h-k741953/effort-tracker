@@ -1,28 +1,27 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+[`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app) で作成した [Next.js](https://nextjs.org) プロジェクト。
 
-## Getting Started
+## はじめかた
 
-First, run the development server:
+まず開発サーバーを起動する。
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+ブラウザで [http://localhost:3000](http://localhost:3000) を開くと結果を確認できる。
 
-You can start editing the page by modifying `src/app/page.tsx`. The page auto-updates as you edit the file.
+`src/app/page.tsx` を編集するとページが自動で更新される。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 参考資料
 
-## Learn More
+Next.js について詳しく知るには以下を参照する。
 
-To learn more about Next.js, take a look at the following resources:
+- [Next.js Documentation](https://nextjs.org/docs) — Next.js の機能と API
+- [Learn Next.js](https://nextjs.org/learn) — 対話形式のチュートリアル
+- [Next.js GitHub リポジトリ](https://github.com/vercel/next.js)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## デプロイ
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+このアプリは **Vercel ではなく AWS ネイティブなワークロード**（Lambda 上の OpenNext + CloudFront）としてデプロイする。決定と根拠は `docs/adr/0013-aws-native-hosting-over-vercel.md` を参照。
 
-## Deployment
-
-This app is deployed as an AWS-native workload (OpenNext on Lambda + CloudFront), not Vercel. See `docs/adr/0013-aws-native-hosting-over-vercel.md` for the decision and rationale. The Terraform/OpenNext setup itself is a later Issue; this scaffold does not include it yet.
+Terraform / OpenNext の構成自体は後続の Issue であり、**このスキャフォールドには含まれない**。
