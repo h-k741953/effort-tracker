@@ -67,7 +67,11 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Next.js: Lint / 型チェック / テスト
-  # （apps/web 未スキャフォールドの間は make 側が SKIP を出す）
+  #
+  # apps/web はスキャフォールド済み（Issue #9）。package.json の不在を
+  # SKIP で素通りさせない（docs/specs/web-app-scaffold.md AC-4-2 / AC-5-1）。
+  # 本ジョブが呼ぶのは make lint-web / make test-web のみに保つ
+  # （AC-5-5。CI 側にだけ存在する検査を作らない）。
   # ---------------------------------------------------------------------------
   web:
     name: Web (lint / test)
@@ -80,12 +84,7 @@ jobs:
           node-version: 24
 
       - name: Install dependencies
-        run: |
-          if [ -f apps/web/package.json ]; then
-            cd apps/web && npm ci
-          else
-            echo "SKIP: apps/web/package.json が無い（Next.js 未スキャフォールド）"
-          fi
+        run: cd apps/web && npm ci
 
       - name: make lint-web
         run: make lint-web
@@ -124,6 +123,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      # test-scripts は test-makefile-web.sh / test-apps-web-contract.sh を
+      # 合流させている（docs/specs/web-app-scaffold.md AC-4-6 の制約で専用
+      # ターゲットを新設できないため。理由は Makefile の test-scripts 直前の
+      # コメント参照）。test-makefile-web.sh は実リポジトリの apps/web に対して
+      # 実際に `make test-web` / `make lint-web`（npm test / npm run lint /
+      # tsc）を実行するため、web ジョブと同じ Node セットアップと
+      # apps/web の依存インストールが要る。node-version は P-2 により
+      # .devcontainer/Dockerfile・web ジョブと同じ 24 に固定する。
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install apps/web dependencies (for test-scripts → test-makefile-web.sh)
+        run: cd apps/web && npm ci
 
       - name: make test-scripts
         run: make test-scripts

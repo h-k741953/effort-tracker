@@ -133,16 +133,20 @@ check-domain-deps: ## ドメイン層が標準ライブラリのみに依存し�
 # =============================================================================
 # Next.js / apps/web
 #
-# 未スキャフォールドの間は明示的に SKIP を表示する。
-# 「検査対象が無いので黙って成功」は verification-loop.md が禁じる偽の Green。
-# 見えるログを残すことで、通っているのか素通りなのかを区別できるようにする。
+# apps/web はスキャフォールド済み（Issue #9）。SKIP 分岐は持たない。
+# 「対象（apps/web/package.json）が無いので黙って成功」は verification-loop.md が
+# 禁じる偽の Green であり、かつ検査対象が無い状態は「未着手」ではなく
+# 「壊れている」ことを意味する（docs/specs/web-app-scaffold.md AC-4-2、
+# 2026-08-14 人間承認）。check-domain-deps と同じ扱いで、対象なしを失敗とする。
 # =============================================================================
 
 .PHONY: test-web
 test-web: ## Next.js のテスト
 	@echo "==> test-web"
 	@if [ ! -f $(WEB_DIR)/package.json ]; then \
-	  echo "  SKIP: $(WEB_DIR)/package.json が無い（Next.js 未スキャフォールド）"; \
+	  echo "  NG: $(WEB_DIR)/package.json が無い。apps/web はスキャフォールド済みである前提のため、"; \
+	  echo "      対象が無い状態を成功として扱わない（docs/specs/web-app-scaffold.md AC-4-2）。"; \
+	  exit 1; \
 	else \
 	  cd $(WEB_DIR) && npm test; \
 	fi
@@ -151,7 +155,9 @@ test-web: ## Next.js のテスト
 lint-web: ## Next.js の Lint と型チェック
 	@echo "==> lint-web"
 	@if [ ! -f $(WEB_DIR)/package.json ]; then \
-	  echo "  SKIP: $(WEB_DIR)/package.json が無い（Next.js 未スキャフォールド）"; \
+	  echo "  NG: $(WEB_DIR)/package.json が無い。apps/web はスキャフォールド済みである前提のため、"; \
+	  echo "      対象が無い状態を成功として扱わない（docs/specs/web-app-scaffold.md AC-4-2）。"; \
+	  exit 1; \
 	else \
 	  cd $(WEB_DIR) && npm run lint && npx tsc --noEmit; \
 	fi
@@ -185,10 +191,25 @@ lint-tf: ## Terraform の整形チェックと検証
 # 修正が黙って無効化される。どちらも fixture でしか捕まらない。
 # =============================================================================
 
+#
+# 【例外: test-makefile-web.sh / test-apps-web-contract.sh をここへ合流させる】
+#   この2本の対象は本来「.github/scripts 内の CI プロセスチェッカ」ではなく
+#   Makefile 自身の test-web/lint-web の振る舞いと apps/web の設定契約であり、
+#   上記の区分（対象種別ごとにターゲットを分ける）からは外れる
+#   （docs/specs/web-app-scaffold.md AC-4-6 が「web 向けの新しい make
+#   ターゲットを増やさない／verify・test・lint の依存関係を変えない」と定めて
+#   おり、専用ターゲットを新設できない）。test-web / lint-web 自身の recipe に
+#   埋め込むことも選べない: test-makefile-web.sh は内部で
+#   `make test-web WEB_DIR=...` / `make lint-web WEB_DIR=...` を複数回呼ぶため、
+#   埋め込むと自己再帰で無限ループする（実装工程で検証済み）。消去法で、
+#   既存ターゲットの中で対象種別の区分から外れる侵食が最小のここへ合流させる。
+#
 .PHONY: test-scripts
-test-scripts: ## .github/scripts のチェッカを fixture で検査
+test-scripts: ## .github/scripts のチェッカを fixture で検査（apps/web の Makefile 契約・設定契約を含む）
 	@echo "==> test-scripts"
 	@bash .github/scripts/test-check-review-trail.sh
+	@bash .github/scripts/test-makefile-web.sh
+	@bash .github/scripts/test-apps-web-contract.sh "$(CURDIR)/$(WEB_DIR)"
 
 # =============================================================================
 # .claude/hooks のロジック

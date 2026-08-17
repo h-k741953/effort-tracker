@@ -21,7 +21,7 @@ SES／受託向けの勤怠・工数管理 SaaS。
 | 規約・ADR・ドメインモデル | 一通り揃っている |
 | 検証ハーネス（`make verify` / CI） | 動作する |
 | ドメイン層（`services/api`） | パッケージの骨のみ。ロジック未実装 |
-| Web（`apps/web`） | 未スキャフォールド（ハーネスは `SKIP` を明示） |
+| Web（`apps/web`） | スキャフォールドのみ（Next.js App Router / TypeScript / Tailwind CSS / Vitest。画面・BFF・レート制限は未実装） |
 | エンドユーザー認証（Amazon Cognito） | 未実装（[#52](../../issues/52)） |
 | インフラ（`infra/terraform`） | 未着手 |
 | **デモURL** | **未公開。** インフラ（`infra/terraform`）が未着手のため |
@@ -86,7 +86,7 @@ Lambda の呼び出しは `apps/web/src/lib/lambda-client.ts` に集約し、署
 | 認証（エンドユーザー） | Amazon Cognito（User Pool） | ログイン3方式（ゲスト＝閲覧のみ／メール+パスワード+MFA(TOTP)／Google OIDC）を提供し、BFF（Route Handler）でトークン検証を終端する。そこから先のドメイン API 呼び出しは従来どおり実行ロールの SigV4 署名（[ADR 0003](docs/adr/0003-lambda-function-url-iam-auth.md) / [ADR 0014](docs/adr/0014-execution-role-over-vercel-oidc.md) のサービス間認証）であり、Cognito はこれを置換せず別レイヤーとして併存する（[ADR 0016](docs/adr/0016-cognito-end-user-authentication.md)） |
 | CI | GitHub Actions | ローカルと同一の `make` ターゲットを呼ぶ |
 | テスト（Go） | 標準 `testing` + `google/go-cmp` | アサーション DSL とモックライブラリを入れない。テストダブルは手書きの Fake（[ADR 0007](docs/adr/0007-testing-with-stdlib-and-go-cmp.md)） |
-| テスト（Web） | Vitest | 導入は `apps/web` のスキャフォールド時（[#9](../../issues/9)） |
+| テスト（Web） | Vitest | `apps/web` スキャフォールド時に導入済み（[#9](../../issues/9)） |
 
 **使わないものも技術選定の一部である。** API Gateway / ALB / NAT Gateway / RDS / ECS / Provisioned Concurrency は、いずれも要件に対して過剰かアイドル課金が理由で意図的に外している。却下の経緯は [ADR 0002](docs/adr/0002-serverless-over-ecs.md) の「検討した代替案」にある。
 
@@ -100,7 +100,8 @@ Lambda の呼び出しは `apps/web/src/lib/lambda-client.ts` に集約し、署
 | Terraform | 1.15.8 | `.devcontainer/Dockerfile` / `.github/workflows/ci.yml` |
 | golangci-lint | 2.12.2 | `.devcontainer/Dockerfile` / `.github/workflows/ci.yml` |
 | gitleaks | 8.30.1 | `.devcontainer/Dockerfile` / `.github/workflows/ci.yml` |
-| Next.js / TypeScript | 未定 | `apps/web` が未スキャフォールドのため（[#9](../../issues/9)） |
+| Next.js | 16.3.1 | `apps/web/package.json` / `apps/web/package-lock.json` |
+| TypeScript（Web） | ^5（実体は 5.9.3） | `apps/web/package.json` / `apps/web/package-lock.json` |
 
 **Dockerfile と `ci.yml` の2箇所で同じ値を固定している。** 二重管理ではあるが、devcontainer と GitHub Actions では取得方法が異なり、単一の情報源にまとめる手段がない。**片方だけ上げると「ローカルで通るが CI で落ちる」が発生し、ハーネスの前提そのものが壊れる。** 上げるときは必ず同時に更新する。
 
@@ -223,14 +224,14 @@ feat: 月次締め実装              ← この時点で Green
 
 **CI はこれと同一の make ターゲットを呼ぶ。** CI 側にだけ存在する検査を作らない。作った瞬間、ローカルの Green が信用できなくなる。
 
-未スキャフォールドの層は、黙って成功させず `SKIP` をログに出す。「通った」のか「素通りした」のかを区別できなくすると、ハーネスが信用を失うため。
+未着手の層は、黙って成功させず `SKIP` をログに出す。「通った」のか「素通りした」のかを区別できなくすると、ハーネスが信用を失うため。
 
 ```
-==> test-web
-  SKIP: apps/web/package.json が無い（Next.js 未スキャフォールド）
+==> lint-tf
+  SKIP: infra/terraform に *.tf が無い（IaC 未着手）
 ```
 
-ただし**ドメイン層の依存検査だけは、対象が無い場合に失敗させる。** 「検査対象が無いので通った」は偽の Green であり、ハーネスとして最も避けるべき状態だからである。
+ただし**ドメイン層の依存検査（`check-domain-deps`）と `apps/web` の検査（`test-web` / `lint-web`）は、対象が無い場合に失敗させる。** `apps/web` は [#9](../../issues/9) でスキャフォールド済みであり、対象の不在は「未着手」ではなく「壊れている」ことを意味するため（[docs/specs/web-app-scaffold.md](docs/specs/web-app-scaffold.md) AC-4）。「検査対象が無いので通った」は偽の Green であり、ハーネスとして最も避けるべき状態だからである。
 
 > この検査があるから、DDD の「フレームワーク非依存」が主張ではなく事実になる。「ドメイン層を分離しました」は誰でも言える。**CI が落ちる状態にしてあること**が差になる。
 
