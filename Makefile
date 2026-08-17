@@ -210,6 +210,7 @@ test-scripts: ## .github/scripts のチェッカを fixture で検査（apps/web
 	@bash .github/scripts/test-check-review-trail.sh
 	@bash .github/scripts/test-makefile-web.sh
 	@bash .github/scripts/test-apps-web-contract.sh "$(CURDIR)/$(WEB_DIR)"
+	@bash .github/scripts/test-gitleaks-allowlist.sh "$(CURDIR)/.gitleaks.toml"
 
 # =============================================================================
 # .claude/hooks のロジック
