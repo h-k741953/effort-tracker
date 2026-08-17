@@ -100,7 +100,6 @@ collect_violations() {
     grep -q "passWithNoTests" "$found_vconf" && \
       violations+=("${found_vconf} に passWithNoTests の記述がある（0件でも緑になりうる）")
   fi
-  local root_vconf
   for vconf in vitest.config.ts vitest.config.mts vitest.config.js vitest.config.mjs vitest.config.cts; do
     if [ -f "${REPO_ROOT}/${vconf}" ]; then
       violations+=("vitest.config.* がリポジトリ直下にある（apps/web 配下に置くべき）")
