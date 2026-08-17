@@ -139,15 +139,17 @@ run_case "lint-web: 正常系はSKIPなしでlintとtscの両方が実行され�
   lint-web "$WITH_PKG_OK" zero "FIXTURE_LINT_CALLED" "FIXTURE_TSC_CALLED"
 
 # --- 実リポジトリの apps/web ------------------------------------------------
-# 現状（本テスト作成時点）は apps/web が未スキャフォールドで package.json も
-# 無いため、AC-4-2 により test-web / lint-web は失敗しなければならない。
-# apps/web スキャフォールド後は「正常系」相当（rc=0・SKIPなし）になることを
-# 期待する回帰ケースとして機能する。
+# 本テスト作成時点（tester 工程）は apps/web が未スキャフォールドで
+# package.json も無く、AC-4-2 により test-web / lint-web は失敗する状態
+# だった（このコメント作成時点の Red はここで踏んでいた）。apps/web を
+# スキャフォールドした now（implementer 工程）は、このコメントが元々予告した
+# とおり「正常系」相当（rc=0・SKIPなし）に反転させる。package.json 自体は
+# 存在するようになったため、その不在を示す部分文字列の検査は外す。
 run_case "test-web: 実リポジトリの apps/web（AC-4-2 の本番適用）" \
-  test-web "apps/web" nonzero "package.json"
+  test-web "apps/web" zero
 
 run_case "lint-web: 実リポジトリの apps/web（AC-4-2 の本番適用）" \
-  lint-web "apps/web" nonzero "package.json"
+  lint-web "apps/web" zero
 
 echo ""
 if [ "$fail" -ne 0 ]; then
