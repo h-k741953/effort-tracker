@@ -614,6 +614,26 @@ run_structure_case() {
   fi
 }
 
+# run_structure_case_min <名前> <dir> <最小件数>
+#   run_structure_case の二値判定（違反0件か1件以上か）では、重複を
+#   「値の不一致」等の別の違反1件と区別できない（12-3-v / 3-y が要求する
+#   のは「重複としても違反が積まれること」＝件数の下限）。この呼び出し方は
+#   違反件数が <最小件数> 件以上であることを検査する。
+#   collect_structure_violations() 自体は変更しない。
+run_structure_case_min() {
+  local name="$1" dir="$2" min="$3"
+  local -a VIOLATIONS=()
+  collect_structure_violations "$dir"
+
+  if [ "${#VIOLATIONS[@]}" -ge "$min" ]; then
+    pass=$((pass + 1))
+    printf '  ok   %s（違反 %s 件 >= %s 件）\n' "$name" "${#VIOLATIONS[@]}" "$min"
+  else
+    fail=$((fail + 1))
+    printf '  FAIL %s（期待=%s 件以上, 実際の違反 %s 件）\n' "$name" "$min" "${#VIOLATIONS[@]}"
+  fi
+}
+
 # mk_struct_dir <name> <.gitleaks.toml の内容(heredoc相当)>
 #   $WORK_ROOT 配下に fixture 用の擬似リポジトリ・ディレクトリを作り、
 #   そのパスを返す（.gitleaksignore は置かない）。
@@ -876,6 +896,111 @@ cat > "${D_3T}/.gitleaks.toml" <<'EOF'
   paths = ['''^apps/web/\.next/''']
 EOF
 run_structure_case "3-t 各行に行頭インデント（12-2-h）" "$D_3T" violate
+
+# =============================================================================
+# 12-3 の追加ベクタ（2026-08-18。重複キー行 = Info-3 の検証）
+#   3-u〜3-y は「不合格」、3-z は「合格」を期待する（12-3 追加ベクタ表・
+#   重複キー行の節、前文）。
+#
+#   本群の fixture は TOML として構文不正（重複キーは TOML 仕様が禁じる）
+#   であり、tomllib.loads() と gitleaks は必ずパースに失敗する。この例外は
+#   5-d が重複キー行の群に限って認めるものであり、5-e のとおり合否は
+#   collect_structure_violations() の単体呼び出し（run_structure_case が
+#   内部で行う）の違反件数で測る。「gitleaks が落ちた」「パーサが ERROR を
+#   返した」ことを合格の証拠にしない。
+#
+#   各 fixture が「意図した重複以外の構文誤りを持たないこと」は tomllib と
+#   gitleaks の双方で確認済み（tester 工程の作業ログ）。いずれも
+#   "key ... is already defined"（3-u/3-v/3-w/3-y）または
+#   "key table already exists as a allowlists, but should be an array table"
+#   （3-x。ドット付きキーとテーブル見出しの重複）という、意図した重複その
+#   ものを指すエラー1種類だけが出ることを確かめた。
+# =============================================================================
+
+# --- 3-u: [[allowlists]] 内に paths 2行、両方とも既定値と完全一致 ----------
+#   現行検査が素通りする形（実測 0 件）。値の一致で相殺しないことを確かめる
+#   （12-2-i-b / i-c）。
+D_3U="$(mk_struct_dir 3u)"
+cat > "${D_3U}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+paths = ['''^apps/web/\.next/''']
+EOF
+run_structure_case "3-u [[allowlists]] 内に paths 2行（両方とも既定値。12-2-i-b/i-c）" "$D_3U" violate
+
+# --- 3-v: [[allowlists]] 内に paths 2行、2行目の値だけ既定値と異なる -------
+#   現行でも 12-2-d-1 で1件（値の不一致）は捕捉されるが、捕捉の根拠が
+#   「重複」ではなく「値の不一致」だけだった。重複としても違反が積まれる
+#   こと（違反2件以上）を run_structure_case_min で確かめる（12-2-i-b）。
+#   run_structure_case の二値判定（violate = 1件以上）では 1件と2件を
+#   区別できず、この対を検証できない。
+D_3V="$(mk_struct_dir 3v)"
+cat > "${D_3V}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+paths = ['''^apps/web/\.next/|^infra/prod''']
+EOF
+run_structure_case_min "3-v [[allowlists]] 内に paths 2行（2行目のみ既定値と不一致。12-2-i-b。違反2件以上）" "$D_3V" 2
+
+# --- 3-w: [extend] 内に useDefault = true を2行 ----------------------------
+#   現行検査が素通りする形（実測 0 件）。paths 側だけを直して終わらせない
+#   ための対（12-2-i-a / i-b）。
+D_3W="$(mk_struct_dir 3w)"
+cat > "${D_3W}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+EOF
+run_structure_case "3-w [extend] 内に useDefault = true を2行（12-2-i-a/i-b）" "$D_3W" violate
+
+# --- 3-x: トップレベル allowlists.paths ＋ [[allowlists]] 内 paths（混在）--
+#   記法をまたいで通算すること（合計2件）を確かめる（12-2-i-d）。トップ
+#   レベルのキーはテーブル見出しの前にしか書けないため、[[allowlists]] より
+#   前に置く。現行検査が素通りする形（実測 0 件）。
+D_3X="$(mk_struct_dir 3x)"
+cat > "${D_3X}/.gitleaks.toml" <<'EOF'
+allowlists.paths = ['''^apps/web/\.next/''']
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+EOF
+run_structure_case "3-x トップレベル allowlists.paths と [[allowlists]] 内 paths の混在（12-2-i-d）" "$D_3X" violate
+
+# --- 3-y: [[allowlists]] 内に paths 2行、1行目を許可外の形にする -----------
+#   許可外の行も出現回数に数えること（「片方を壊せば重複が1件に見える」
+#   抜けが無いこと）を確かめる（12-2-i-f）。1行目は既定値と異なる値にする
+#   （12-3 追加ベクタ表の例示のうち「値が既定値と異なる」の形を採る）。
+#   期待は違反2件以上（重複の1件 + 1行目が許可外の形である1件）。
+#   run_structure_case の二値判定では「片方を壊せば重複が1件に見える」抜けを
+#   検出できないため run_structure_case_min で検証する。
+D_3Y="$(mk_struct_dir 3y)"
+cat > "${D_3Y}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/|^infra/prod''']
+paths = ['''^apps/web/\.next/''']
+EOF
+run_structure_case_min "3-y [[allowlists]] 内に paths 2行（1行目が許可外の形。12-2-i-f。違反2件以上）" "$D_3Y" 2
+
+# --- 3-z: 3-a・3-b・3-j の期待値は「合格」のまま（回帰。12-2-i-h）----------
+#   本変更は許可集合を狭めるものであり、既に合格と定めていた形を不合格に
+#   しない。新しい fixture は置かず、上で既に実行済みの 3-a / 3-b / 3-j の
+#   run_structure_case 呼び出し（いずれも satisfy 期待）がそのまま 3-z の
+#   確認を兼ねる（fixture の重複を避ける。12-3-n の経緯と同じ扱い）。
 
 echo ""
 
