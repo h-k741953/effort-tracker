@@ -803,14 +803,19 @@ EOF
 run_structure_case "3-m paths の値の末尾を緩和（既定値と完全一致しない）" "$D_3M" violate
 
 # --- 3-n: paths の値から `^` を欠落（往復4の M1 の回帰。12-4-d と同一の値）-
-D_3N="$(mk_struct_dir 3n)"
-cat > "${D_3N}/.gitleaks.toml" <<'EOF'
+#   12-4-d が要求する「`^` を削った fixture」と同一のものであり、両者を
+#   別々に用意しない（12-3 追加ベクタ表・3-n の行）。実体はここで1度だけ
+#   定義し、12-4 側（BAD_NO_ANCHOR_TOML）はこのファイルをそのまま再利用する。
+NO_ANCHOR_TOML="${WORK_ROOT}/no-anchor.gitleaks.toml"
+cat > "$NO_ANCHOR_TOML" <<'EOF'
 [extend]
 useDefault = true
 
 [[allowlists]]
 paths = ['''apps/web/\.next/''']
 EOF
+D_3N="$(mk_struct_dir 3n)"
+cp "$NO_ANCHOR_TOML" "${D_3N}/.gitleaks.toml"
 run_structure_case "3-n paths の値から '^' が欠落（M1 の回帰。既定値と完全一致しない）" "$D_3N" violate
 
 # --- 3-o: [extend] ブロックごと削除（W-b。既定ルール全滅が緑になる形）------
@@ -954,14 +959,10 @@ run_anchor_case() {
 run_anchor_case "12-4 正常形（^ アンカー済み）は位置ずれベクタを満たす" "$GOOD_TOML" satisfy
 
 # --- 4-c/4-d 対: `^` を削った fixture は位置ずれベクタで不合格になる -------
-BAD_NO_ANCHOR_TOML="${WORK_ROOT}/bad-no-anchor.gitleaks.toml"
-cat > "$BAD_NO_ANCHOR_TOML" <<'EOF'
-[extend]
-useDefault = true
-
-[[allowlists]]
-paths = ['''apps/web/\.next/''']
-EOF
+#   実体は 3-n（Part C）で定義済みの NO_ANCHOR_TOML をそのまま再利用する
+#   （12-3 追加ベクタ表・3-n の行が要求する「同一のものであり、両者を
+#   別々に用意しない」）。
+BAD_NO_ANCHOR_TOML="$NO_ANCHOR_TOML"
 run_anchor_case "12-4 異常系: '^' を削ると位置ずれベクタ（vendor/... 等）に誤って一致する" "$BAD_NO_ANCHOR_TOML" violate
 
 # --- 実リポジトリの .gitleaks.toml（AC-12-4 の本番適用） -------------------
