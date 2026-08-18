@@ -339,11 +339,157 @@ echo ""
 collect_structure_violations() {
   local dir="$1"
   local -a violations=()
-  # TODO(実装工程・AC-12-2): [extend]/[[allowlists]] 以外のテーブル、
-  # [extend] の useDefault 以外のキー、[[allowlists]] の paths 以外の
-  # キー（要素1個のリテラル文字列以外を含む）、トップレベルの裸キー／
-  # ドット付きキーによる同等の記述、.gitleaksignore の存在を判定する。
-  # 現時点では未実装であり、常に違反なしを返す。
+  local toml="${dir}/.gitleaks.toml"
+  local ignorefile="${dir}/.gitleaksignore"
+
+  # --- 12-2-g: .gitleaksignore の不在 -----------------------------------
+  if [ -f "$ignorefile" ]; then
+    violations+=("${ignorefile} が存在する（12-2-g: 除外の入口は .gitleaks.toml の1つに固定）")
+  fi
+
+  if [ ! -f "$toml" ]; then
+    violations+=("${toml} が存在しない")
+    VIOLATIONS=("${violations[@]}")
+    return
+  fi
+
+  # --- 行末コメント／引用符内の '#' を取り違えない除去（12-2-f） --------
+  #   '（リテラル文字列）と "（他の文字列）を独立にトグルし、いずれの
+  #   引用符の外で最初に現れた '#' 以降を切り捨てる。三連引用符
+  #   ('''...''') も1文字ずつの奇偶トグルで正しく開閉が扱える。
+  strip_comment() {
+    local line="$1" out="" i ch qc="" len
+    len=${#line}
+    for ((i = 0; i < len; i++)); do
+      ch="${line:i:1}"
+      if [ -n "$qc" ]; then
+        out+="$ch"
+        [ "$ch" = "$qc" ] && qc=""
+      else
+        if [ "$ch" = "'" ] || [ "$ch" = '"' ]; then
+          qc="$ch"
+          out+="$ch"
+        elif [ "$ch" = "#" ]; then
+          break
+        else
+          out+="$ch"
+        fi
+      fi
+    done
+    printf '%s' "$out"
+  }
+
+  # --- 12-2-d: 「要素1個のリテラル文字列の配列」判定 ---------------------
+  is_single_literal_array() {
+    local val="$1" inner
+    inner="$(printf '%s' "$val" | sed -E 's/^\[(.*)\]$/\1/')"
+    [ "$inner" != "$val" ] || return 1
+    printf '%s' "$inner" | grep -q ',' && return 1
+    inner="$(printf '%s' "$inner" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    if [[ "$inner" =~ ^\'\'\'(.*)\'\'\'$ ]]; then
+      return 0
+    elif [[ "$inner" =~ ^\'(.*)\'$ ]]; then
+      return 0
+    fi
+    return 1
+  }
+
+  local extend_count=0 allowlists_count=0
+  local current_table=""   # "" | extend | allowlists | other
+  local line stripped trimmed lineno=0
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    lineno=$((lineno + 1))
+    stripped="$(strip_comment "$line")"
+    trimmed="$(printf '%s' "$stripped" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [ -z "$trimmed" ] && continue   # 空行／コメントのみの行（2-a）
+
+    if [ "$trimmed" = "[extend]" ]; then
+      extend_count=$((extend_count + 1))
+      current_table="extend"
+      if [ "$extend_count" -gt 1 ]; then
+        violations+=("行${lineno}: [extend] テーブルが複数（2-b）: ${trimmed}")
+      fi
+      continue
+    fi
+
+    if [ "$trimmed" = "[[allowlists]]" ]; then
+      allowlists_count=$((allowlists_count + 1))
+      current_table="allowlists"
+      if [ "$allowlists_count" -gt 1 ]; then
+        violations+=("行${lineno}: [[allowlists]] テーブルが複数（2-b）: ${trimmed}")
+      fi
+      continue
+    fi
+
+    # 許可されないテーブル見出し（[allowlist] / [[rules]] /
+    # [[rules.allowlists]] / [allowlists.xxx] 等）
+    if [[ "$trimmed" =~ ^\[\[?[A-Za-z0-9_.-]+\]\]?$ ]]; then
+      violations+=("行${lineno}: 許可されないテーブル見出し（2-b）: ${trimmed}")
+      current_table="other"
+      continue
+    fi
+
+    # トップレベル（まだテーブル見出しが出ていない状態）でのドット付き
+    # キー（2-e: extend.xxx / allowlists.xxx をテーブル内記法と同一視）
+    if [ "$current_table" = "" ] && [[ "$trimmed" =~ ^([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      local tbl="${BASH_REMATCH[1]}" key="${BASH_REMATCH[2]}" val="${BASH_REMATCH[3]}"
+      val="$(printf '%s' "$val" | sed -E 's/[[:space:]]+$//')"
+      case "$tbl" in
+        extend)
+          if [ "$key" = "useDefault" ] && [ "$val" = "true" ]; then
+            :
+          else
+            violations+=("行${lineno}: ドット付きキー extend.${key} は許可されない（2-c/2-e）: ${trimmed}")
+          fi
+          ;;
+        allowlists)
+          if [ "$key" = "paths" ] && is_single_literal_array "$val"; then
+            :
+          else
+            violations+=("行${lineno}: ドット付きキー allowlists.${key} は許可されない（2-d/2-e）: ${trimmed}")
+          fi
+          ;;
+        *)
+          violations+=("行${lineno}: 許可されないドット付きキー（2-e）: ${trimmed}")
+          ;;
+      esac
+      continue
+    fi
+
+    # 通常のキー = 値（テーブル内）
+    if [[ "$trimmed" =~ ^([A-Za-z0-9_-]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      local key2="${BASH_REMATCH[1]}" val2="${BASH_REMATCH[2]}"
+      val2="$(printf '%s' "$val2" | sed -E 's/[[:space:]]+$//')"
+      case "$current_table" in
+        extend)
+          if [ "$key2" = "useDefault" ] && [ "$val2" = "true" ]; then
+            :
+          else
+            violations+=("行${lineno}: [extend] 内の許可外キー/値（2-c）: ${trimmed}")
+          fi
+          ;;
+        allowlists)
+          if [ "$key2" = "paths" ] && is_single_literal_array "$val2"; then
+            :
+          else
+            violations+=("行${lineno}: [[allowlists]] 内の許可外キー/値（2-d）: ${trimmed}")
+          fi
+          ;;
+        other)
+          violations+=("行${lineno}: 許可されないテーブル内のキー（2-b）: ${trimmed}")
+          ;;
+        "")
+          violations+=("行${lineno}: トップレベルの裸キーは許可されない（2-e）: ${trimmed}")
+          ;;
+      esac
+      continue
+    fi
+
+    # ここまでのいずれの許可形にも一致しない記述
+    violations+=("行${lineno}: 許可集合に無い記述（12-2）: ${trimmed}")
+  done < "$toml"
+
   VIOLATIONS=("${violations[@]}")
 }
 
