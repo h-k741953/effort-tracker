@@ -314,6 +314,312 @@ run_dir_case "実リポジトリの .gitleaks.toml: .next の外は検出され�
 run_dir_case "実リポジトリの .gitleaks.toml: .next 配下は検出されない（11-6-a-(2) 本番適用）" write_real_toml "$INSIDE_PATH" 0
 
 echo ""
+
+# =============================================================================
+# Part C: AC-12 — `.gitleaks.toml` の構造をホワイトリスト型で機械検査する
+#
+#   AC-11 の訂正（11-9-c）から派生。「許可された記述はこれだけ」というホワ
+#   イトリスト型（12-1）で、12-2 の許可集合と 12-3 の必須テストベクタを検査
+#   する。Part A / Part B（AC-11 の動的検査）を置き換えず併存させる（12-6-b）。
+#
+#   collect_structure_violations() は 12-2-a〜g の許可集合との照合を行う
+#   本体だが、【本テスト作成時点では未実装】である（構造検査の実体がまだ無
+#   い）。常に「違反なし」を返すスタブのため、3-a / 3-b / 3-j（合格を期待）
+#   は緑のまま、3-c 〜 3-i / 3-k（不合格を期待）はすべて Red になる。この
+#   Red が「対象未実装」によるものであることは、合格系 fixture が緑である
+#   ことで切り分けられる（本ファイル冒頭のコメントと同じ設計）。
+#   実装（12-2 の判定ロジックそのもの）は本テスト工程の範囲外。次工程
+#   （implementer）が本関数の中身を書く。
+# =============================================================================
+
+# collect_structure_violations <dir>
+#   グローバル配列 VIOLATIONS へ、12-2 の許可集合から外れた記述と、
+#   12-2-g が禁じる `.gitleaksignore` の存在を積む。
+#   <dir>/.gitleaks.toml と <dir>/.gitleaksignore を見る。
+collect_structure_violations() {
+  local dir="$1"
+  local -a violations=()
+  # TODO(実装工程・AC-12-2): [extend]/[[allowlists]] 以外のテーブル、
+  # [extend] の useDefault 以外のキー、[[allowlists]] の paths 以外の
+  # キー（要素1個のリテラル文字列以外を含む）、トップレベルの裸キー／
+  # ドット付きキーによる同等の記述、.gitleaksignore の存在を判定する。
+  # 現時点では未実装であり、常に違反なしを返す。
+  VIOLATIONS=("${violations[@]}")
+}
+
+# run_structure_case <名前> <dir> <want:satisfy|violate>
+#   「合格」= 違反0件。「不合格」= 違反1件以上（12-3 冒頭の定義）。
+#   メッセージの具体的な文言は実装依存のため、件数のみで判定する。
+run_structure_case() {
+  local name="$1" dir="$2" want="$3"
+  local -a VIOLATIONS=()
+  collect_structure_violations "$dir"
+
+  local ok=1
+  if [ "$want" = "satisfy" ]; then
+    [ "${#VIOLATIONS[@]}" -eq 0 ] || ok=0
+  else
+    [ "${#VIOLATIONS[@]}" -gt 0 ] || ok=0
+  fi
+
+  if [ "$ok" = 1 ]; then
+    pass=$((pass + 1))
+    printf '  ok   %s（違反 %s 件）\n' "$name" "${#VIOLATIONS[@]}"
+  else
+    fail=$((fail + 1))
+    printf '  FAIL %s（期待=%s, 実際の違反 %s 件）\n' "$name" "$want" "${#VIOLATIONS[@]}"
+  fi
+}
+
+# mk_struct_dir <name> <.gitleaks.toml の内容(heredoc相当)>
+#   $WORK_ROOT 配下に fixture 用の擬似リポジトリ・ディレクトリを作り、
+#   そのパスを返す（.gitleaksignore は置かない）。
+STRUCT_DIR_SEQ=0
+mk_struct_dir() {
+  local name="$1"
+  STRUCT_DIR_SEQ=$((STRUCT_DIR_SEQ + 1))
+  local d="${WORK_ROOT}/struct-${STRUCT_DIR_SEQ}-${name}"
+  mkdir -p "$d"
+  printf '%s' "$d"
+}
+
+echo "==> test-gitleaks-allowlist (Part C: AC-12 構造検査)"
+
+# --- 3-a: 現行の正常形 ------------------------------------------------------
+D_3A="$(mk_struct_dir 3a)"
+cat > "${D_3A}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+EOF
+run_structure_case "3-a 正常形（[extend] useDefault=true + [[allowlists]] paths のみ）" "$D_3A" satisfy
+
+# --- 3-b: リポジトリ直下の実ファイル ----------------------------------------
+REAL_DIR="$(dirname "$REAL_TOML")"
+run_structure_case "3-b 実リポジトリの .gitleaks.toml（回帰）" "$REAL_DIR" satisfy
+
+# --- 3-c: 既存の [extend] テーブル内に disabledRules を1行足す --------------
+#   新しい [extend] テーブルを作らない（12-5-b：TOML パースエラーで落ちる
+#   形を捕捉の根拠にしない。3-c は TOML として妥当）。
+D_3C="$(mk_struct_dir 3c)"
+cat > "${D_3C}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+disabledRules = ["generic-api-key"]
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+EOF
+run_structure_case "3-c 既存 [extend] 内に disabledRules を1行追加" "$D_3C" violate
+
+# --- 3-d: 2本目の [[allowlists]] --------------------------------------------
+D_3D="$(mk_struct_dir 3d)"
+cat > "${D_3D}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+
+[[allowlists]]
+paths = ['''^docs/\.next/''']
+EOF
+run_structure_case "3-d 2本目の [[allowlists]] を追加" "$D_3D" violate
+
+# --- 3-e: [[rules]]（既存ルール id の上書きを含む）--------------------------
+D_3E="$(mk_struct_dir 3e)"
+cat > "${D_3E}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+
+[[rules]]
+id = "aws-access-token"
+description = "disabled"
+regex = '''x^'''
+EOF
+run_structure_case "3-e [[rules]] で既存ルール id を上書き" "$D_3E" violate
+
+# --- 3-f: [allowlist]（単数形・非配列）--------------------------------------
+D_3F="$(mk_struct_dir 3f)"
+cat > "${D_3F}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+
+[allowlist]
+paths = ['''^vendor/''']
+EOF
+run_structure_case "3-f [allowlist]（単数形）を追加" "$D_3F" violate
+
+# --- 3-g: [[rules]] + [[rules.allowlists]] ----------------------------------
+D_3G="$(mk_struct_dir 3g)"
+cat > "${D_3G}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+paths = ['''^vendor/''']
+EOF
+run_structure_case "3-g [[rules]] + [[rules.allowlists]]（ルール個別の迂回）" "$D_3G" violate
+
+# --- 3-h: [[allowlists]] に regexes を追加 ----------------------------------
+D_3H="$(mk_struct_dir 3h)"
+cat > "${D_3H}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+regexes = ['''AKIA[0-9A-Z]{16}''']
+EOF
+run_structure_case "3-h [[allowlists]] に regexes を追加" "$D_3H" violate
+
+# --- 3-i: トップレベルのドット付きキー --------------------------------------
+#   [extend] を見出し（[extend]）ではなくドット付きキーだけで書く。TOML の
+#   解決規則上、見出し [extend] とトップレベルの extend.* を同一ファイルで
+#   併用すると構文エラーになるため（実測: tomllib で "Cannot declare
+#   ('extend',) twice"）、ドット付きキーのみで [extend] と同等の内容
+#   （useDefault=true と禁止キー disabledRules）を表現する。12-2-e が言う
+#   「記法を変えれば通る、という抜け」の再現であり、内容は 3-c と同値。
+D_3I="$(mk_struct_dir 3i)"
+cat > "${D_3I}/.gitleaks.toml" <<'EOF'
+extend.useDefault = true
+extend.disabledRules = ["generic-api-key"]
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+EOF
+run_structure_case "3-i トップレベルのドット付きキー extend.disabledRules" "$D_3I" violate
+
+# --- 3-j: 各行に行末コメント（誤検知しないこと）-----------------------------
+D_3J="$(mk_struct_dir 3j)"
+cat > "${D_3J}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true  # 理由
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']  # 理由
+EOF
+run_structure_case "3-j 行末コメントを付けても誤検知しない" "$D_3J" satisfy
+
+# --- 3-k: .gitleaksignore が存在する ----------------------------------------
+D_3K="$(mk_struct_dir 3k)"
+cat > "${D_3K}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+EOF
+: > "${D_3K}/.gitleaksignore"
+run_structure_case "3-k .gitleaksignore が存在する（12-2-g）" "$D_3K" violate
+
+echo ""
+
+# =============================================================================
+# 12-4: `paths` の正規表現に先頭アンカーがあること（位置ずれベクタ）
+#
+#   11-4 の表は変更しない（4-b）。11-4 のどのパスも位置ずれを含まないため、
+#   `^` を削っても 11-4 は全件通ってしまう（= 素通りの原因）。12-4 は
+#   `vendor/apps/web/.next/...` のような「末尾にプレフィックスとして
+#   一致してしまう」位置ずれのケースを別表として追加する。
+# =============================================================================
+
+VECTOR4_PATHS=(
+  "vendor/apps/web/.next/prerender-manifest.json"
+  "x/apps/web/.next/a.json"
+  "../apps/web/.next/a.json"
+  "apps/web/.next/prerender-manifest.json"
+)
+VECTOR4_EXPECT=(
+  nomatch nomatch nomatch match
+)
+
+# collect_anchor_violations <toml_file>
+#   extract_paths_regex（Part A で定義済み）を再利用し、12-4 の位置ずれ
+#   ベクタと突き合わせる。
+collect_anchor_violations() {
+  local toml="$1"
+  local -a violations=()
+  local regex rc
+  regex="$(extract_paths_regex "$toml")"
+  rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$regex" ]; then
+    violations+=("paths の正規表現を ${toml} から抽出できない")
+    VIOLATIONS=("${violations[@]}")
+    return
+  fi
+  local i path expect got
+  for i in "${!VECTOR4_PATHS[@]}"; do
+    path="${VECTOR4_PATHS[$i]}"
+    expect="${VECTOR4_EXPECT[$i]}"
+    if printf '%s' "$path" | grep -Eq -- "$regex"; then
+      got=match
+    else
+      got=nomatch
+    fi
+    if [ "$got" != "$expect" ]; then
+      violations+=("12-4 位置ずれベクタ不一致: ${path} は期待=${expect} 実際=${got}（regex=${regex}）")
+    fi
+  done
+  VIOLATIONS=("${violations[@]}")
+}
+
+# run_anchor_case <名前> <toml_file> <want:satisfy|violate>
+run_anchor_case() {
+  local name="$1" toml="$2" want="$3"
+  local -a VIOLATIONS=()
+  collect_anchor_violations "$toml"
+  local ok=1 joined
+  joined="$(printf '%s\n' "${VIOLATIONS[@]+"${VIOLATIONS[@]}"}")"
+
+  if [ "$want" = "satisfy" ]; then
+    [ "${#VIOLATIONS[@]}" -eq 0 ] || ok=0
+  else
+    [ "${#VIOLATIONS[@]}" -gt 0 ] || ok=0
+  fi
+
+  if [ "$ok" = 1 ]; then
+    pass=$((pass + 1))
+    printf '  ok   %s（違反 %s 件）\n' "$name" "${#VIOLATIONS[@]}"
+  else
+    fail=$((fail + 1))
+    printf '  FAIL %s（期待=%s, 実際の違反 %s 件）\n' "$name" "$want" "${#VIOLATIONS[@]}"
+    local v
+    for v in "${VIOLATIONS[@]+"${VIOLATIONS[@]}"}"; do
+      printf '       - %s\n' "$v"
+    done
+  fi
+}
+
+# --- 4-c/4-d 対: 正常形（アンカー済み）は位置ずれベクタも全て満たす --------
+run_anchor_case "12-4 正常形（^ アンカー済み）は位置ずれベクタを満たす" "$GOOD_TOML" satisfy
+
+# --- 4-c/4-d 対: `^` を削った fixture は位置ずれベクタで不合格になる -------
+BAD_NO_ANCHOR_TOML="${WORK_ROOT}/bad-no-anchor.gitleaks.toml"
+cat > "$BAD_NO_ANCHOR_TOML" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''apps/web/\.next/''']
+EOF
+run_anchor_case "12-4 異常系: '^' を削ると位置ずれベクタ（vendor/... 等）に誤って一致する" "$BAD_NO_ANCHOR_TOML" violate
+
+echo ""
 if [ "$fail" -ne 0 ]; then
   echo "  NG: $fail 件失敗 / $((pass + fail)) 件中"
   exit 1
