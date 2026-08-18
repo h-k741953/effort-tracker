@@ -765,6 +765,13 @@ paths = ['''apps/web/\.next/''']
 EOF
 run_anchor_case "12-4 異常系: '^' を削ると位置ずれベクタ（vendor/... 等）に誤って一致する" "$BAD_NO_ANCHOR_TOML" violate
 
+# --- 実リポジトリの .gitleaks.toml（AC-12-4 の本番適用） -------------------
+# Part A（11-4, 216行目）が実ファイルに適用しているのと同じ理由。
+# collect_anchor_violations を fixture だけに適用していると、本番の `.gitleaks.toml`
+# から `^` が抜けても検査は緑のままになる（4-a/4-b が求める検査が回帰的に本番へ
+# 効いていることを、正常形・`^` 削除 fixture との対で確かめる意図に合わせる）。
+run_anchor_case "実リポジトリの .gitleaks.toml（AC-12-4 の本番適用）" "$REAL_TOML" satisfy
+
 echo ""
 if [ "$fail" -ne 0 ]; then
   echo "  NG: $fail 件失敗 / $((pass + fail)) 件中"
