@@ -322,14 +322,28 @@ echo ""
 #   イトリスト型（12-1）で、12-2 の許可集合と 12-3 の必須テストベクタを検査
 #   する。Part A / Part B（AC-11 の動的検査）を置き換えず併存させる（12-6-b）。
 #
-#   collect_structure_violations() は 12-2-a〜g の許可集合との照合を行う
-#   本体だが、【本テスト作成時点では未実装】である（構造検査の実体がまだ無
-#   い）。常に「違反なし」を返すスタブのため、3-a / 3-b / 3-j（合格を期待）
-#   は緑のまま、3-c 〜 3-i / 3-k（不合格を期待）はすべて Red になる。この
-#   Red が「対象未実装」によるものであることは、合格系 fixture が緑である
-#   ことで切り分けられる（本ファイル冒頭のコメントと同じ設計）。
-#   実装（12-2 の判定ロジックそのもの）は本テスト工程の範囲外。次工程
-#   （implementer）が本関数の中身を書く。
+#   collect_structure_violations() は 12-2-a〜h の許可集合との照合を行う
+#   本体。往復5の時点で 3-a〜3-k 相当（2-a〜2-g の一部）は実装済みだが、
+#   2026-08-18 訂正で追加された次の要求は【本テスト作成時点ではまだ判定に
+#   反映されていない】:
+#     - 12-2-d-1: `paths` の値が既定形の文字列と完全一致すること（内容の
+#       完全一致。型だけの検査では 3-l/3-m/3-n を捕捉できない）
+#     - 12-2-b 補足 / 12-2-c 補足: `[extend]` / `useDefault` / `[[allowlists]]`
+#       の「不在」も違反にすること（3-o/3-p/3-q。現状は複数存在の上限しか
+#       見ておらず、不在は検査されない）
+#     - 12-2-d-2: `paths` 行の行末コメントを不合格にすること（3-r。現状は
+#       全行の行末コメントを一律に許している）
+#     - 12-2-h: 行頭インデントを許可外にすること（3-t。現状は trim してか
+#       ら判定しており、インデントの有無を見ていない）
+#   そのため 3-l/3-m/3-n/3-o/3-p/3-q/3-r/3-t は Red になる。3-s（値の前後
+#   空白）は is_single_literal_array の正規表現が前後空白込みの文字列を
+#   リテラル文字列として受理してしまうため、これも Red になる。
+#   3-a/3-b（合格を期待）と、訂正後の 3-j（`paths` 行以外の行末コメントは
+#   合格を期待）は緑のまま。この切り分けにより、Red が「対象未実装」による
+#   ものであることを確かめる（本ファイル冒頭のコメントと同じ設計）。
+#   実装（12-2-d-1 / 2-b 補足 / 2-d-2 / 2-h の判定ロジックそのもの）は本テ
+#   スト工程の範囲外。次工程（implementer）が collect_structure_violations()
+#   へ反映する。
 # =============================================================================
 
 # collect_structure_violations <dir>
@@ -650,16 +664,21 @@ paths = ['''^apps/web/\.next/''']
 EOF
 run_structure_case "3-i トップレベルのドット付きキー extend.disabledRules" "$D_3I" violate
 
-# --- 3-j: 各行に行末コメント（誤検知しないこと）-----------------------------
+# --- 3-j: `paths` 行以外の各行に行末コメント（誤検知しないこと）------------
+#   2026-08-18 訂正: 旧 3-j は「各行に」付けたものを合格としていたが、
+#   `paths` 行に行末コメントを付けると値の切り出しが失敗し実装と矛盾して
+#   いた（12-2-d-2 / W-a）。`paths` 行の行末コメントは 3-r で別途「不合格」
+#   を確かめる。本ケースは `paths` 行**以外**（[extend] / useDefault /
+#   [[allowlists]]）に付けたものが合格することだけを確かめる。
 D_3J="$(mk_struct_dir 3j)"
 cat > "${D_3J}/.gitleaks.toml" <<'EOF'
-[extend]
+[extend]  # 理由
 useDefault = true  # 理由
 
-[[allowlists]]
-paths = ['''^apps/web/\.next/''']  # 理由
+[[allowlists]]  # 理由
+paths = ['''^apps/web/\.next/''']
 EOF
-run_structure_case "3-j 行末コメントを付けても誤検知しない" "$D_3J" satisfy
+run_structure_case "3-j paths 行以外の行末コメントは誤検知しない（12-2-d-2-b）" "$D_3J" satisfy
 
 # --- 3-k: .gitleaksignore が存在する ----------------------------------------
 D_3K="$(mk_struct_dir 3k)"
@@ -672,6 +691,103 @@ paths = ['''^apps/web/\.next/''']
 EOF
 : > "${D_3K}/.gitleaksignore"
 run_structure_case "3-k .gitleaksignore が存在する（12-2-g）" "$D_3K" violate
+
+# =============================================================================
+# 12-3 の追加ベクタ（2026-08-18。完全一致・不在・行末コメントの検証）
+#   期待値はいずれも「不合格」（12-3 の追加ベクタ表 前文）。
+# =============================================================================
+
+# --- 3-l: paths の値に選択肢を追加（往復4で 26/26 通過が実測された形。C-3）--
+D_3L="$(mk_struct_dir 3l)"
+cat > "${D_3L}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/|^infra/prod''']
+EOF
+run_structure_case "3-l paths の値に選択肢を追加（C-3。既定値と完全一致しない）" "$D_3L" violate
+
+# --- 3-m: paths の値の末尾を緩和（同型だが未実測の形）----------------------
+D_3M="$(mk_struct_dir 3m)"
+cat > "${D_3M}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/.*''']
+EOF
+run_structure_case "3-m paths の値の末尾を緩和（既定値と完全一致しない）" "$D_3M" violate
+
+# --- 3-n: paths の値から `^` を欠落（往復4の M1 の回帰。12-4-d と同一の値）-
+D_3N="$(mk_struct_dir 3n)"
+cat > "${D_3N}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''apps/web/\.next/''']
+EOF
+run_structure_case "3-n paths の値から '^' が欠落（M1 の回帰。既定値と完全一致しない）" "$D_3N" violate
+
+# --- 3-o: [extend] ブロックごと削除（W-b。既定ルール全滅が緑になる形）------
+D_3O="$(mk_struct_dir 3o)"
+cat > "${D_3O}/.gitleaks.toml" <<'EOF'
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+EOF
+run_structure_case "3-o [extend] ブロックごと削除（W-b。2-b 補足）" "$D_3O" violate
+
+# --- 3-p: [extend] は残し useDefault=true の行だけ削除（3-o と同じ実害）----
+D_3P="$(mk_struct_dir 3p)"
+cat > "${D_3P}/.gitleaks.toml" <<'EOF'
+[extend]
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']
+EOF
+run_structure_case "3-p useDefault = true の行だけ削除（12-2-c 補足）" "$D_3P" violate
+
+# --- 3-q: [[allowlists]] ブロックごと削除（除外範囲の変更は人間の決定事項）-
+D_3Q="$(mk_struct_dir 3q)"
+cat > "${D_3Q}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+EOF
+run_structure_case "3-q [[allowlists]] ブロックごと削除（2-b 補足）" "$D_3Q" violate
+
+# --- 3-r: paths 行に行末コメント（W-a。旧 3-j はこれを合格としていた）------
+D_3R="$(mk_struct_dir 3r)"
+cat > "${D_3R}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = ['''^apps/web/\.next/''']  # 理由
+EOF
+run_structure_case "3-r paths 行に行末コメント（12-2-d-2-a。W-a）" "$D_3R" violate
+
+# --- 3-s: paths の値の前後に空白（trim ではなくバイト列の完全一致であること）
+D_3S="$(mk_struct_dir 3s)"
+cat > "${D_3S}/.gitleaks.toml" <<'EOF'
+[extend]
+useDefault = true
+
+[[allowlists]]
+paths = [''' ^apps/web/\.next/''']
+EOF
+run_structure_case "3-s paths の値の前後に空白（12-2-d-1-c。trim 後ではなくバイト列一致）" "$D_3S" violate
+
+# --- 3-t: 各行に行頭インデント（記法違いの抜けを塞ぐ。2-e と同じ趣旨）------
+D_3T="$(mk_struct_dir 3t)"
+cat > "${D_3T}/.gitleaks.toml" <<'EOF'
+  [extend]
+  useDefault = true
+
+  [[allowlists]]
+  paths = ['''^apps/web/\.next/''']
+EOF
+run_structure_case "3-t 各行に行頭インデント（12-2-h）" "$D_3T" violate
 
 echo ""
 
