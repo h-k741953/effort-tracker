@@ -393,28 +393,74 @@ collect_structure_violations() {
     printf '%s' "$out"
   }
 
-  # --- 12-2-d: 「要素1個のリテラル文字列の配列」判定 ---------------------
-  is_single_literal_array() {
+  # line_has_trailing_comment: 引用符外に '#' が現れるかどうかを真偽で返す
+  #   （paths 行の行末コメント判定・12-2-d-2 に使う）。strip_comment と
+  #   同じトークナイズだが、`$(...)` を介さず直接呼び出して判定する
+  #   （$(...) はサブシェルを生成し、グローバル変数への代入が呼び出し元
+  #   へ伝播しないため、真偽は終了コードで返す）。
+  line_has_trailing_comment() {
+    local line="$1" i ch qc="" len
+    len=${#line}
+    for ((i = 0; i < len; i++)); do
+      ch="${line:i:1}"
+      if [ -n "$qc" ]; then
+        [ "$ch" = "$qc" ] && qc=""
+      else
+        if [ "$ch" = "'" ] || [ "$ch" = '"' ]; then
+          qc="$ch"
+        elif [ "$ch" = "#" ]; then
+          return 0
+        fi
+      fi
+    done
+    return 1
+  }
+
+  # --- 12-2-d / 12-2-d-1: 「要素1個のリテラル文字列の配列」を判定し、
+  #     引用符を剥がした値そのものを標準出力へ返す（呼び出し側で既定値と
+  #     の完全一致を比較する）。値の内容自体は一切加工しない
+  #     （trim・正規化・パターン照合をしない。12-2-d-1-c / d-1-d）。
+  extract_single_literal_value() {
     local val="$1" inner
     inner="$(printf '%s' "$val" | sed -E 's/^\[(.*)\]$/\1/')"
     [ "$inner" != "$val" ] || return 1
     printf '%s' "$inner" | grep -q ',' && return 1
+    # 角括弧の内側・引用符の外側にある空白は TOML の記法上の空白であり
+    # 値ではないため、ここでのみ trim してよい（12-2-d-1-c）。
     inner="$(printf '%s' "$inner" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
     if [[ "$inner" =~ ^\'\'\'(.*)\'\'\'$ ]]; then
+      printf '%s' "${BASH_REMATCH[1]}"
       return 0
     elif [[ "$inner" =~ ^\'(.*)\'$ ]]; then
+      printf '%s' "${BASH_REMATCH[1]}"
       return 0
     fi
     return 1
   }
 
+  # 許可する paths の値はこの1つだけ（12-2-d-1-a）。禁止パターンの列挙
+  # ではなく、許可する文字列そのものを1つに固定して比較する
+  # （12-2-d-1-d）。
+  local PATHS_DEFAULT_VALUE='^apps/web/\.next/'
+
   local extend_count=0 allowlists_count=0
+  local saw_valid_usedefault=0 saw_valid_paths=0
   local current_table=""   # "" | extend | allowlists | other
-  local line stripped trimmed lineno=0
+  local line stripped trimmed lineno=0 had_comment=0
 
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
+
+    # --- 12-2-h: 行頭のインデントを許可しない（記法違いの抜けを塞ぐ）----
+    #   コメント／空行を含む「許可される記述の行」すべてが対象。加工前の
+    #   生の行に対して判定する（trim してから見ると有無が分からない）。
+    if [[ "$line" =~ [^[:space:]] ]] && [[ "$line" =~ ^[[:space:]] ]]; then
+      violations+=("行${lineno}: 行頭にインデントがある（12-2-h）: $(printf '%s' "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')")
+      continue
+    fi
+
     stripped="$(strip_comment "$line")"
+    if line_has_trailing_comment "$line"; then had_comment=1; else had_comment=0; fi
     trimmed="$(printf '%s' "$stripped" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
     [ -z "$trimmed" ] && continue   # 空行／コメントのみの行（2-a）
 
@@ -452,14 +498,24 @@ collect_structure_violations() {
       case "$tbl" in
         extend)
           if [ "$key" = "useDefault" ] && [ "$val" = "true" ]; then
-            :
+            saw_valid_usedefault=1
           else
             violations+=("行${lineno}: ドット付きキー extend.${key} は許可されない（2-c/2-e）: ${trimmed}")
           fi
           ;;
         allowlists)
-          if [ "$key" = "paths" ] && is_single_literal_array "$val"; then
-            :
+          if [ "$key" = "paths" ]; then
+            local dotpv dotrc
+            dotpv="$(extract_single_literal_value "$val")"; dotrc=$?
+            if [ "$dotrc" -ne 0 ]; then
+              violations+=("行${lineno}: ドット付きキー allowlists.paths は要素1個のリテラル文字列配列ではない（2-d/2-e）: ${trimmed}")
+            elif [ "$had_comment" = "1" ]; then
+              violations+=("行${lineno}: paths 行に行末コメントがある（12-2-d-2）: ${trimmed}")
+            elif [ "$dotpv" != "$PATHS_DEFAULT_VALUE" ]; then
+              violations+=("行${lineno}: paths の値が既定値（${PATHS_DEFAULT_VALUE}）と完全一致しない（12-2-d-1）: ${trimmed}")
+            else
+              saw_valid_paths=1
+            fi
           else
             violations+=("行${lineno}: ドット付きキー allowlists.${key} は許可されない（2-d/2-e）: ${trimmed}")
           fi
@@ -478,14 +534,24 @@ collect_structure_violations() {
       case "$current_table" in
         extend)
           if [ "$key2" = "useDefault" ] && [ "$val2" = "true" ]; then
-            :
+            saw_valid_usedefault=1
           else
             violations+=("行${lineno}: [extend] 内の許可外キー/値（2-c）: ${trimmed}")
           fi
           ;;
         allowlists)
-          if [ "$key2" = "paths" ] && is_single_literal_array "$val2"; then
-            :
+          if [ "$key2" = "paths" ]; then
+            local pv2 rc2
+            pv2="$(extract_single_literal_value "$val2")"; rc2=$?
+            if [ "$rc2" -ne 0 ]; then
+              violations+=("行${lineno}: [[allowlists]] 内の許可外キー/値（2-d）: ${trimmed}")
+            elif [ "$had_comment" = "1" ]; then
+              violations+=("行${lineno}: paths 行に行末コメントがある（12-2-d-2）: ${trimmed}")
+            elif [ "$pv2" != "$PATHS_DEFAULT_VALUE" ]; then
+              violations+=("行${lineno}: paths の値が既定値（${PATHS_DEFAULT_VALUE}）と完全一致しない（12-2-d-1）: ${trimmed}")
+            else
+              saw_valid_paths=1
+            fi
           else
             violations+=("行${lineno}: [[allowlists]] 内の許可外キー/値（2-d）: ${trimmed}")
           fi
@@ -503,6 +569,23 @@ collect_structure_violations() {
     # ここまでのいずれの許可形にも一致しない記述
     violations+=("行${lineno}: 許可集合に無い記述（12-2）: ${trimmed}")
   done < "$toml"
+
+  # --- 2-b 補足 / 2-c 補足 / 2-d: 不在も違反にする ------------------------
+  #   上限（複数存在）だけでなく、下限（不在）も見る。[extend] が消える
+  #   と組み込みルールが全滅して何も検出しないのに緑になる（W-b）ため、
+  #   これを機械で捕捉する。
+  if [ "$extend_count" -eq 0 ]; then
+    violations+=("[extend] テーブルが存在しない（2-b 補足）")
+  fi
+  if [ "$allowlists_count" -eq 0 ]; then
+    violations+=("[[allowlists]] テーブルが存在しない（2-b 補足）")
+  fi
+  if [ "$saw_valid_usedefault" != "1" ]; then
+    violations+=("[extend] 内に有効な useDefault = true の行が無い（12-2-c 補足）")
+  fi
+  if [ "$saw_valid_paths" != "1" ]; then
+    violations+=("[[allowlists]] 内に有効な paths 行（既定値 ${PATHS_DEFAULT_VALUE} と完全一致）が無い（12-2-d/12-2-d-1）")
+  fi
 
   VIOLATIONS=("${violations[@]}")
 }
