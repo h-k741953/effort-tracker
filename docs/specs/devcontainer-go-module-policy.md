@@ -22,7 +22,7 @@ Issue #66 の仕様。**devcontainer 内で Go モジュールの実行時取得
 - **`GOSUMDB` / `GOPROXY` の既定の変更**（`GOSUMDB=off` は不採用。AC-2）
 - **vendoring（`go mod vendor`）・モジュールプロキシの自前運用・DNS 追随による ipset の常駐更新**（AC-2）
 - **Go 本体のバージョン整合の検査**（`COPY --from=golang:X` と `go.mod` の `go` ディレクティブ。AC-10-5）
-- **npm 等、Go 以外のエコシステムの依存**（`apps/web` は未スキャフォールド）
+- **npm 等、Go 以外のエコシステムの依存**（`apps/web` は Issue #9 でスキャフォールド済みになったが、本仕様の検査は Go の pin だけを見る。AC-10-6）
 
 ---
 
@@ -161,7 +161,7 @@ GitHub は Meta API の **CIDR レンジ**を丸ごと許可しているため `
 | 6-4 | `go.mod` 側は **direct require のみ**を対象にする。行末に `// indirect` を持つ require は対象外。`require ( ... )` のブロック形式と `require <path> <version>` の単一行形式の**両方**を読む |
 | 6-5 | 版の比較は**文字列の完全一致**とする。`v` の有無・大文字小文字・`+incompatible` を正規化しない。吸収すると、形式が変わったときに静かに通る（`docs/specs/issue-command.md` AC-10-6 と同型） |
 | 6-6 | **双方向で見る。** (a) Dockerfile が pin するモジュールが `go.mod` の direct require に無い、(b) `go.mod` の direct require に対応する pin が Dockerfile に無い、(c) 版が違う —— **いずれも違反**とする。とくに (b) は「**pin し忘れ**」であり、次にリビルドした人の手元でだけキャッシュが温まらない、という最も見つけにくい失敗を捕まえる |
-| 6-7 | **対象ゼロを成功にしない。** pin の組が0件、または direct require が0件のときは成功を返さない（AC-7 の `NO_PIN` / `NO_REQUIRE`）。これは `check-domain-deps` の「検査対象が無い場合は失敗させる」と同じ扱いであり、未スキャフォールドの `apps/web` のような SKIP 対象ではない（`docs/harness/verification-loop.md`） |
+| 6-7 | **対象ゼロを成功にしない。** pin の組が0件、または direct require が0件のときは成功を返さない（AC-7 の `NO_PIN` / `NO_REQUIRE`）。これは `check-domain-deps` の「検査対象が無い場合は失敗させる」と同じ扱いであり、未着手の `infra/terraform`（`lint-tf`）のような SKIP 対象ではない（`docs/harness/verification-loop.md`）。**スキャフォールド済みの `apps/web`（`lint-web` / `test-web`）は SKIP を持たず、対象が無ければ失敗する側**であり、本項と同じ扱いである |
 | 6-8 | 判定に**行順・コメントの位置・ブロックの並び**を用いない。集合として比較する |
 
 ### AC-7. 出力契約と verdict
@@ -223,7 +223,7 @@ GitHub は Meta API の **CIDR レンジ**を丸ごと許可しているため `
 | 10-3 | **対応表を Dockerfile の `go get` 行から導く**（AC-6-1）ため、**その行の書式を変えると検査は `INDETERMINATE` で止まる**。安全側（黙って通らない側）に倒れているが、書式を変えるときは本仕様の AC-6-2 の更新が要る |
 | 10-4 | **`replace` / `exclude` / `tool` ディレクティブと `go.sum` を見ない。** `replace` で差し替えられたモジュールについて、この検査の結果は実際に取得される版と対応しない |
 | 10-5 | **Go 本体の版（`COPY --from=golang:X`）と `go.mod` の `go` ディレクティブの整合は対象外**（非スコープ）。`GOTOOLCHAIN=local` により実行時には失敗するが、この検査では検出しない |
-| 10-6 | **Go 以外のエコシステム（npm 等）は対象外。** `apps/web` は未スキャフォールドであり、スキャフォールド時に同種の問題が再発しうる。そのとき本仕様は流用できない |
+| 10-6 | **Go 以外のエコシステム（npm 等）は対象外。** `apps/web` は Issue #9 でスキャフォールド済みになったが、npm の依存に対する同種の pin 整合検査は置いていない。実行時取得をめぐる同種の問題が npm 側で起きても本検査は検出せず、**本仕様をそのまま流用できない**（`docs/specs/web-app-scaffold.md` P-3 / AC-10-4） |
 | 10-7 | **allowlist の2ホストは残るため、`sudo /usr/local/bin/init-firewall.sh` を引き直した直後は取得が通ることがある**（P-2 末尾）。「通ることがある」は「通る」ではない。**この経路を手順に組み込まない**（AC-2 の 2-6） |
 | 10-8 | **`ARG` の版が「正しい」ことを保証しない。** 保証するのは `go.mod` と一致していることだけである。`go.mod` 側が誤っていれば、検査は誤った版を承認する（正解の実体は `go.mod`。P-3 の 3） |
 | 10-9 | **CI ではこの問題が再現しない。** GitHub runner に egress 制限は無く、実行時にモジュールを取得できる。**壊れるのはローカルの devcontainer だけ**という非対称があり、CI が緑であることは「devcontainer でビルドできる」ことを意味しない |
