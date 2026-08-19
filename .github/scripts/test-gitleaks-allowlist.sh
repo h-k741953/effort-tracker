@@ -649,6 +649,60 @@ run_structure_case_min() {
   fi
 }
 
+# run_structure_case_dup_lineno <名前> <dir> <key> <2件目以降の行番号...>
+#   AC-12-2-i-g（W-1。往復7）: 重複キー違反のメッセージには「2件目以降の
+#   行番号」と「当該キーが重複している旨」を出すことを要求している
+#   （docs/specs/web-app-scaffold.md 530行目 / 12-6-c）。
+#   run_structure_case / run_structure_case_min は件数のみで判定しており
+#   （文言は実装依存として明記して見ていない。611行目）、i-g の要求を検査
+#   するベクタが1本も無かった。本関数はその穴を塞ぐ別の呼び出し方であり、
+#   run_structure_case / run_structure_case_min と collect_structure_violations()
+#   自体は変更しない。
+#
+#   判定: VIOLATIONS の中から「${key} キーが」かつ「12-2-i」を含むメッセージ
+#   （＝出現回数の重複違反）がちょうど1件あることを確かめたうえで、その
+#   メッセージに <2件目以降の行番号> それぞれについて「行${n}:」という
+#   部分文字列が含まれることを確かめる。書式は同ファイル内の他の違反
+#   メッセージ（462/475/484/492行目）と同じ「行${lineno}: …」を踏襲し、
+#   新しい書式を発明しない。
+run_structure_case_dup_lineno() {
+  local name="$1" dir="$2" key="$3"
+  shift 3
+  local -a expected_linenos=("$@")
+  local -a VIOLATIONS=()
+  collect_structure_violations "$dir"
+
+  local -a matches=()
+  local v
+  for v in "${VIOLATIONS[@]+"${VIOLATIONS[@]}"}"; do
+    if [[ "$v" == *"${key} キーが"* ]] && [[ "$v" == *"12-2-i"* ]]; then
+      matches+=("$v")
+    fi
+  done
+
+  local ok=1 detail=""
+  if [ "${#matches[@]}" -ne 1 ]; then
+    ok=0
+    detail="${key} の重複違反メッセージが1件ではない（実際 ${#matches[@]} 件）"
+  else
+    local msg="${matches[0]}" n
+    for n in "${expected_linenos[@]}"; do
+      if [[ "$msg" != *"行${n}:"* ]]; then
+        ok=0
+        detail="メッセージに「行${n}:」が含まれない（12-2-i-g）: ${msg}"
+      fi
+    done
+  fi
+
+  if [ "$ok" = 1 ]; then
+    pass=$((pass + 1))
+    printf '  ok   %s\n' "$name"
+  else
+    fail=$((fail + 1))
+    printf '  FAIL %s（%s）\n' "$name" "$detail"
+  fi
+}
+
 # mk_struct_dir <name> <.gitleaks.toml の内容(heredoc相当)>
 #   $WORK_ROOT 配下に fixture 用の擬似リポジトリ・ディレクトリを作り、
 #   そのパスを返す（.gitleaksignore は置かない）。
@@ -945,6 +999,10 @@ paths = ['''^apps/web/\.next/''']
 paths = ['''^apps/web/\.next/''']
 EOF
 run_structure_case "3-u [[allowlists]] 内に paths 2行（両方とも既定値。12-2-i-b/i-c）" "$D_3U" violate
+# --- 3-u i-g: 違反メッセージに2件目の行番号が入ること（往復7・W-1） --------
+#   D_3U を流用（新しい fixture を作らない。12-3-n の趣旨）。2行目の
+#   paths は fixture の6行目にある。
+run_structure_case_dup_lineno "3-u (12-2-i-g) paths 重複メッセージに2件目の行番号（行6）が入る" "$D_3U" paths 6
 
 # --- 3-v: [[allowlists]] 内に paths 2行、2行目の値だけ既定値と異なる -------
 #   現行でも 12-2-d-1 で1件（値の不一致）は捕捉されるが、捕捉の根拠が
@@ -976,6 +1034,10 @@ useDefault = true
 paths = ['''^apps/web/\.next/''']
 EOF
 run_structure_case "3-w [extend] 内に useDefault = true を2行（12-2-i-a/i-b）" "$D_3W" violate
+# --- 3-w i-g: 違反メッセージに2件目の行番号が入ること（往復7・W-1） --------
+#   D_3W を流用（新しい fixture を作らない）。2行目の useDefault は
+#   fixture の3行目にある。
+run_structure_case_dup_lineno "3-w (12-2-i-g) useDefault 重複メッセージに2件目の行番号（行3）が入る" "$D_3W" useDefault 3
 
 # --- 3-x: トップレベル allowlists.paths ＋ [[allowlists]] 内 paths（混在）--
 #   記法をまたいで通算すること（合計2件）を確かめる（12-2-i-d）。トップ
@@ -992,6 +1054,12 @@ useDefault = true
 paths = ['''^apps/web/\.next/''']
 EOF
 run_structure_case "3-x トップレベル allowlists.paths と [[allowlists]] 内 paths の混在（12-2-i-d）" "$D_3X" violate
+# --- 3-x i-g: 記法をまたいでも2件目の行番号が入ること（往復7・W-1） -------
+#   D_3X を流用（新しい fixture を作らない）。1件目はトップレベルの
+#   ドット付きキー（1行目）、2件目は [[allowlists]] 内の paths（7行目）。
+#   記法が違っても2件目として数えた行番号が出ることを確かめる（i-d と
+#   i-g の合わせ技）。
+run_structure_case_dup_lineno "3-x (12-2-i-g) 記法混在でも2件目の行番号（行7）が入る" "$D_3X" paths 7
 
 # --- 3-y: [[allowlists]] 内に paths 2行、1行目を許可外の形にする -----------
 #   許可外の行も出現回数に数えること（「片方を壊せば重複が1件に見える」
