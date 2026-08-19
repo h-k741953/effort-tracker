@@ -449,6 +449,10 @@ collect_structure_violations() {
   #     記法（ドット付きキー／テーブル内）をまたいで通算し（i-d）、値や
   #     記法が許可外の行も出現回数に数える（i-f）。
   local usedefault_occurrences=0 paths_occurrences=0
+  # --- 12-2-i-g（往復7・W-1）: 重複違反のメッセージに2件目以降の行番号を
+  #     載せるため、出現ごとの行番号も配列で貯める（判定ロジックは
+  #     usedefault_occurrences / paths_occurrences のままで変更しない）。
+  local -a usedefault_linenos=() paths_linenos=()
   local current_table=""   # "" | extend | allowlists | other
   local line stripped trimmed lineno=0 had_comment=0
 
@@ -503,6 +507,7 @@ collect_structure_violations() {
         extend)
           if [ "$key" = "useDefault" ]; then
             usedefault_occurrences=$((usedefault_occurrences + 1))
+            usedefault_linenos+=("$lineno")
             if [ "$val" != "true" ]; then
               violations+=("行${lineno}: ドット付きキー extend.${key} は許可されない（2-c/2-e）: ${trimmed}")
             fi
@@ -513,6 +518,7 @@ collect_structure_violations() {
         allowlists)
           if [ "$key" = "paths" ]; then
             paths_occurrences=$((paths_occurrences + 1))
+            paths_linenos+=("$lineno")
             local dotpv dotrc
             dotpv="$(extract_single_literal_value "$val")"; dotrc=$?
             if [ "$dotrc" -ne 0 ]; then
@@ -541,6 +547,7 @@ collect_structure_violations() {
         extend)
           if [ "$key2" = "useDefault" ]; then
             usedefault_occurrences=$((usedefault_occurrences + 1))
+            usedefault_linenos+=("$lineno")
             if [ "$val2" != "true" ]; then
               violations+=("行${lineno}: [extend] 内の許可外キー/値（2-c）: ${trimmed}")
             fi
@@ -551,6 +558,7 @@ collect_structure_violations() {
         allowlists)
           if [ "$key2" = "paths" ]; then
             paths_occurrences=$((paths_occurrences + 1))
+            paths_linenos+=("$lineno")
             local pv2 rc2
             pv2="$(extract_single_literal_value "$val2")"; rc2=$?
             if [ "$rc2" -ne 0 ]; then
@@ -594,12 +602,24 @@ collect_structure_violations() {
   if [ "$usedefault_occurrences" -eq 0 ]; then
     violations+=("[extend] 内に useDefault キーが存在しない（12-2-c 補足）")
   elif [ "$usedefault_occurrences" -gt 1 ]; then
-    violations+=("[extend] 内で useDefault キーが ${usedefault_occurrences} 回出現している（12-2-i: 出現回数はちょうど1でなければ不合格）")
+    # 12-2-i-g: 2件目以降の行番号をメッセージに載せる（判定=出現回数の
+    # 比較は上の -gt 1 のまま。ここは文言の組み立てのみ）。
+    local usedefault_dup_linenos="" i
+    for ((i = 1; i < ${#usedefault_linenos[@]}; i++)); do
+      usedefault_dup_linenos="${usedefault_dup_linenos}行${usedefault_linenos[$i]}: "
+    done
+    violations+=("${usedefault_dup_linenos}[extend] 内で useDefault キーが ${usedefault_occurrences} 回出現している（12-2-i: 出現回数はちょうど1でなければ不合格）")
   fi
   if [ "$paths_occurrences" -eq 0 ]; then
     violations+=("[[allowlists]] 内に paths キーが存在しない（12-2-d 補足）")
   elif [ "$paths_occurrences" -gt 1 ]; then
-    violations+=("[[allowlists]] 内で paths キーが ${paths_occurrences} 回出現している（12-2-i: 出現回数はちょうど1でなければ不合格）")
+    # 12-2-i-g: 2件目以降の行番号をメッセージに載せる（判定=出現回数の
+    # 比較は上の -gt 1 のまま。ここは文言の組み立てのみ）。
+    local paths_dup_linenos="" j
+    for ((j = 1; j < ${#paths_linenos[@]}; j++)); do
+      paths_dup_linenos="${paths_dup_linenos}行${paths_linenos[$j]}: "
+    done
+    violations+=("${paths_dup_linenos}[[allowlists]] 内で paths キーが ${paths_occurrences} 回出現している（12-2-i: 出現回数はちょうど1でなければ不合格）")
   fi
 
   VIOLATIONS=("${violations[@]}")
