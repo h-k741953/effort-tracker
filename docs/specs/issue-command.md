@@ -328,7 +328,7 @@ state   : 文字列（"OPEN" / "CLOSED"）
 
 | # | 要求 |
 |---|---|
-| 8-1 | `.claude/scripts/issue-gate.sh` が存在しなければ **失敗する**（SKIP しない）。これは `check-domain-deps` の「検査対象が無い場合は失敗させる」と同じ扱いであり、未スキャフォールドの `apps/web` のような SKIP 対象ではない |
+| 8-1 | `.claude/scripts/issue-gate.sh` が存在しなければ **失敗する**（SKIP しない）。これは `check-domain-deps` の「検査対象が無い場合は失敗させる」と同じ扱いであり、未着手の `infra/terraform`（`lint-tf`）のような SKIP 対象ではない（`docs/harness/verification-loop.md`） |
 | 8-2 | AC-1 / AC-2 / AC-3 / AC-6-b / AC-7 の表の**各行**に対応する fixture を持つ。**判定基準は「表の1行を実装から削ると、fixture が最低1件 Red になる」こと**（`docs/specs/orchestrator-entry-hook.md` AC-9 と同じ基準） |
 | 8-3 | 判定は **終了コードと stdout の verdict の2点**で行う。終了コードだけでは `LABEL_UNKNOWN` と `SPEC_MISSING_LINK`（ともに 3）を弁別できない |
 | 8-4 | 実装時に `Makefile` へ `test-commands` を追加し、`make test` の依存に入れ、`.github/workflows/ci.yml` の `scripts` ジョブへ step を追加し、`docs/harness/verification-loop.md` の2つの表（「コマンド」／「CI の構成」）へ行を足す。**4つすべてを行う** |
