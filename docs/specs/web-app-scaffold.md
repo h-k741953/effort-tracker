@@ -72,7 +72,7 @@ Issue #9 の本文は「この Issue は `docs/specs/` に対応する仕様を�
 
 ### P-3. devcontainer 内で npm の依存取得が成立するかは未実測
 
-`.devcontainer/init-firewall.sh` は `registry.npmjs.org` を allowlist に持つが、**追加されるのは起動時に `dig` が返した A レコードだけ**である。この方式は Go モジュールで実際に破綻しており（`docs/specs/devcontainer-go-module-policy.md` P-2）、同仕様 AC-10-6 は「npm 等は対象外。スキャフォールド時に同種の問題が再発しうる」と明記している。
+`.devcontainer/init-firewall.sh` は `registry.npmjs.org` を allowlist に持つが、**追加されるのは起動時に `dig` が返した A レコードだけ**である。この方式は Go モジュールで実際に破綻しており（`docs/specs/devcontainer-go-module-policy.md` P-2）、同仕様 AC-10-6 は npm 等の Go 以外のエコシステムを対象外と定めており、実行時取得をめぐる同種の問題が npm 側で起きても当該検査は検出しない。
 
 - **npm の取得が devcontainer 内で成立するかは、本仕様の時点で未実測である**（Go と違い `registry.npmjs.org` は複数 A レコードを返しうるため、同じ結論になるとは限らない）
 - **成立しなかった場合、allowlist や `.devcontainer/Dockerfile` を変更して解決してはならない。** それは `devcontainer-go-module-policy.md` の非スコープであり、**人間の決定**が要る（同 AC-2）。実装工程は停止して人間へ上げる
