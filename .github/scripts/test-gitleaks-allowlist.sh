@@ -444,7 +444,11 @@ collect_structure_violations() {
   local PATHS_DEFAULT_VALUE='^apps/web/\.next/'
 
   local extend_count=0 allowlists_count=0
-  local saw_valid_usedefault=0 saw_valid_paths=0
+  # --- 12-2-i: 「ちょうど1つ」はキーの出現回数で数える（真偽フラグでは
+  #     2回目の代入が1回目を吸収してしまい、重複キー行を検知できない）。
+  #     記法（ドット付きキー／テーブル内）をまたいで通算し（i-d）、値や
+  #     記法が許可外の行も出現回数に数える（i-f）。
+  local usedefault_occurrences=0 paths_occurrences=0
   local current_table=""   # "" | extend | allowlists | other
   local line stripped trimmed lineno=0 had_comment=0
 
@@ -497,14 +501,18 @@ collect_structure_violations() {
       val="$(printf '%s' "$val" | sed -E 's/[[:space:]]+$//')"
       case "$tbl" in
         extend)
-          if [ "$key" = "useDefault" ] && [ "$val" = "true" ]; then
-            saw_valid_usedefault=1
+          if [ "$key" = "useDefault" ]; then
+            usedefault_occurrences=$((usedefault_occurrences + 1))
+            if [ "$val" != "true" ]; then
+              violations+=("行${lineno}: ドット付きキー extend.${key} は許可されない（2-c/2-e）: ${trimmed}")
+            fi
           else
             violations+=("行${lineno}: ドット付きキー extend.${key} は許可されない（2-c/2-e）: ${trimmed}")
           fi
           ;;
         allowlists)
           if [ "$key" = "paths" ]; then
+            paths_occurrences=$((paths_occurrences + 1))
             local dotpv dotrc
             dotpv="$(extract_single_literal_value "$val")"; dotrc=$?
             if [ "$dotrc" -ne 0 ]; then
@@ -513,8 +521,6 @@ collect_structure_violations() {
               violations+=("行${lineno}: paths 行に行末コメントがある（12-2-d-2）: ${trimmed}")
             elif [ "$dotpv" != "$PATHS_DEFAULT_VALUE" ]; then
               violations+=("行${lineno}: paths の値が既定値（${PATHS_DEFAULT_VALUE}）と完全一致しない（12-2-d-1）: ${trimmed}")
-            else
-              saw_valid_paths=1
             fi
           else
             violations+=("行${lineno}: ドット付きキー allowlists.${key} は許可されない（2-d/2-e）: ${trimmed}")
@@ -533,14 +539,18 @@ collect_structure_violations() {
       val2="$(printf '%s' "$val2" | sed -E 's/[[:space:]]+$//')"
       case "$current_table" in
         extend)
-          if [ "$key2" = "useDefault" ] && [ "$val2" = "true" ]; then
-            saw_valid_usedefault=1
+          if [ "$key2" = "useDefault" ]; then
+            usedefault_occurrences=$((usedefault_occurrences + 1))
+            if [ "$val2" != "true" ]; then
+              violations+=("行${lineno}: [extend] 内の許可外キー/値（2-c）: ${trimmed}")
+            fi
           else
             violations+=("行${lineno}: [extend] 内の許可外キー/値（2-c）: ${trimmed}")
           fi
           ;;
         allowlists)
           if [ "$key2" = "paths" ]; then
+            paths_occurrences=$((paths_occurrences + 1))
             local pv2 rc2
             pv2="$(extract_single_literal_value "$val2")"; rc2=$?
             if [ "$rc2" -ne 0 ]; then
@@ -549,8 +559,6 @@ collect_structure_violations() {
               violations+=("行${lineno}: paths 行に行末コメントがある（12-2-d-2）: ${trimmed}")
             elif [ "$pv2" != "$PATHS_DEFAULT_VALUE" ]; then
               violations+=("行${lineno}: paths の値が既定値（${PATHS_DEFAULT_VALUE}）と完全一致しない（12-2-d-1）: ${trimmed}")
-            else
-              saw_valid_paths=1
             fi
           else
             violations+=("行${lineno}: [[allowlists]] 内の許可外キー/値（2-d）: ${trimmed}")
@@ -580,11 +588,18 @@ collect_structure_violations() {
   if [ "$allowlists_count" -eq 0 ]; then
     violations+=("[[allowlists]] テーブルが存在しない（2-b 補足）")
   fi
-  if [ "$saw_valid_usedefault" != "1" ]; then
-    violations+=("[extend] 内に有効な useDefault = true の行が無い（12-2-c 補足）")
+  # --- 12-2-i: useDefault / paths それぞれの出現回数がちょうど1であること
+  #     （0件=不在、2件以上=重複キー行。いずれも違反。値が既定値と一致して
+  #     いても2件以上なら相殺しない＝i-c）。記法をまたいで通算済み（i-d）。
+  if [ "$usedefault_occurrences" -eq 0 ]; then
+    violations+=("[extend] 内に useDefault キーが存在しない（12-2-c 補足）")
+  elif [ "$usedefault_occurrences" -gt 1 ]; then
+    violations+=("[extend] 内で useDefault キーが ${usedefault_occurrences} 回出現している（12-2-i: 出現回数はちょうど1でなければ不合格）")
   fi
-  if [ "$saw_valid_paths" != "1" ]; then
-    violations+=("[[allowlists]] 内に有効な paths 行（既定値 ${PATHS_DEFAULT_VALUE} と完全一致）が無い（12-2-d/12-2-d-1）")
+  if [ "$paths_occurrences" -eq 0 ]; then
+    violations+=("[[allowlists]] 内に paths キーが存在しない（12-2-d 補足）")
+  elif [ "$paths_occurrences" -gt 1 ]; then
+    violations+=("[[allowlists]] 内で paths キーが ${paths_occurrences} 回出現している（12-2-i: 出現回数はちょうど1でなければ不合格）")
   fi
 
   VIOLATIONS=("${violations[@]}")
