@@ -227,3 +227,6 @@ jobs:
 
       - name: make lint-tf
         run: make lint-tf
+
+      - name: make test-tf
+        run: make test-tf
