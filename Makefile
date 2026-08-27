@@ -12,6 +12,7 @@ SHELL := /bin/bash
 API_DIR := services/api
 WEB_DIR := apps/web
 TF_DIR  := infra/terraform
+TF_BOOTSTRAP_DIR := infra/bootstrap
 MODULE  := github.com/h-k741953/effort-tracker/services/api
 
 .PHONY: help
@@ -29,7 +30,7 @@ verify: lint test check-domain-deps check-skills check-go-module-pins scan-secre
 	@echo "==> verify: 全検査を通過"
 
 .PHONY: test
-test: test-api test-web test-scripts test-hooks test-commands test-skills test-go-module-pins ## 全レイヤーのテスト
+test: test-api test-web test-tf test-scripts test-hooks test-commands test-skills test-go-module-pins ## 全レイヤーのテスト
 
 .PHONY: lint
 lint: lint-api lint-web lint-tf ## 全レイヤーの Lint / 型チェック
@@ -167,15 +168,76 @@ lint-web: ## Next.js の Lint と型チェック
 # =============================================================================
 
 .PHONY: lint-tf
-lint-tf: ## Terraform の整形チェックと検証
+lint-tf: ## Terraform の整形チェックと検証（infra/terraform・infra/bootstrap の両方）
 	@echo "==> lint-tf"
-	@if [ ! -d $(TF_DIR) ] || [ -z "$$(find $(TF_DIR) -name '*.tf' -print -quit 2>/dev/null)" ]; then \
-	  echo "  SKIP: $(TF_DIR) に *.tf が無い（IaC 未着手）"; \
-	else \
-	  terraform -chdir=$(TF_DIR) fmt -check -recursive -diff && \
-	  terraform -chdir=$(TF_DIR) init -backend=false -input=false > /dev/null && \
-	  terraform -chdir=$(TF_DIR) validate; \
-	fi
+	@for dir in $(TF_DIR) $(TF_BOOTSTRAP_DIR); do \
+	  if [ ! -d "$$dir" ] || [ -z "$$(find $$dir -name '*.tf' -print -quit 2>/dev/null)" ]; then \
+	    echo "  SKIP: $$dir に *.tf が無い（IaC 未着手）"; \
+	  else \
+	    echo "  -- $$dir --"; \
+	    terraform -chdir=$$dir fmt -check -recursive -diff && \
+	    terraform -chdir=$$dir init -backend=false -input=false > /dev/null && \
+	    terraform -chdir=$$dir validate || exit 1; \
+	  fi; \
+	done
+
+.PHONY: test-tf
+test-tf: ## Terraform の terraform test（infra/terraform・infra/bootstrap の両方。AWS API を呼ばない）
+	@echo "==> test-tf"
+	@for dir in $(TF_DIR) $(TF_BOOTSTRAP_DIR); do \
+	  if [ ! -d "$$dir" ] || [ -z "$$(find $$dir -name '*.tf' -print -quit 2>/dev/null)" ]; then \
+	    echo "  SKIP: $$dir に *.tf が無い（IaC 未着手）"; \
+	  else \
+	    echo "  -- $$dir --"; \
+	    terraform -chdir=$$dir init -backend=false -input=false > /dev/null && \
+	    terraform -chdir=$$dir test -no-color || exit 1; \
+	  fi; \
+	done
+
+# =============================================================================
+# Lambda 成果物のビルド + zip 化（docs/specs/infra-terraform.md AC-9-2〜9-5・
+# AC-9-8〜9-9）
+#
+# provided.al2023 は zip 直下の実行ファイル "bootstrap" を起動する
+# （AC-9-2・AC-9-8）。したがって zip の中身はディレクトリ接頭辞の無い単一の
+# エントリ "bootstrap" でなければならない。エントリ名を素の "bootstrap" に
+# するため、生成物のディレクトリへ cd してから zip 化する（cd せずに
+# パスを渡すと、zip エントリ名にディレクトリ接頭辞が付いてしまう）。
+#
+# zip CLI は devcontainer に無い（unzip / zipinfo / python3 -m zipfile は
+# 入っている）。devcontainer のリビルド無しで完結させるため、標準ライブラリ
+# だけで足りる `python3 -m zipfile -c` で zip を作る（ファイルの実行権限
+# ビットを保持することを実測済み）。
+#
+# 生成物は $(LAMBDA_ARTIFACT_DIR) 配下に置き、.gitignore で無視する
+# （AC-9-4・AC-9-9。コミットしない）。ビルドと zip 作成は Terraform の中で
+# 行わない（AC-4-5）。Terraform 側は成果物のパスを変数で受け取るだけである
+# （D-13）。
+# =============================================================================
+
+LAMBDA_ARTIFACT_DIR      := lambda-artifacts
+DOMAIN_API_BUILD_DIR      := $(LAMBDA_ARTIFACT_DIR)/domain-api
+DOMAIN_API_ZIP            := $(DOMAIN_API_BUILD_DIR)/bootstrap.zip
+KILLSWITCH_BUILD_DIR      := $(LAMBDA_ARTIFACT_DIR)/cloudfront-killswitch
+KILLSWITCH_ZIP            := $(KILLSWITCH_BUILD_DIR)/bootstrap.zip
+
+.PHONY: build-lambda-domain-api
+build-lambda-domain-api: ## ドメイン API Lambda を Linux 向けにクロスコンパイルし zip 化（AC-9-2・AC-9-3）
+	@echo "==> build-lambda-domain-api"
+	@mkdir -p $(DOMAIN_API_BUILD_DIR)
+	@cd $(API_DIR) && GOOS=linux GOARCH=amd64 go build -o ../../$(DOMAIN_API_BUILD_DIR)/bootstrap ./cmd/bootstrap
+	@rm -f $(DOMAIN_API_ZIP)
+	@cd $(DOMAIN_API_BUILD_DIR) && python3 -m zipfile -c bootstrap.zip bootstrap
+	@echo "  -> $(DOMAIN_API_ZIP)"
+
+.PHONY: build-lambda-cloudfront-killswitch
+build-lambda-cloudfront-killswitch: ## CloudFront 遮断 Lambda を Linux 向けにクロスコンパイルし zip 化（AC-9-8・AC-9-9）
+	@echo "==> build-lambda-cloudfront-killswitch"
+	@mkdir -p $(KILLSWITCH_BUILD_DIR)
+	@cd $(API_DIR) && GOOS=linux GOARCH=amd64 go build -o ../../$(KILLSWITCH_BUILD_DIR)/bootstrap ./cmd/cloudfront-killswitch
+	@rm -f $(KILLSWITCH_ZIP)
+	@cd $(KILLSWITCH_BUILD_DIR) && python3 -m zipfile -c bootstrap.zip bootstrap
+	@echo "  -> $(KILLSWITCH_ZIP)"
 
 # =============================================================================
 # .github/scripts のロジック
@@ -211,6 +273,8 @@ test-scripts: ## .github/scripts のチェッカを fixture で検査（apps/web
 	@bash .github/scripts/test-makefile-web.sh
 	@bash .github/scripts/test-apps-web-contract.sh "$(CURDIR)/$(WEB_DIR)"
 	@bash .github/scripts/test-gitleaks-allowlist.sh "$(CURDIR)/.gitleaks.toml"
+	@bash .github/scripts/test-ci-terraform-test-target.sh
+	@bash .github/scripts/test-makefile-lambda-package.sh
 
 # =============================================================================
 # .claude/hooks のロジック
