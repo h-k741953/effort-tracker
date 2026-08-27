@@ -27,6 +27,7 @@ crash.log
 crash.*.log
 *.tfvars
 *.tfvars.json
+*.tfbackend
 override.tf
 override.tf.json
 *_override.tf
@@ -49,6 +50,10 @@ terraform.rc
 vendor/
 go.work
 go.work.sum
+
+# Lambda 成果物（make build-lambda-domain-api / build-lambda-cloudfront-killswitch。
+# docs/specs/infra-terraform.md AC-9-4・AC-9-9）。ビルドのたびに作り直す。
+/lambda-artifacts/
 
 # =============================================================================
 # Node / Next.js

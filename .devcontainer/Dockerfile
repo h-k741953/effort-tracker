@@ -136,6 +136,10 @@ ENV PATH=/usr/local/go/bin:/home/node/go/bin:$PATH
 ARG PGX_VERSION=v5.10.0
 ARG AWS_LAMBDA_GO_VERSION=v1.54.0
 ARG GO_CMP_VERSION=v0.7.0
+ARG AWS_SDK_GO_V2_VERSION=v1.43.7
+ARG AWS_SDK_GO_V2_CONFIG_VERSION=v1.32.38
+ARG AWS_SDK_GO_V2_SSM_VERSION=v1.73.7
+ARG AWS_SDK_GO_V2_CLOUDFRONT_VERSION=v1.68.0
 RUN set -eux; \
     mkdir -p /tmp/gomodwarm; \
     cd /tmp/gomodwarm; \
@@ -143,9 +147,31 @@ RUN set -eux; \
     go get "github.com/jackc/pgx/v5@${PGX_VERSION}"; \
     go get "github.com/aws/aws-lambda-go@${AWS_LAMBDA_GO_VERSION}"; \
     go get "github.com/google/go-cmp@${GO_CMP_VERSION}"; \
+    go get "github.com/aws/aws-sdk-go-v2@${AWS_SDK_GO_V2_VERSION}"; \
+    go get "github.com/aws/aws-sdk-go-v2/config@${AWS_SDK_GO_V2_CONFIG_VERSION}"; \
+    go get "github.com/aws/aws-sdk-go-v2/service/ssm@${AWS_SDK_GO_V2_SSM_VERSION}"; \
+    go get "github.com/aws/aws-sdk-go-v2/service/cloudfront@${AWS_SDK_GO_V2_CLOUDFRONT_VERSION}"; \
     go mod download all; \
     cd /; \
     rm -rf /tmp/gomodwarm
+
+# --- Terraform provider の事前取得（filesystem mirror の温め） ---
+# 選択理由の持ち主: docs/specs/infra-terraform.md AC-1-13 / D-26。
+#
+# 手順: `terraform providers mirror` で、ビルド時（ファイアウォール未適用）に
+# provider（hashicorp/aws。.terraform.lock.hcl と揃えた版）一式をイメージへ焼き、
+# CLI 設定（$HOME/.terraformrc）で filesystem_mirror を既定にする。
+# `-platform=linux_amd64` を明示する。
+# ※ バージョンを上げるときは versions.tf の制約と同一 PR で
+#    この ARG も更新すること。
+ARG TF_AWS_PROVIDER_VERSION=6.61.0
+RUN set -eux; \
+    mkdir -p /home/node/.terraform-providers-mirror; \
+    mkdir -p /tmp/tfproviderwarm; \
+    printf 'terraform {\n  required_providers {\n    aws = {\n      source  = "hashicorp/aws"\n      version = "%s"\n    }\n  }\n}\n' "${TF_AWS_PROVIDER_VERSION}" > /tmp/tfproviderwarm/main.tf; \
+    terraform -chdir=/tmp/tfproviderwarm providers mirror -platform=linux_amd64 /home/node/.terraform-providers-mirror; \
+    rm -rf /tmp/tfproviderwarm; \
+    printf 'provider_installation {\n  filesystem_mirror {\n    path = "/home/node/.terraform-providers-mirror"\n  }\n}\n' > /home/node/.terraformrc
 
 # node ユーザー用の npm prefix を設定
 # ※ これがないと自動アップデート時に「no write permission to npm prefix」が発生する。
