@@ -53,28 +53,25 @@ func TestMaxOpenConnections_IsOne(t *testing.T) {
 // TestLoadConfig_SetsMaxOpenConnectionsToOne は AC-12-16 ③ (ii)(iii) を
 // 固定する。
 //
-// (ii): 必要な設定が揃った状態（TestLoadConfig_RequiresLookedUpSettings の
-// 「揃っている」ケースと同じ形。環境変数の探索を引数で差し替える）で設定を
-// 組み立て、その結果（Config の非公開フィールド maxConns）から標準
-// ライブラリだけで本数の指定を読み取り、値が 1 であることを見る
-// （AC-10-19 ③）。指定が載っていない（＝ゼロ値のまま）実装、および 1 以外が
-// 載る実装では Red になる。
+// (ii): 接続文字列が渡された状態（config_test.go の「渡っていればエラーに
+// ならない」ケースと同じ形）で設定を組み立て、その結果（Config の非公開
+// フィールド maxConns）から標準ライブラリだけで本数の指定を読み取り、値が
+// 1 であることを見る（AC-10-19 ③）。指定が載っていない（＝ゼロ値のまま）
+// 実装、および 1 以外が載る実装では Red になる。
 //
-// (iii): 探索は valueFor と同じく、どの名前に対しても同一のダミー値を
-// 返す（テストは環境変数の名前に依存しない形で書く＝AC-12-16 ① と同じ
-// 理由）。本数を環境変数から読む実装は、このダミー値（本数として解釈
-// できない不透明な文字列）に依存して 1 以外の値を組み立てるため Red に
-// なる（AC-10-19 ④）。
+// (iii): **2026-08-26 更新**: 接続文字列は `lookup` 経由ではなく引数として
+// 直接渡す形へ変わった（AC-10-12・infra-terraform AC-8-6。config_test.go を
+// 参照）ため、本数が接続文字列の値に依存しないことは、ダミーの接続文字列
+// （本数として解釈できない不透明な文字列）を渡しても maxConns が 1 になる
+// ことで示す（AC-10-19 ④「本数を環境変数から読まない」の帰結として、接続
+// 文字列からも読まないことを兼ねて確認する）。`lookup` はシグネチャを
+// 満たすためだけに渡し、本テストは呼び出しの有無・回数を期待値にしない。
 //
 // プロセスの環境変数を書き換えない（os.Setenv / t.Setenv を使わない。
 // AC-10-12 の「探索を引数で差し替えられる形」を観測する唯一の手段であり、
 // 書き換えると Red にならない＝AC-12-16 ①）。
 func TestLoadConfig_SetsMaxOpenConnectionsToOne(t *testing.T) {
-	rec := &recordingLookup{
-		value: func(name string) (string, bool) { return valueFor(name), true },
-	}
-
-	cfg, err := LoadConfig(rec.lookup)
+	cfg, err := LoadConfig(noopLookup, dummyConnectionString)
 	if err != nil {
 		t.Fatalf("必要な設定が揃っているのにエラーが返った: %v", err)
 	}
