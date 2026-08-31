@@ -1,10 +1,12 @@
 // Command bootstrap はドメイン API の Lambda のエントリポイントである
 // （docs/specs/workmonth-implementation-design.md AC-10-15・AC-10-18・D-12）。
 //
-// 持つのは AC-10-15 の5つだけである: ①環境変数の探索を渡した設定の組み立て、
-// ②接続の確立（プロセスの生存期間に1度だけ）、③全体の組み立ての呼び出し
-// （AC-10-16）、④イベントアダプタの生成（AC-10-17）、⑤Lambda ランタイムへの
-// ハンドラ登録。
+// 持つのは AC-10-15 の⓪〜⑤の6つだけである: ⓪Neon 接続文字列の解決（SSM からの
+// 取得。設定の組み立ての前段に置く。要求は docs/specs/infra-terraform.md AC-8 が
+// 持ち、ここへ重ねない＝ADR 0004。実体は secret_resolver.go）、①環境変数の探索を
+// 渡した設定の組み立て（⓪ が返した値を入力として受け取る）、②接続の確立
+// （プロセスの生存期間に1度だけ）、③全体の組み立ての呼び出し（AC-10-16）、
+// ④イベントアダプタの生成（AC-10-17）、⑤Lambda ランタイムへのハンドラ登録。
 //
 // 持たないもの: ルーティング・DI 配線の中身（driver/lambda＝AC-10-1・AC-10-2・
 // AC-10-16）／SQL 文・行 ↔ 集約の変換・業務ルール／`code`・ステータスの対応表
@@ -12,9 +14,12 @@
 // 要求ごとの処理（AC-10-8 ②）。
 //
 // import してよいのは driver/lambda・driver/persistence・標準ライブラリ・
-// aws-lambda-go と、SQL 実行インターフェースの型を名指すための adapter/gateway
-// だけである（AC-1-7）。usecase/* ・domain を直接 import しない。pgx も
-// import しない（AC-1-6・D-11）。
+// aws-lambda-go、SQL 実行インターフェースの型を名指すための adapter/gateway、
+// および Neon 接続文字列の解決に要る AWS SDK for Go v2 のパッケージだけである
+// （AC-1-7。AWS SDK 側の要求は docs/specs/infra-terraform.md AC-8-7・AC-8-10・
+// AC-8-11 が持ち、ここへ重ねない＝ADR 0004。本パッケージでは secret_resolver.go
+// が import する）。usecase/* ・domain を直接 import しない。pgx も import
+// しない（AC-1-6・D-11）。
 package main
 
 import (
