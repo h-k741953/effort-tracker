@@ -35,6 +35,17 @@ import "testing"
 //     本テストでは Green のまま残る）。
 // 上記の担保はレビューと、デプロイ後の経路の確認に留まる（AC-13-25）。
 
+// dummyLookupValue は探索がどの名前に対しても返す同一のダミー値である
+// （AC-12-16 ③(iii)）。**実値は書かない**（AC-10-3・docs/rules/security.md）。
+// 本数として解釈できない不透明な文字列にしてあるため、本数を探索から読む実装は
+// ここから 1 を得られない。
+const dummyLookupValue = "dummy-lookup-value-not-a-real-value"
+
+// constantLookup は「どの名前に対しても同一のダミー値を返す」探索である
+// （AC-12-16 ③(iii)）。名前を見ないので、テストは環境変数の名前に依存しない
+// （AC-12-10 と同じ形）。プロセスの環境変数は読まないし、書き換えもしない。
+func constantLookup(string) (string, bool) { return dummyLookupValue, true }
+
 // TestMaxOpenConnections_IsOne は AC-12-16 ③ (i) を固定する。
 //
 // 期待値の 1 はテスト側に直書きし、実装側の値どうしを突き合わせない
@@ -59,19 +70,25 @@ func TestMaxOpenConnections_IsOne(t *testing.T) {
 // 1 であることを見る（AC-10-19 ③）。指定が載っていない（＝ゼロ値のまま）
 // 実装、および 1 以外が載る実装では Red になる。
 //
-// (iii): **2026-08-26 更新**: 接続文字列は `lookup` 経由ではなく引数として
-// 直接渡す形へ変わった（AC-10-12・infra-terraform AC-8-6。config_test.go を
-// 参照）ため、本数が接続文字列の値に依存しないことは、ダミーの接続文字列
-// （本数として解釈できない不透明な文字列）を渡しても maxConns が 1 になる
-// ことで示す（AC-10-19 ④「本数を環境変数から読まない」の帰結として、接続
-// 文字列からも読まないことを兼ねて確認する）。`lookup` はシグネチャを
-// 満たすためだけに渡し、本テストは呼び出しの有無・回数を期待値にしない。
+// (iii): **探索が返す値に本数が依存しないこと**（AC-10-19 ④）を見る。
+// 条文（AC-12-16 ③(iii)）が求めるとおり、**どの名前に対しても同一のダミー値を
+// 返す探索**（constantLookup）を渡して設定を組み立て、それでも (ii) の読み取り
+// 値が 1 であることを見る。**本数を環境変数から読む実装では、ダミー値から 1 が
+// 得られず Red になる**。
+//
+// 探索は名前を見ないため、**テストは環境変数の名前に依存しない**（名前そのもの
+// を期待値にしない＝AC-12-10 と同じ形）。ダミー値は本数として解釈できない
+// 不透明な文字列であり、**実値は書かない**（AC-10-3・docs/rules/security.md）。
+//
+// 「何も見つけられない」探索（config_test.go の noopLookup）は本 run では使わ
+// ない。ok=false では本数を探索から読む実装がその分岐に入らず、既定の 1 へ落ちて
+// Green になるため、条文が要求する Red が立たない。
 //
 // プロセスの環境変数を書き換えない（os.Setenv / t.Setenv を使わない。
 // AC-10-12 の「探索を引数で差し替えられる形」を観測する唯一の手段であり、
 // 書き換えると Red にならない＝AC-12-16 ①）。
 func TestLoadConfig_SetsMaxOpenConnectionsToOne(t *testing.T) {
-	cfg, err := LoadConfig(noopLookup, dummyConnectionString)
+	cfg, err := LoadConfig(constantLookup, dummyConnectionString)
 	if err != nil {
 		t.Fatalf("必要な設定が揃っているのにエラーが返った: %v", err)
 	}
