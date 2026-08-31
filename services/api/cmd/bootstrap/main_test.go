@@ -1,27 +1,59 @@
 package main
 
 // 検証対象: docs/specs/workmonth-implementation-design.md AC-12-17 ③
-// （AC-10-18「起動手順の取り出し」。責務は AC-10-15、置き場所は D-12）。
+// （AC-10-18「起動手順の取り出し」。責務は AC-10-15、置き場所は D-12。
+// **2026-08-26 追記＝`docs/specs/infra-terraform.md` AC-8-8**: Run が受け取る
+// 引数は AC-10-18 の定める4つ（(0) 接続文字列の解決・(i) 環境変数の探索・
+// (ii) 接続の確立・(iii) ランタイムへの登録）へ拡げる）。
 //
-// 差し替えた探索・接続・登録（いずれも手書きで、呼び出しと引数を記録するだけの
-// もの）を渡し、次の6つを固定する。
+// **2026-08-27 是正（人間承認）**:
+//   - (0) の署名は AC-10-18 が明記するとおり「`infra-terraform.md` AC-8-11 が
+//     定める SecretFetcher 越しの取得と同じ形」。AC-8-11 ② のメソッドは
+//     「パラメータ名を受け取り、復号済みの値を返し、失敗を返すもの」であり、
+//     既存の `ResolveConnectionString(ctx, fetcher, parameterName)` /
+//     `SecretFetcher.FetchSecret(ctx, name)` と同じ形に揃える。したがって
+//     (0) の型は `func(ctx context.Context, parameterName string) (string, error)`
+//     とする（`fetcher` は main() 側で束縛済みという想定）。
+//   - パラメータ名（AC-8-1「Lambda の環境変数が持つのは SSM パラメータの
+//     名前」）は、Run の内側で (i) 環境変数の探索（`lookup`）を使って得る。
+//     これにより `lookup` の死に引数を解消し、環境変数の探索が本テストから
+//     観測できる。
 //
-//	(i)   正常系: 接続がちょうど1回・登録がちょうど1回呼ばれ、接続が登録より
-//	      先であること（記録の順序で確認する）。
-//	(ii)  必要な設定を返さない探索では、接続も登録も1回も呼ばれずにエラーが
-//	      返ること。
-//	(iii) 接続がエラーを返す場合は、登録が1回も呼ばれずにエラーが返ること
-//	      （(i) と対にして置く）。
-//	(iv)  登録に渡された値へ手で組んだイベントを与えると契約の形の応答が
-//	      返ること（＝AC-10-16 と AC-10-17 が結線されている）。
-//	(v)   返るエラーの文言に、探索が返した値がそのまま含まれないこと
-//	      （AC-10-13 ③・docs/rules/security.md）。
-//	(vi)  プロセスの環境変数を書き換えない（os.Setenv / t.Setenv を使わない。
-//	      AC-12-16 ① と同じ理由。書き換えないと (i)(ii) が Red にならない）。
+// 差し替えた解決・探索・接続・登録（いずれも手書きで、呼び出しと引数を
+// 記録するだけのもの）を渡し、次を固定する。
+//
+//	(1) 正常系: 探索がパラメータ名を返し、それがそのまま解決へ渡り、解決が
+//	    ちょうど1回・接続がちょうど1回・登録がちょうど1回呼ばれ、解決 →
+//	    接続 → 登録の順であること（記録の順序で確認する。AC-10-18「順序と
+//	    回数を固定する」）。
+//	(2) 接続文字列の解決に失敗したら、接続も登録も1回も呼ばれずにエラーが
+//	    返ること（AC-10-18・infra-terraform AC-8-5「取得または復号に失敗
+//	    したら、ランタイムへハンドラを登録せずにエラーで終える」）。
+//	(3) 解決が失敗した経路で、返るエラーの文言に、解決しようとした値が
+//	    そのまま含まれないこと（AC-10-13 ③・docs/rules/security.md）。
+//	(4) 解決が成功しても、その値が空なら（設定の組み立てが「必要な設定が
+//	    未設定または空」と判定し）接続も登録も行われずエラーになること
+//	    （AC-10-12 は変わらず適用される）。
+//	(5) 接続がエラーを返す場合は、登録が1回も呼ばれずにエラーが返り、
+//	    その文言に解決した値がそのまま含まれないこと（(1) と対にして
+//	    置く。対にしないと「常にエラーを返す」実装が Green になる）。
+//	(6) 登録に渡された値へ手で組んだイベントを与えると契約の形の応答が
+//	    返ること（＝AC-10-16 と AC-10-17 が結線されている）。
+//	(7) プロセスの環境変数を書き換えない（os.Setenv / t.Setenv を使わない。
+//	    AC-12-16 ① と同じ理由。書き換えないと (1)(2) が Red にならない）。
+//	(8) パラメータ名の環境変数が未設定・空のときは、解決・接続・登録の
+//	    いずれも呼ばれずにエラーで終えること（AC-8-5・既定値へ黙って
+//	    落ちない。2026-08-27 是正で追加）。
+//	(9) 探索で得た値（＝SSM パラメータ名）が、返るエラーの文言に含まれ
+//	    ないこと（infra-terraform.md AC-8-9。AC-12-16 ①(iii) が
+//	    driver/persistence 側に置いていた同種の検査の移設先。2026-08-27
+//	    是正で追加）。
 //
 // テストは環境変数の名前に依存しない（AC-10-12 が名前を固定していない）。
 // 差し替えた探索は要求された名前を記録するだけで、名前そのものを期待値に
-// しない（AC-12-16 ① と同じ形）。
+// しない（AC-12-16 ① と同じ形）。**探索が返す値（＝パラメータ名）は本テスト
+// が制御するダミー値であり、これを期待値にすることは「環境変数の名前を
+// 期待値にする」ことと同義ではない**（探索のキーではなく探索の戻り値）。
 //
 // テストは pgx を直接 import しない（AC-12-6・D-11）。手書きの偽 pgx も
 // 作らない（AC-12-16・AC-13-23 ②）。本パッケージが import する
@@ -30,8 +62,11 @@ package main
 //
 // 担保しないもの（AC-13-24）: ①接続がコールドスタート時に1度だけ確立され
 // 再利用されること（観測するのは1回の起動手順の中での回数と順序まで）、
-// ③main() に残った部分（実際の探索・接続・登録を渡していること）、
-// ④Lambda ランタイムそのもの、⑤SQL 文・トランザクション・実接続。
+// ③main() に残った部分（実際の解決・探索・接続・登録を渡していること）、
+// ④Lambda ランタイムそのもの、⑤SQL 文・トランザクション・実接続、
+// ⑥接続文字列の解決の中身（SSM の呼び出し。要求本文は
+// docs/specs/infra-terraform.md AC-8 が持ち、テストは secret_resolver_test.go
+// に既にある）。
 
 import (
 	"context"
@@ -50,23 +85,69 @@ import (
 	"github.com/h-k741953/effort-tracker/services/api/internal/driver/persistence"
 )
 
-// dummyLookupValue は差し替えた探索が返すダミー値。**実在しうる接続文字列を
-// 書かない**（AC-12-17 ③ (v)・docs/rules/security.md）。
-const dummyLookupValue = "dummy-setting-value-not-a-real-connection-string"
+// dummyLookupValue は差し替えた探索（AC-10-18 (i)）が返すダミー値。Run の
+// 内側でパラメータ名（AC-8-1）として解決（(0)）へそのまま渡る想定の値。
+// **実在しうる接続文字列やパラメータ名を書かない**（AC-12-17 ③ (v)・
+// docs/rules/security.md）。
+const dummyLookupValue = "dummy-lookup-value-not-a-real-parameter-name"
+
+// dummyResolvedConnectionString は差し替えた解決（AC-10-18 (0)）が返す
+// ダミー値。**実在しうる接続文字列を書かない**（同上）。
+const dummyResolvedConnectionString = "dummy-resolved-value-not-a-real-connection-string"
 
 // ---- 手書きのテストダブル（モックライブラリを入れない＝ADR 0007） ----------
 
-// startupRecorder は探索・接続・登録の呼び出しを記録する。
+// startupRecorder は解決・探索・接続・登録の呼び出しを記録する。
 type startupRecorder struct {
-	lookupNames   []string // 要求された環境変数の名前（名前は期待値にしない）
-	order         []string // "connect" / "register" の呼び出し順
-	connectCalls  int
-	registerCalls int
-	registered    lambda.EventHandler
+	lookupNames       []string // 要求された環境変数の名前（名前は期待値にしない）
+	order             []string // "resolve" / "connect" / "register" の呼び出し順
+	resolveCalls      int
+	resolveParamNames []string // resolve へ渡ったパラメータ名（lookup が返した値がそのまま渡ることの検査に使う）
+	connectCalls      int
+	registerCalls     int
+	registered        lambda.EventHandler
 }
 
-// lookupReturning は「必要な設定が揃っている」探索。名前によらず同じダミー値を
-// 返す（探索する名前を仕様が固定していないため＝AC-10-12）。
+// resolveReturning は「接続文字列の解決」の差し替え（AC-10-18 (0)。
+// infra-terraform AC-8-11 ②の形＝パラメータ名を受け取り、復号済みの値を
+// 返す）。成功し、渡した値を返す。
+func (r *startupRecorder) resolveReturning(value string) func(context.Context, string) (string, error) {
+	return func(_ context.Context, parameterName string) (string, error) {
+		r.resolveCalls++
+		r.order = append(r.order, "resolve")
+		r.resolveParamNames = append(r.resolveParamNames, parameterName)
+		return value, nil
+	}
+}
+
+// resolveFailing は「接続文字列の解決」が失敗する差し替え。
+func (r *startupRecorder) resolveFailing(err error) func(context.Context, string) (string, error) {
+	return func(_ context.Context, parameterName string) (string, error) {
+		r.resolveCalls++
+		r.order = append(r.order, "resolve")
+		r.resolveParamNames = append(r.resolveParamNames, parameterName)
+		return "", err
+	}
+}
+
+// resolveFailingButReturningValue は「値は返すが、失敗と答える」解決。
+// エラーの文言が解決しようとした値を漏らさないこと（AC-10-13 ③）を、
+// 失敗する経路でも実際に観測できる形にするために要る（config_test.go の
+// `lookupUnsetButReturning` と同じ理由。値を一度も返させない形では、
+// 値が漏れる実装があっても検査が空回りする）。
+func (r *startupRecorder) resolveFailingButReturningValue(value string, err error) func(context.Context, string) (string, error) {
+	return func(_ context.Context, parameterName string) (string, error) {
+		r.resolveCalls++
+		r.order = append(r.order, "resolve")
+		r.resolveParamNames = append(r.resolveParamNames, parameterName)
+		return value, err
+	}
+}
+
+// lookupReturning は AC-10-18 (i) の差し替え。名前によらず同じダミー値を
+// 返す（探索する名前を仕様が固定していないため＝AC-10-12）。この値は
+// Run の内側でパラメータ名（AC-8-1）として (0) の解決へそのまま渡る想定
+// （2026-08-27 是正）。
 func (r *startupRecorder) lookupReturning(value string) func(name string) (string, bool) {
 	return func(name string) (string, bool) {
 		r.lookupNames = append(r.lookupNames, name)
@@ -74,25 +155,12 @@ func (r *startupRecorder) lookupReturning(value string) func(name string) (strin
 	}
 }
 
-// lookupNothing は「必要な設定を返さない」探索。
-func (r *startupRecorder) lookupNothing() func(name string) (string, bool) {
-	return func(name string) (string, bool) {
-		r.lookupNames = append(r.lookupNames, name)
-		return "", false
-	}
-}
+// lookupNotFound は「未設定」を表す探索の差し替え（AC-8-5 相当。名前に
+// よらず見つからない）。
+func lookupNotFound(string) (string, bool) { return "", false }
 
-// lookupUnsetButReturning は「値は返すが、未設定（ok=false）と答える」探索。
-// 設定の組み立ては失敗しつつ、探索は値を返した状態になる。(v)（返るエラーの
-// 文言に探索が返した値が含まれない）を、設定の組み立てに失敗する経路でも
-// **実際に観測できる形**にするために要る（レビュー往復1 W-2。空文字を返す探索の
-// ままでは、探索が値を一度も返さないため文言の検査が失敗し得なかった）。
-func (r *startupRecorder) lookupUnsetButReturning(value string) func(name string) (string, bool) {
-	return func(name string) (string, bool) {
-		r.lookupNames = append(r.lookupNames, name)
-		return value, false
-	}
-}
+// lookupFoundButEmpty は「設定はされているが値が空」を表す探索の差し替え。
+func lookupFoundButEmpty(string) (string, bool) { return "", true }
 
 // connectReturning は接続の確立の差し替え。
 func (r *startupRecorder) connectReturning(db gateway.DB, err error) func(context.Context, persistence.Config) (gateway.DB, error) {
@@ -193,13 +261,18 @@ func (db *bootDB) Begin(_ context.Context) (gateway.Tx, error) {
 
 var _ gateway.DB = (*bootDB)(nil)
 
-// ---- (i) 正常系 -------------------------------------------------------------
+// ---- (1) 正常系 --------------------------------------------------------------
 
-// TestRun_ConnectsOnceAndRegistersOnceInOrder は AC-12-17 ③ (i)。
-func TestRun_ConnectsOnceAndRegistersOnceInOrder(t *testing.T) {
+// TestRun_ResolvesOnceBeforeConnectAndRegistersOnceInOrder は AC-12-17 ③ の
+// 正常系。**解決がちょうど1回**であること（AC-10-15 ⓪①・AC-10-18「順序と
+// 回数を固定する」）。あわせて、**探索が返した値（パラメータ名）がそのまま
+// 解決へ渡ること**（AC-8-1・AC-10-18 (i) が (0) の引数を作る＝2026-08-27
+// 是正）を固定する。
+func TestRun_ResolvesOnceBeforeConnectAndRegistersOnceInOrder(t *testing.T) {
 	rec := &startupRecorder{}
 
 	err := Run(
+		rec.resolveReturning(dummyResolvedConnectionString),
 		rec.lookupReturning(dummyLookupValue),
 		rec.connectReturning(&bootDB{}, nil),
 		rec.register,
@@ -208,56 +281,153 @@ func TestRun_ConnectsOnceAndRegistersOnceInOrder(t *testing.T) {
 		t.Fatalf("Run がエラーを返した: %v", err)
 	}
 
+	if rec.resolveCalls != 1 {
+		t.Errorf("接続文字列の解決の呼び出し回数 = %d, want 1（ちょうど1回＝AC-10-18）", rec.resolveCalls)
+	}
 	if rec.connectCalls != 1 {
 		t.Errorf("接続の確立の呼び出し回数 = %d, want 1（ちょうど1回＝AC-10-18）", rec.connectCalls)
 	}
 	if rec.registerCalls != 1 {
 		t.Errorf("登録の呼び出し回数 = %d, want 1（ちょうど1回＝AC-10-18）", rec.registerCalls)
 	}
-	if diff := cmp.Diff([]string{"connect", "register"}, rec.order); diff != "" {
-		t.Errorf("呼び出し順が不一致 (-want +got):\n%s（接続が登録より先＝AC-10-18）", diff)
+	if diff := cmp.Diff([]string{"resolve", "connect", "register"}, rec.order); diff != "" {
+		t.Errorf("呼び出し順が不一致 (-want +got):\n%s（解決 → 接続 → 登録の順＝AC-10-18）", diff)
+	}
+	if diff := cmp.Diff([]string{dummyLookupValue}, rec.resolveParamNames); diff != "" {
+		t.Errorf("解決へ渡ったパラメータ名が不一致 (-want +got):\n%s（探索が返した値がそのまま渡ること＝AC-8-1・AC-10-18 (i)）", diff)
 	}
 	if rec.registered == nil {
 		t.Errorf("登録に値が渡っていない（AC-10-17 が返した形を登録する＝AC-10-18）")
 	}
 }
 
-// ---- (ii) 必要な設定を返さない探索 -------------------------------------------
+// ---- (2)(3) 接続文字列の解決に失敗する場合 ------------------------------------
 
-// TestRun_MissingSetting_SkipsConnectAndRegister は AC-12-17 ③ (ii)。
-func TestRun_MissingSetting_SkipsConnectAndRegister(t *testing.T) {
+// errResolveFailed は差し替えた解決が返す番兵（テスト専用）。
+var errResolveFailed = errors.New("secret_resolver: 接続文字列の解決に失敗した（テスト用の番兵）")
+
+// TestRun_ResolveFails_SkipsConnectAndRegister は AC-12-17 ③ (2)。
+// infra-terraform AC-8-5「取得または復号に失敗したら、ランタイムへハンドラを
+// 登録せずにエラーで終える」を固定する。
+func TestRun_ResolveFails_SkipsConnectAndRegister(t *testing.T) {
 	rec := &startupRecorder{}
 
 	err := Run(
-		rec.lookupNothing(),
+		rec.resolveFailing(errResolveFailed),
+		rec.lookupReturning(dummyLookupValue),
 		rec.connectReturning(&bootDB{}, nil),
 		rec.register,
 	)
 	if err == nil {
-		t.Fatalf("Run がエラーを返さなかった（必要な設定が未設定なら既定値へ黙って落ちない＝AC-10-12・AC-10-18）")
+		t.Fatalf("Run がエラーを返さなかった（接続文字列の解決に失敗したら既定値へ黙って落ちない＝infra-terraform AC-8-5）")
+	}
+	if !errors.Is(err, errResolveFailed) {
+		t.Errorf("errors.Is で解決のエラーへ辿れない: %v（ラップするなら %%w）", err)
 	}
 
+	if rec.resolveCalls != 1 {
+		t.Errorf("接続文字列の解決の呼び出し回数 = %d, want 1", rec.resolveCalls)
+	}
 	if rec.connectCalls != 0 {
-		t.Errorf("接続の確立の呼び出し回数 = %d, want 0（設定の組み立てに失敗したら接続を試みない）", rec.connectCalls)
+		t.Errorf("接続の確立の呼び出し回数 = %d, want 0（解決に失敗したら接続を試みない＝infra-terraform AC-8-5）", rec.connectCalls)
 	}
 	if rec.registerCalls != 0 {
-		t.Errorf("登録の呼び出し回数 = %d, want 0（要求を受け付けてから失敗させない＝AC-10-18）", rec.registerCalls)
-	}
-	if len(rec.lookupNames) == 0 {
-		t.Errorf("差し替えた探索が1度も呼ばれていない（プロセスの環境変数を暗黙に読んでいる疑い＝AC-10-12・AC-10-18 (i)）")
+		t.Errorf("登録の呼び出し回数 = %d, want 0（要求を受け付けてから失敗させない＝infra-terraform AC-8-5）", rec.registerCalls)
 	}
 }
 
-// ---- (iii)(v) 接続がエラーを返す場合 -----------------------------------------
+// TestRun_ResolveFails_ErrorDoesNotLeakResolvedValue は AC-12-17 ③ (3)。
+// 返るエラーの文言に、解決しようとした値がそのまま含まれないこと
+// （AC-10-13 ③・docs/rules/security.md）。
+//
+// **解決には値を返させたうえで失敗と答えさせる**（config_test.go の
+// `lookupUnsetButReturning` と同じ理由。値を一度も返させない形では、
+// 値が漏れる実装があっても検査が空回りする）。
+func TestRun_ResolveFails_ErrorDoesNotLeakResolvedValue(t *testing.T) {
+	rec := &startupRecorder{}
+
+	err := Run(
+		rec.resolveFailingButReturningValue(dummyResolvedConnectionString, errResolveFailed),
+		rec.lookupReturning(dummyLookupValue),
+		rec.connectReturning(&bootDB{}, nil),
+		rec.register,
+	)
+	if err == nil {
+		t.Fatalf("Run がエラーを返さなかった（解決に失敗したら既定値へ黙って落ちない）")
+	}
+	if rec.resolveCalls != 1 {
+		t.Errorf("接続文字列の解決の呼び出し回数 = %d, want 1（この経路を実際に通ったことの確認。呼ばれずに常にエラーを返すだけの実装を排除する）", rec.resolveCalls)
+	}
+	if rec.connectCalls != 0 || rec.registerCalls != 0 {
+		t.Errorf("接続 %d 回・登録 %d 回, want 0 回・0 回", rec.connectCalls, rec.registerCalls)
+	}
+	if strings.Contains(err.Error(), dummyResolvedConnectionString) {
+		t.Errorf("エラーの文言に解決しようとした値が含まれている（AC-10-13 ③・docs/rules/security.md）: %v", err)
+	}
+}
+
+// TestRun_ResolveFails_ErrorDoesNotLeakLookedUpParameterName は AC-12-17 ③
+// (9)（2026-08-27 是正・人間承認で追加）。返るエラーの文言に、**探索で
+// 得た値（＝SSM パラメータ名）**がそのまま含まれないこと（
+// infra-terraform.md AC-8-9・docs/rules/security.md）。
+//
+// AC-10-13 ③ が固定するのは「解決した値（接続文字列）」の非漏洩であり、
+// 本テストが固定するのはそれとは別の値（＝探索で得てパラメータ名として
+// 解決へ渡した値）の非漏洩である。対にしないと、探索で得た値をそのまま
+// エラー文言へ埋め込む実装が Green のまま残る。
+func TestRun_ResolveFails_ErrorDoesNotLeakLookedUpParameterName(t *testing.T) {
+	rec := &startupRecorder{}
+
+	err := Run(
+		rec.resolveFailing(errResolveFailed),
+		rec.lookupReturning(dummyLookupValue),
+		rec.connectReturning(&bootDB{}, nil),
+		rec.register,
+	)
+	if err == nil {
+		t.Fatalf("Run がエラーを返さなかった")
+	}
+	if rec.resolveCalls != 1 {
+		t.Errorf("接続文字列の解決の呼び出し回数 = %d, want 1（この経路を実際に通ったことの確認。呼ばれずに常にエラーを返すだけの実装を排除する）", rec.resolveCalls)
+	}
+	if strings.Contains(err.Error(), dummyLookupValue) {
+		t.Errorf("エラーの文言に、探索で得た値（SSM パラメータ名）が含まれている（infra-terraform.md AC-8-9）: %v", err)
+	}
+}
+
+// ---- (4) 解決は成功したが値が空の場合 -----------------------------------------
+
+// TestRun_ResolvedValueEmpty_SkipsConnectAndRegister は、解決自体は成功して
+// も値が空なら、設定の組み立て（AC-10-12）が「必要な設定が未設定または空」
+// と判定し、接続・登録を行わずエラーになることを固定する。
+func TestRun_ResolvedValueEmpty_SkipsConnectAndRegister(t *testing.T) {
+	rec := &startupRecorder{}
+
+	err := Run(
+		rec.resolveReturning(""),
+		rec.lookupReturning(dummyLookupValue),
+		rec.connectReturning(&bootDB{}, nil),
+		rec.register,
+	)
+	if err == nil {
+		t.Fatalf("Run がエラーを返さなかった（解決した値が空なら既定値へ黙って落ちない＝AC-10-12）")
+	}
+	if rec.connectCalls != 0 || rec.registerCalls != 0 {
+		t.Errorf("接続 %d 回・登録 %d 回, want 0 回・0 回", rec.connectCalls, rec.registerCalls)
+	}
+}
+
+// ---- (5) 接続がエラーを返す場合 -----------------------------------------------
 
 // errConnectFailed は差し替えた接続が返す番兵（テスト専用）。
 var errConnectFailed = errors.New("bootDB: 接続の確立に失敗した（テスト用の番兵）")
 
-// TestRun_ConnectFails_SkipsRegister は AC-12-17 ③ (iii)(v)。
+// TestRun_ConnectFails_SkipsRegister は AC-12-17 ③ (5)。
 func TestRun_ConnectFails_SkipsRegister(t *testing.T) {
 	rec := &startupRecorder{}
 
 	err := Run(
+		rec.resolveReturning(dummyResolvedConnectionString),
 		rec.lookupReturning(dummyLookupValue),
 		rec.connectReturning(nil, errConnectFailed),
 		rec.register,
@@ -269,6 +439,9 @@ func TestRun_ConnectFails_SkipsRegister(t *testing.T) {
 		t.Errorf("errors.Is で接続のエラーへ辿れない: %v（ラップするなら %%w＝AC-11-9・AC-10-13 ②）", err)
 	}
 
+	if rec.resolveCalls != 1 {
+		t.Errorf("接続文字列の解決の呼び出し回数 = %d, want 1", rec.resolveCalls)
+	}
 	if rec.connectCalls != 1 {
 		t.Errorf("接続の確立の呼び出し回数 = %d, want 1", rec.connectCalls)
 	}
@@ -276,64 +449,62 @@ func TestRun_ConnectFails_SkipsRegister(t *testing.T) {
 		t.Errorf("登録の呼び出し回数 = %d, want 0（接続に失敗したら登録しない＝AC-10-18）", rec.registerCalls)
 	}
 
-	// (v) 返るエラーの文言に、探索が返した値がそのまま含まれない。
-	if strings.Contains(err.Error(), dummyLookupValue) {
-		t.Errorf("エラーの文言に探索が返した値が含まれている（AC-10-13 ③・docs/rules/security.md）: %v", err)
+	// 返るエラーの文言に、解決した接続文字列がそのまま含まれない。
+	if strings.Contains(err.Error(), dummyResolvedConnectionString) {
+		t.Errorf("エラーの文言に解決した接続文字列が含まれている（AC-10-13 ③・docs/rules/security.md）: %v", err)
 	}
 }
 
-// TestRun_EmptySetting_SkipsConnectAndRegister は (ii) を、空文字を返す探索
-// （ok=true）でも固定する。「未設定または空」は同じく設定が揃わない扱いになる
-// （AC-10-12。既定値へ黙って落ちない）。
-func TestRun_EmptySetting_SkipsConnectAndRegister(t *testing.T) {
-	rec := &startupRecorder{}
+// ---- (8) パラメータ名の環境変数が未設定・空の場合 -----------------------------
 
-	err := Run(
-		rec.lookupReturning(""),
-		rec.connectReturning(&bootDB{}, nil),
-		rec.register,
-	)
-	if err == nil {
-		t.Fatalf("Run がエラーを返さなかった（空の設定は未設定と同じく扱う＝AC-10-12）")
+// TestRun_ParameterNameLookupUnsetOrEmpty_SkipsResolveConnectAndRegister は
+// AC-12-17 ③ (8)（2026-08-27 是正・人間承認で追加）。パラメータ名の環境
+// 変数が未設定・空のときは、解決・接続・登録のいずれも呼ばれずにエラーで
+// 終えること（AC-8-1・AC-8-5 と同じ思想。既定値へ黙って落ちない）。
+func TestRun_ParameterNameLookupUnsetOrEmpty_SkipsResolveConnectAndRegister(t *testing.T) {
+	tests := []struct {
+		name   string
+		lookup func(name string) (string, bool)
+	}{
+		{
+			name:   "未設定（見つからない）",
+			lookup: lookupNotFound,
+		},
+		{
+			name:   "設定されているが値が空",
+			lookup: lookupFoundButEmpty,
+		},
 	}
-	if rec.connectCalls != 0 || rec.registerCalls != 0 {
-		t.Errorf("接続 %d 回・登録 %d 回, want 0 回・0 回", rec.connectCalls, rec.registerCalls)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := &startupRecorder{}
+
+			err := Run(
+				rec.resolveReturning(dummyResolvedConnectionString),
+				tt.lookup,
+				rec.connectReturning(&bootDB{}, nil),
+				rec.register,
+			)
+			if err == nil {
+				t.Fatalf("Run がエラーを返さなかった（パラメータ名が未設定・空なら既定値へ黙って落ちない）")
+			}
+			if rec.resolveCalls != 0 {
+				t.Errorf("接続文字列の解決の呼び出し回数 = %d, want 0（パラメータ名が無ければ解決を試みない）", rec.resolveCalls)
+			}
+			if rec.connectCalls != 0 {
+				t.Errorf("接続の確立の呼び出し回数 = %d, want 0", rec.connectCalls)
+			}
+			if rec.registerCalls != 0 {
+				t.Errorf("登録の呼び出し回数 = %d, want 0", rec.registerCalls)
+			}
+		})
 	}
 }
 
-// TestRun_MissingSetting_ErrorDoesNotLeakLookupValue は (v) を、設定の組み立てに
-// 失敗する経路でも固定する。
-//
-// **探索には値を返させたうえで未設定（ok=false）と答えさせる**（レビュー往復1
-// W-2）。空文字を返す探索のままでは、探索が dummyLookupValue を一度も返さない
-// ため、実装が何をしても文言の検査が失敗し得なかった（担保できていない事柄を
-// 担保していると書いた状態だった）。この形なら LoadConfig は失敗しつつ、探索は
-// 値を返した状態になり、検査が実際に効く。
-func TestRun_MissingSetting_ErrorDoesNotLeakLookupValue(t *testing.T) {
-	rec := &startupRecorder{}
+// ---- (6) 登録に渡された値へイベントを与える -----------------------------------
 
-	err := Run(
-		rec.lookupUnsetButReturning(dummyLookupValue),
-		rec.connectReturning(&bootDB{}, nil),
-		rec.register,
-	)
-	if err == nil {
-		t.Fatalf("Run がエラーを返さなかった（未設定なら既定値へ黙って落ちない＝AC-10-12）")
-	}
-	if rec.connectCalls != 0 || rec.registerCalls != 0 {
-		t.Errorf("接続 %d 回・登録 %d 回, want 0 回・0 回", rec.connectCalls, rec.registerCalls)
-	}
-	if len(rec.lookupNames) == 0 {
-		t.Fatalf("差し替えた探索が1度も呼ばれていない（値を返させた検査が空回りする）")
-	}
-	if strings.Contains(err.Error(), dummyLookupValue) {
-		t.Errorf("エラーの文言に探索が返した値が含まれている（AC-10-13 ③・docs/rules/security.md）: %v", err)
-	}
-}
-
-// ---- (iv) 登録に渡された値へイベントを与える ---------------------------------
-
-// TestRun_RegisteredHandlerAnswersContractShape は AC-12-17 ③ (iv)。
+// TestRun_RegisteredHandlerAnswersContractShape は AC-12-17 ③ (6)。
 // 登録に渡された値へ手で組んだイベント（AC-12-17 ② と同じ形）を与えると、
 // 契約の形の応答が返る（＝AC-10-16 と AC-10-17 が結線されている）。
 // Fake が行を返すよう仕込んだ E-1 を置く（AC-12-15 ④ (iii) と同じ形）。
@@ -353,7 +524,12 @@ func TestRun_RegisteredHandlerAnswersContractShape(t *testing.T) {
 	// 稼働実績1件（年・月・日・稼働時間（時・分）の5列）。
 	db.pushQuery(newBootRows([]any{2026, 7, 3, 8, 0}))
 
-	if err := Run(rec.lookupReturning(dummyLookupValue), rec.connectReturning(db, nil), rec.register); err != nil {
+	if err := Run(
+		rec.resolveReturning(dummyResolvedConnectionString),
+		rec.lookupReturning(dummyLookupValue),
+		rec.connectReturning(db, nil),
+		rec.register,
+	); err != nil {
 		t.Fatalf("Run がエラーを返した: %v", err)
 	}
 	if rec.registered == nil {
