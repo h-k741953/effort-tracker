@@ -225,6 +225,9 @@ KILLSWITCH_ZIP            := $(KILLSWITCH_BUILD_DIR)/bootstrap.zip
 build-lambda-domain-api: ## ドメイン API Lambda を Linux 向けにクロスコンパイルし zip 化（AC-9-2・AC-9-3）
 	@echo "==> build-lambda-domain-api"
 	@mkdir -p $(DOMAIN_API_BUILD_DIR)
+	@# go build -o は出力先に既存ファイルがあるとその権限モードを引き継ぐため、
+	@# 事前に削除して「実行ビット付きの新規ファイル」を毎回保証する。
+	@rm -f $(DOMAIN_API_BUILD_DIR)/bootstrap
 	@cd $(API_DIR) && GOOS=linux GOARCH=amd64 go build -o ../../$(DOMAIN_API_BUILD_DIR)/bootstrap ./cmd/bootstrap
 	@rm -f $(DOMAIN_API_ZIP)
 	@cd $(DOMAIN_API_BUILD_DIR) && python3 -m zipfile -c bootstrap.zip bootstrap
@@ -234,6 +237,9 @@ build-lambda-domain-api: ## ドメイン API Lambda を Linux 向けにクロス
 build-lambda-cloudfront-killswitch: ## CloudFront 遮断 Lambda を Linux 向けにクロスコンパイルし zip 化（AC-9-8・AC-9-9）
 	@echo "==> build-lambda-cloudfront-killswitch"
 	@mkdir -p $(KILLSWITCH_BUILD_DIR)
+	@# go build -o は出力先に既存ファイルがあるとその権限モードを引き継ぐため、
+	@# 事前に削除して「実行ビット付きの新規ファイル」を毎回保証する。
+	@rm -f $(KILLSWITCH_BUILD_DIR)/bootstrap
 	@cd $(API_DIR) && GOOS=linux GOARCH=amd64 go build -o ../../$(KILLSWITCH_BUILD_DIR)/bootstrap ./cmd/cloudfront-killswitch
 	@rm -f $(KILLSWITCH_ZIP)
 	@cd $(KILLSWITCH_BUILD_DIR) && python3 -m zipfile -c bootstrap.zip bootstrap
