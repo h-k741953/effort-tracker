@@ -1,8 +1,8 @@
 # AC-10（docs/specs/infra-terraform.md）の検査。
 #
-# 期待値のうち docs/rules/cost-guardrails.md が持つもの（同時実行数・ログ保持日数・
-# Budgets の本数と閾値・authorization_type）は同ファイルを読んで書いている
-# （AC-10-4）。値を infra 側へ二重に定義しない（AC-5-6）。
+# 本ファイルが検査するのは、SNS トピックポリシーに budgets.amazonaws.com からの
+# SNS:Publish を許す文があり、その対象がこの構成が作る当該トピック
+# （aws_sns_topic.cost_alert.arn）であることだけである（AC-5-4）。
 #
 # mock_provider を用い、実際の AWS API を呼ばない（AC-10-2）。
 #

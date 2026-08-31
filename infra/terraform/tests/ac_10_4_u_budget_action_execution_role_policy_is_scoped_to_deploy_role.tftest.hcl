@@ -1,8 +1,8 @@
 # AC-10（docs/specs/infra-terraform.md）の検査。
 #
-# 期待値のうち docs/rules/cost-guardrails.md が持つもの（同時実行数・ログ保持日数・
-# Budgets の本数と閾値・authorization_type）は同ファイルを読んで書いている
-# （AC-10-4）。値を infra 側へ二重に定義しない（AC-5-6）。
+# 本ファイルが検査するのは、Budget Action の実行ロールのポリシーだけである
+# （いずれの文も Action にワイルドカードを含まないこと、Resource が deny を
+# 付け外しする相手＝デプロイロールに限定されていること＝AC-5-3）。
 #
 # mock_provider を用い、実際の AWS API を呼ばない（AC-10-2）。
 #
