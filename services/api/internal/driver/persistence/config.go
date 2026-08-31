@@ -21,16 +21,7 @@ package persistence
 
 import (
 	"errors"
-	"fmt"
 )
-
-// databaseURLEnv は接続文字列を収める環境変数の名前である。
-//
-// **名前は仕様が固定していない**（AC-10-12。どの docs にも実体が無いため、
-// AC-13-17 と同じ扱いで実装に委ねられている）。テストもこの名前に依存しない
-// （AC-12-16 ①）。**値（接続文字列そのもの）はコード・docs・テストに書かない**
-// （AC-10-3・docs/rules/security.md）。
-const databaseURLEnv = "DATABASE_URL"
 
 // maxOpenConnections は1つの実行環境（プロセス）あたり同時に開く接続の
 // 上限である（AC-10-19 ①②。決定15）。
@@ -51,9 +42,7 @@ const maxOpenConnections = 1
 // ErrMissingSetting は必要な設定が未設定または空であることを表す
 // （AC-10-12。既定値へ黙って落ちない）。
 //
-// 文言に接続文字列・認証情報・環境変数の値を含めない（AC-10-13 ③・
-// docs/rules/security.md）。**環境変数の名前は値ではない**ため、どの設定が
-// 欠けているかを運用者へ伝える目的で文言に含める。
+// 文言に接続文字列・認証情報を含めない（AC-10-13 ③・docs/rules/security.md）。
 var ErrMissingSetting = errors.New("persistence: 必要な接続設定が未設定または空である")
 
 // ErrNoLookup は環境変数の探索が渡されなかったことを表す。
@@ -73,7 +62,7 @@ var ErrNoLookup = errors.New("persistence: 環境変数の探索が渡されて�
 // （AC-13-17 と同じ扱い。テストもこれらに依存しない＝AC-12-16 ①）。
 type Config struct {
 	// databaseURL は Neon への接続文字列。**実値をコードに書かない**
-	// （AC-10-3）。環境変数からのみ与えられる。
+	// （AC-10-3）。LoadConfig の引数（取得済みの値）からのみ与えられる。
 	databaseURL string
 
 	// maxConns は同時に開く接続の上限（AC-10-19 ③）。LoadConfig が
@@ -88,28 +77,29 @@ type Config struct {
 // メソッドを使う。
 func (c Config) String() string { return "persistence.Config{databaseURL: [REDACTED]}" }
 
-// LoadConfig は環境変数の探索を受け取り、接続設定を組み立てる（AC-10-12）。
+// LoadConfig は環境変数の探索と、取得済みの接続文字列を受け取り、接続設定を
+// 組み立てる（AC-10-12・infra-terraform AC-8-6）。
 //
-// **ネットワークに触れない。** 設定の組み立てと接続の確立を別の関数に分ける
-// という AC-10-12 の要求に従い、接続の確立は Connect が担う。必要な設定が
-// 未設定または空なら、**接続を試みずに**エラーを返す（既定値へ黙って
-// 落ちない）。
+// **ネットワークに触れない。** 接続文字列の解決（SSM からの取得）は
+// 呼び出し側（cmd/bootstrap）が本関数の前段で行い、その結果を
+// connectionString としてそのまま受け取る。本関数の内側から SSM を呼ばない
+// （AC-8-6）。connectionString が未設定または空なら、**接続を試みずに**
+// エラーを返す（既定値へ黙って落ちない）。
 //
-// 探索は引数として受け取る（AC-10-12）。プロセスの環境変数を読むかどうかは
-// 呼び出し側が決める（本番の呼び出し側は os.LookupEnv を渡す）。
+// lookup は引数として残す（AC-10-15 ①「プロセスの環境変数の探索を渡した
+// 設定の組み立て」の形に合わせ、将来 databaseURL 以外の設定が環境変数から
+// 加わる余地を残すため）。**現時点では lookup は接続文字列の取得に使わない**
+// （接続文字列の解決は cmd/bootstrap 側が担う＝AC-10-12・AC-8-6）。
 //
-// 返すエラーの文言に、探索から得た値を含めない（AC-10-13 ③）。
-func LoadConfig(lookup func(name string) (string, bool)) (Config, error) {
+// 返すエラーの文言に、探索から得た値・接続文字列を含めない（AC-10-13 ③）。
+func LoadConfig(lookup func(name string) (string, bool), connectionString string) (Config, error) {
 	if lookup == nil {
 		return Config{}, ErrNoLookup
 	}
 
-	databaseURL, ok := lookup(databaseURLEnv)
-	if !ok || databaseURL == "" {
-		// 文言に含めるのは環境変数の**名前**までで、探索が返した値は含めない
-		// （AC-10-13 ③）。
-		return Config{}, fmt.Errorf("%w: %s", ErrMissingSetting, databaseURLEnv)
+	if connectionString == "" {
+		return Config{}, ErrMissingSetting
 	}
 
-	return Config{databaseURL: databaseURL, maxConns: maxOpenConnections}, nil
+	return Config{databaseURL: connectionString, maxConns: maxOpenConnections}, nil
 }

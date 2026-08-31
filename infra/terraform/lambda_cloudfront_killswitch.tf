@@ -98,3 +98,30 @@ resource "aws_lambda_permission" "cloudfront_killswitch_sns" {
   principal     = "sns.amazonaws.com"
   source_arn    = aws_sns_topic.cost_alert.arn
 }
+
+# AC-5-4・10-4-x: Budget（budgets.amazonaws.com）がこの構成の SNS トピックへ
+# 通知を発行できるようにする、トピック側のリソースベースポリシー。対象は
+# この構成が作る当該トピック(aws_sns_topic.cost_alert.arn)そのものに限定し、
+# 発行元をこのアカウントの Budget に絞る(SourceAccount 条件)。実際に発行が
+# 通るかまでは 10-4-x が検査せず、その先の限界は 12-33 が持つ。
+resource "aws_sns_topic_policy" "cost_alert" {
+  arn = aws_sns_topic.cost_alert.arn
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AllowBudgetsPublish"
+        Effect    = "Allow"
+        Principal = { Service = "budgets.amazonaws.com" }
+        Action    = "SNS:Publish"
+        Resource  = aws_sns_topic.cost_alert.arn
+        Condition = {
+          StringEquals = {
+            "AWS:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+        }
+      }
+    ]
+  })
+}

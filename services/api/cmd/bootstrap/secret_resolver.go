@@ -50,8 +50,6 @@ type ssmSecretFetcher struct {
 
 // newSSMSecretFetcher は実行ロールの資格情報とリージョンを AWS SDK の設定解決
 // パッケージで解決し、SSM クライアントを組み立てる（AC-8-10）。
-//
-//nolint:unused // AC-8-6 の配線待ち（Run への組み込みは別の実装工程で追加する）。配線が入ったら本 nolint を外す。
 func newSSMSecretFetcher(ctx context.Context) (*ssmSecretFetcher, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
