@@ -1,6 +1,7 @@
 package persistence
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -120,6 +121,70 @@ func TestLoadConfig_RequiresConnectionStringArgument(t *testing.T) {
 			// そのまま読んでよい（AC-12-16 ③(ii) と同じ扱い）。
 			if cfg.databaseURL != tt.connectionString {
 				t.Errorf("組み立てた設定に、渡した接続文字列がそのまま載っていない: got %q, want %q", cfg.databaseURL, tt.connectionString)
+			}
+		})
+	}
+}
+
+// TestLoadConfig_RequiresLookupArgument は、**探索が渡されなかったとき**
+// （lookup が nil のとき）にエラーで終えることを固定する。
+//
+// AC-10-15 ① は「**プロセスの環境変数の探索を渡した**設定の組み立て」であり、
+// AC-10-12 は本パッケージが**プロセスの環境変数を暗黙に読まない**ことを求めて
+// いる。したがって「探索が渡されていない」状態は、既定値へ黙って落ちる・
+// os.LookupEnv 等を内側で直に読む形へ倒れる余地であり、**エラーとして現れ
+// なければならない**。
+//
+// **本テストは条文（AC-10-15 ①）が定める引数を減らすためのものではない** ——
+// 引数はそのまま残したうえで、**残した引数の未検査の分岐を検査に載せる**もの
+// である（既存の TestLoadConfig_RequiresConnectionStringArgument は
+// noopLookup を渡すため、この分岐を一度も通らない）。
+//
+// 判定は errors.Is で行い、**文言に依存しない**（AC-11-9・AC-10-13 ②）。
+func TestLoadConfig_RequiresLookupArgument(t *testing.T) {
+	tests := []struct {
+		name             string
+		lookup           func(name string) (string, bool)
+		connectionString string
+		wantErr          error
+	}{
+		{
+			// 探索が渡されていない。接続文字列が揃っていても組み立てない
+			// （＝プロセスの環境変数を暗黙に読む形へ倒れない）。
+			name:             "探索が渡されていなければエラーになる",
+			lookup:           nil,
+			connectionString: dummyConnectionString,
+			wantErr:          ErrNoLookup,
+		},
+		// **探索も接続文字列も欠けている場合は置かない** —— どちらの番兵が
+		// 返るか（ErrNoLookup と ErrMissingSetting の優先順）は仕様が定めて
+		// おらず、期待値が一意に定まらないため（推測で埋めない）。
+		{
+			// (i) と対にして置く。対にしないと「常に ErrNoLookup を返す」
+			// 実装が Green になる。
+			name:             "探索が渡っていればこの理由ではエラーにならない",
+			lookup:           noopLookup,
+			connectionString: dummyConnectionString,
+			wantErr:          nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := LoadConfig(tt.lookup, tt.connectionString)
+
+			if tt.wantErr == nil {
+				if errors.Is(err, ErrNoLookup) {
+					t.Errorf("探索が渡っているのに ErrNoLookup が返った: %v", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("エラーを期待したが nil だった（探索が渡されていないのに設定が組み立った）")
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("errors.Is で %v へ辿れない: %v（ラップするなら %%w）", tt.wantErr, err)
 			}
 		})
 	}
