@@ -35,11 +35,16 @@
 mock_provider "aws" {}
 
 # aws_region は**意図的に与えない**（既定値を評価させるため）。
-# 既定値を持たない変数だけを与える。
+# 評価対象を aws_region の既定値ただ1つに絞るため、与えないのは aws_region
+# だけである（AC-10-4-y）。bff_ssr_lambda_runtime も既定値を持つ変数だが、
+# ここでは他の run と同じ "nodejs20.x" を入力として与える —— これは値を
+# 固定して plan を成立させるための入力であって期待値ではなく、版を固定する
+# 意図は無い（版の持ち主は apps/web＝D-16・12-12）。
 variables {
   github_oidc_repo_owner                     = "h-k741953"
   github_oidc_repo_name                      = "effort-tracker"
   ssm_parameter_name                         = "/effort-tracker/test/neon-connection-string"
+  bff_ssr_lambda_runtime                     = "nodejs20.x"
   bff_ssr_lambda_artifact_path               = "testdata/bff-ssr.zip"
   domain_api_lambda_artifact_path            = "testdata/domain-api.zip"
   cloudfront_killswitch_lambda_artifact_path = "testdata/cloudfront-killswitch.zip"
