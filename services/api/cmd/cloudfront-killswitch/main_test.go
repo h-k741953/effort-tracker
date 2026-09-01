@@ -400,3 +400,89 @@ func TestRun_RegisteredHandlerIgnoresSNSMessageBody(t *testing.T) {
 		})
 	}
 }
+
+// ---- ⑦: 効果の冪等 ----------------------------------------------------------
+
+// TestRun_RegisteredHandlerDisablesEvenWhenAlreadyDisabled は AC-9-13-1 ⑦ の
+// 前半。**「既に無効なら無効化を省く」分岐を置かない**ことを、既に無効な設定を
+// 返す受け口に対しても無効化が呼ばれることとして観測する。
+//
+// 省く分岐は「省いたが実際は有効だった」経路を新たに作り、回路が黙って成立
+// しない形（12-33 と同じ現れ方）へ寄せる。遮断は非常手段であり、やり直しが
+// 安全であることを呼び出し回数の節約より優先する。
+func TestRun_RegisteredHandlerDisablesEvenWhenAlreadyDisabled(t *testing.T) {
+	rec := &killswitchStartupRecorder{}
+	fake := &fakeDistributionDisabler{
+		// 既に無効。ここで Update を省く実装だと、以下の検査が落ちる。
+		currentConfig: DistributionConfig{ETag: "etag-run-7a", Enabled: false},
+	}
+
+	if err := Run(
+		rec.resolveReturning(dummyDistributionID),
+		rec.disablerReturning(fake, nil),
+		rec.register,
+	); err != nil {
+		t.Fatalf("Run がエラーを返した: %v", err)
+	}
+	if rec.registered == nil {
+		t.Fatalf("登録に値（ハンドラ）が渡っていない（AC-9-13-1 ②）")
+	}
+
+	if err := rec.registered(context.Background(), snsEventWithMessage(`{"dummy":"budget threshold breached"}`)); err != nil {
+		t.Fatalf("登録されたハンドラがエラーを返した: %v", err)
+	}
+
+	if len(fake.updateCalls) != 1 {
+		t.Fatalf("UpdateDistribution の呼び出し回数 = %d, want 1（既に無効でも省かない＝AC-9-13-1 ⑦）", len(fake.updateCalls))
+	}
+	if got := fake.updateCalls[0]; got.config.Enabled {
+		t.Errorf("無効化へ渡った設定の Enabled = true, want false（AC-5-4）")
+	}
+}
+
+// TestRun_RegisteredHandlerConvergesOnRepeatedEvents は AC-9-13-1 ⑦ の後半。
+// **同じ契機が複数回届いても効果として同じ状態へ収束する**ことを、2回目も
+// 同じ遮断対象へ同じように無効化が呼ばれることとして観測する。
+//
+// **重複の検出・処理済みの状態の保持を置かない**ため、2回目を「処理済み」と
+// して黙って捨てる実装は、ここで落ちる。状態を持たないことがそのまま冪等の
+// 担保になっている（⑤の「再試行・通知・復旧の仕組みを持たせない」と同じ思想）。
+func TestRun_RegisteredHandlerConvergesOnRepeatedEvents(t *testing.T) {
+	rec := &killswitchStartupRecorder{}
+	fake := &fakeDistributionDisabler{
+		currentConfig: DistributionConfig{ETag: "etag-run-7b", Enabled: true},
+	}
+
+	if err := Run(
+		rec.resolveReturning(dummyDistributionID),
+		rec.disablerReturning(fake, nil),
+		rec.register,
+	); err != nil {
+		t.Fatalf("Run がエラーを返した: %v", err)
+	}
+	if rec.registered == nil {
+		t.Fatalf("登録に値（ハンドラ）が渡っていない（AC-9-13-1 ②）")
+	}
+
+	// 本文は毎回異なってよい（⑥。本文によらず同じように呼ばれる）。
+	for i, message := range []string{
+		`{"dummy":"budget threshold breached"}`,
+		`{"dummy":"budget threshold breached again"}`,
+	} {
+		if err := rec.registered(context.Background(), snsEventWithMessage(message)); err != nil {
+			t.Fatalf("%d 回目のハンドラがエラーを返した: %v（重複を失敗として扱っている＝AC-9-13-1 ⑦）", i+1, err)
+		}
+	}
+
+	if len(fake.updateCalls) != 2 {
+		t.Fatalf("UpdateDistribution の呼び出し回数 = %d, want 2（2回目を処理済みとして捨てている＝AC-9-13-1 ⑦）", len(fake.updateCalls))
+	}
+	for i, got := range fake.updateCalls {
+		if got.distributionID != dummyDistributionID {
+			t.Errorf("%d 回目の遮断対象 = %q, want %q（毎回同じ対象＝AC-9-13-1 ⑤⑦）", i+1, got.distributionID, dummyDistributionID)
+		}
+		if got.config.Enabled {
+			t.Errorf("%d 回目の設定の Enabled = true, want false（同じ状態へ収束しない＝AC-9-13-1 ⑦）", i+1)
+		}
+	}
+}
