@@ -156,9 +156,20 @@ func TestLoadConfig_RequiresLookupArgument(t *testing.T) {
 			connectionString: dummyConnectionString,
 			wantErr:          ErrNoLookup,
 		},
-		// **探索も接続文字列も欠けている場合は置かない** —— どちらの番兵が
-		// 返るか（ErrNoLookup と ErrMissingSetting の優先順）は仕様が定めて
-		// おらず、期待値が一意に定まらないため（推測で埋めない）。
+		{
+			// **両方が欠けている場合の優先順**。AC-10-13 ⑤ が「探索が渡され
+			// ていないことを先に返す」と定めた（人間承認 2026-09-01）。探索の
+			// 未指定は呼び出し側の配線の誤り＝引数の契約違反であり、接続文字列
+			// が空であるのは運用上の未設定で、性質が異なる。**契約違反を先に
+			// 返すことで、配線の誤りが未設定として報告される取り違えを防ぐ。**
+			//
+			// このケースが無いと、判定順を入れ替えた実装（接続文字列を先に
+			// 見る）が Green のまま残る。
+			name:             "探索も接続文字列も欠けていれば探索の未指定を先に返す",
+			lookup:           nil,
+			connectionString: "",
+			wantErr:          ErrNoLookup,
+		},
 		{
 			// (i) と対にして置く。対にしないと「常に ErrNoLookup を返す」
 			// 実装が Green になる。
