@@ -28,6 +28,18 @@ variables {
 run "google_identity_provider_is_registered" {
   command = plan
 
+  # User Pool の id は provider が採番する computed 値であり、plan 時点では
+  # unknown になる（ac_cognito_9_m と同型の理由）。ダミーの ID で
+  # override_during = plan により確定させる。
+  override_resource {
+    target = aws_cognito_user_pool.this
+    values = {
+      id  = "ap-northeast-1_dummyPoolId"
+      arn = "arn:aws:cognito-idp:ap-northeast-1:123456789012:userpool/ap-northeast-1_dummyPoolId"
+    }
+    override_during = plan
+  }
+
   assert {
     condition     = aws_cognito_identity_provider.google.user_pool_id == aws_cognito_user_pool.this.id
     error_message = "Google の ID プロバイダ（aws_cognito_identity_provider.google）は、この構成が作る User Pool に属していなければならない（AC-4-1）"

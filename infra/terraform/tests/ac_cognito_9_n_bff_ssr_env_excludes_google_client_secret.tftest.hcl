@@ -35,6 +35,30 @@ variables {
 run "bff_ssr_env_excludes_google_client_secret" {
   command = plan
 
+  # BFF・SSR Lambda の environment.variables には、この構成が作る User
+  # Pool・アプリクライアントの id が混ざる（COGNITO_USER_POOL_ID・
+  # COGNITO_CLIENT_ID）。これらは provider が採番する computed 値であり、
+  # plan 時点では unknown になる（ac_cognito_9_m と同型の理由）。ダミーの
+  # ID で override_during = plan により確定させる。environment 自体・
+  # var.google_client_secret・var.role_cookie_signing_key は override しない
+  # （本 assert が実際に検査している対象であるため）。
+  override_resource {
+    target = aws_cognito_user_pool.this
+    values = {
+      id  = "ap-northeast-1_dummyPoolId"
+      arn = "arn:aws:cognito-idp:ap-northeast-1:123456789012:userpool/ap-northeast-1_dummyPoolId"
+    }
+    override_during = plan
+  }
+
+  override_resource {
+    target = aws_cognito_user_pool_client.bff
+    values = {
+      id = "dummyclientid0123456789abcdef"
+    }
+    override_during = plan
+  }
+
   assert {
     condition = (
       length(try(aws_lambda_function.bff_ssr.environment[0].variables, {})) > 0

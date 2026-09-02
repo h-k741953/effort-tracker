@@ -28,6 +28,18 @@ variables {
 run "domain_is_default_domain_from_variable" {
   command = plan
 
+  # User Pool の id は provider が採番する computed 値であり、plan 時点では
+  # unknown になる（ac_cognito_9_m と同型の理由）。ダミーの ID で
+  # override_during = plan により確定させる。
+  override_resource {
+    target = aws_cognito_user_pool.this
+    values = {
+      id  = "ap-northeast-1_dummyPoolId"
+      arn = "arn:aws:cognito-idp:ap-northeast-1:123456789012:userpool/ap-northeast-1_dummyPoolId"
+    }
+    override_during = plan
+  }
+
   assert {
     condition     = aws_cognito_user_pool_domain.this.user_pool_id == aws_cognito_user_pool.this.id
     error_message = "User Pool のドメイン（aws_cognito_user_pool_domain.this）は、この構成が作る User Pool に属していなければならない（AC-5-6 (i)）"
