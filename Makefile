@@ -272,6 +272,13 @@ build-lambda-cloudfront-killswitch: ## CloudFront 遮断 Lambda を Linux 向け
 #   埋め込むと自己再帰で無限ループする（実装工程で検証済み）。消去法で、
 #   既存ターゲットの中で対象種別の区分から外れる侵食が最小のここへ合流させる。
 #
+# 【例外: test-check-cognito-sensitive-vars.sh をここへ合流させる】
+#   対象は本来「リポジトリ内の設定ファイル間の整合検査」（infra/terraform の
+#   変数宣言）であり、check-go-module-pins と同じ種別に見えるが、専用ターゲットを
+#   新設できない。docs/specs/cognito-auth-infra.md AC-12-3 が「make test-scripts
+#   から呼ばれること・新しい make ターゲットを作らない」と明示的に定めており
+#   （Q-G = (a)、2026-09-02 / 人間の決定）、この1点は仕様が検査経路を名指ししている。
+#
 .PHONY: test-scripts
 test-scripts: ## .github/scripts のチェッカを fixture で検査（apps/web の Makefile 契約・設定契約を含む）
 	@echo "==> test-scripts"
@@ -281,6 +288,7 @@ test-scripts: ## .github/scripts のチェッカを fixture で検査（apps/web
 	@bash .github/scripts/test-gitleaks-allowlist.sh "$(CURDIR)/.gitleaks.toml"
 	@bash .github/scripts/test-ci-terraform-test-target.sh
 	@bash .github/scripts/test-makefile-lambda-package.sh
+	@bash .github/scripts/test-check-cognito-sensitive-vars.sh
 
 # =============================================================================
 # .claude/hooks のロジック
