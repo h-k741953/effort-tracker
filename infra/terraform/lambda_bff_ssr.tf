@@ -60,6 +60,23 @@ resource "aws_lambda_function" "bff_ssr" {
 
   reserved_concurrent_executions = 5 # docs/rules/cost-guardrails.md
 
+  # AC-8-1（cognito-auth-infra.md）: BFF がトークンを検証するために要する
+  # 識別子（User Pool・アプリクライアント・リージョン）をこの構成が作る
+  # Cognito リソースの属性から注入する（リテラルの再入力をしない＝AC-8-3）。
+  # AC-8-6・AC-8-7: ロール切替 Cookie の署名鍵も、Q-F = (b) の決定により
+  # 同じ環境変数へ注入する（infra-terraform.md AC-8-1 / D-12 が確立した
+  # 「環境変数は SSM パラメータ名だけを持つ」型からの、署名鍵1つに限る
+  # 意図的な逸脱。他の機密はこの型から外さない＝AC-8-2・AC-5-7）。
+  environment {
+    variables = {
+      COGNITO_USER_POOL_ID    = aws_cognito_user_pool.this.id
+      COGNITO_CLIENT_ID       = aws_cognito_user_pool_client.bff.id
+      COGNITO_REGION          = var.aws_region
+      COGNITO_DOMAIN_PREFIX   = var.cognito_domain_prefix
+      ROLE_COOKIE_SIGNING_KEY = var.role_cookie_signing_key
+    }
+  }
+
   depends_on = [aws_cloudwatch_log_group.bff_ssr]
 }
 
