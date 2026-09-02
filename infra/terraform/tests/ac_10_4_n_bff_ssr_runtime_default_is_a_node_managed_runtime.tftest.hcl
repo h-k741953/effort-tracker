@@ -37,6 +37,11 @@ variables {
   bff_ssr_lambda_artifact_path               = "testdata/bff-ssr.zip"
   domain_api_lambda_artifact_path            = "testdata/domain-api.zip"
   cloudfront_killswitch_lambda_artifact_path = "testdata/cloudfront-killswitch.zip"
+  google_client_id                           = "000000000000-dummy.apps.googleusercontent.com"
+  google_client_secret                       = "dummy-google-client-secret"
+  cognito_callback_urls                      = ["https://example.test/api/auth/callback"]
+  cognito_domain_prefix                      = "effort-tracker-dummy"
+  role_cookie_signing_key                    = "dummy-role-cookie-signing-key-0123456789"
 }
 
 # --- AC-10-4-n: BFF・SSR Lambda の runtime の既定値（Node マネージド） -------

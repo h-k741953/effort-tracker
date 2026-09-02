@@ -1,9 +1,11 @@
-# AC-10（docs/specs/infra-terraform.md）の検査。
+# AC-9-e（docs/specs/cognito-auth-infra.md）の検査。
 #
-# 本ファイルが検査するのは、GitHub OIDC プロバイダが空でない thumbprint_list を
-# 持つことだけである（AC-7-5）。
+# 本ファイルが検査するのは、パスワードポリシーが構成側に明示されている（当該属性が存在し、空でない）こと。値の妥当性までは検査しない（AC-2-4） だけである。
 #
-# mock_provider を用い、実際の AWS API を呼ばない（AC-10-2）。
+# mock_provider を用い、実際の AWS API を呼ばない（P-6・P-9）。
+#
+# リソース名・変数名はこのテストが暫定的に固定するインターフェースである。
+# 実装側は同じ名前で作ってよいし、都合が悪ければテストごと見直す。
 
 mock_provider "aws" {}
 
@@ -23,14 +25,11 @@ variables {
   role_cookie_signing_key                    = "dummy-role-cookie-signing-key-0123456789"
 }
 
-# --- AC-10-4-v: GitHub OIDC プロバイダのサムプリント ------------------------
-# 値が発行者の現況と一致するかは検査しない（12-30 が持つ限界）。ここで見るのは
-# thumbprint_list が存在し、空でないことまで（AC-7-5）。
-run "github_oidc_provider_has_thumbprint" {
+run "password_policy_is_explicit" {
   command = plan
 
   assert {
-    condition     = length(aws_iam_openid_connect_provider.github_actions.thumbprint_list) > 0
-    error_message = "GitHub OIDC プロバイダは thumbprint_list を持ち、それが空であってはならない（AC-7-5）"
+    condition     = length(aws_cognito_user_pool.this.password_policy) > 0
+    error_message = "パスワードポリシー（password_policy）を構成側に明示しなければならない。provider の既定へ暗黙に委ねない（AC-2-4）"
   }
 }
