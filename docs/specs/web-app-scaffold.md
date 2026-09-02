@@ -45,7 +45,7 @@ Issue #9 の本文は「この Issue は `docs/specs/` に対応する仕様を�
 - **OpenNext の導入・ビルド / デプロイ設定** — ADR 0013、Terraform の Issue
 - **Claude Design / DesignSync の同期運用** — ADR 0015。本仕様が決めるのは配置先だけ（AC-1-5）
 - **`src/lib/rate-limit.ts`（Route Handler のレート制限）** — 2026-08-14 の決定（U-1 / 案1）により本 Issue から外した。**スタブ・TODO・既定値の仮置きも置かない**（AC-8-5）
-- **Route Handler（`src/app/api/**`）の実装** — レート制限のパラメータ（U-1 の a〜e）が未決であり、最初の Route Handler を作る Issue でセットで決める（AC-9）
+- **Route Handler（`src/app/api/**`）の実装** — 本 Issue では着手しない。着手条件はレート制限のパラメータ（U-1 の a〜e）がセットで決まっていることであり、**2026-08-14 時点では未決だった。現況（2026-09-01）: Issue #52 で人間がセットで決定し、値は `docs/specs/bff-auth-termination.md` AC-11 が持つ**（AC-9）。**本 Issue の非スコープであることは変わらない**
 - **Node.js の版の変更** — 24 に固定済み（P-2）
 - **`.devcontainer/` の変更**（allowlist / Dockerfile）— `docs/specs/devcontainer-go-module-policy.md` の非スコープであり、必要になったら人間の決定が要る（P-3）
 
@@ -109,7 +109,7 @@ ADR 0007 の §1〜§4（testify を採らない / go-cmp のみ許す / モッ�
 | AC-10 | 限界 — 緑が意味しないこと | reviewer |
 | AC-11 | **決定済み（2026-08-17）**: gitleaks の allowlist を `apps/web/.next/` に限定して導入する | tester・implementer・reviewer |
 | AC-12 | `.gitleaks.toml` の**構造をホワイトリスト型で機械検査する**（AC-11 の検査が素通りさせる弱体化を捕捉する） | tester・implementer・reviewer |
-| U-1 | **決定済み（2026-08-14 / 案1）**: レート制限は本 Issue から外す。パラメータ a〜e は次 Issue の入力として残す | 次 Issue の specifier |
+| U-1 | **決定済み（2026-08-14 / 案1）**: レート制限は本 Issue から外す。パラメータ a〜e は次 Issue の入力として残す。**引き継ぎは完了した（2026-09-01 / Issue #52）** —— **a〜e の決定値の正解は `docs/specs/bff-auth-termination.md` AC-11 が持つ** | 次 Issue の specifier（引き継ぎ済み） |
 
 ### AC-1. スキャフォールドの構成と配置
 
@@ -246,7 +246,7 @@ tester 工程の時点では **Vitest 自体が未導入**であり、テスト�
 | 8-2 | 生成・作成するファイルに、実在の URL・AWS アカウント ID・接続文字列・鍵を含めない |
 | 8-3 | **`make scan-secrets` が `apps/web/node_modules` の存在する作業ツリーで通ること。** 通らない、または実用的な時間で終わらない場合、**gitleaks の除外設定を黙って足さずに停止して人間へ上げる**。検査の弱体化と改善は AI 自身から区別できない（ADR 0010 §A） |
 | 8-4 | **依存を最小限にする。** AC-1〜AC-6 を満たすのに不要なパッケージを入れない。UI ライブラリ・状態管理・HTTP クライアント・認証ライブラリを先回りして入れない |
-| 8-5 | **`src/lib/rate-limit.ts` を本 Issue で作らない**（U-1 を 2026-08-14 に案1で決定＝本 Issue から外した）。**素通しの実装・TODO だけの空実装・既定値の仮置きを置かない。** 「あるように見えて効いていないガードレール」は、無いことより悪い。ファイルが存在しないことが正である |
+| 8-5 | **`src/lib/rate-limit.ts` を本 Issue で作らない**（U-1 を 2026-08-14 に案1で決定＝本 Issue から外した）。**素通しの実装・TODO だけの空実装・既定値の仮置きを置かない。** 「あるように見えて効いていないガードレール」は、無いことより悪い。**本 Issue の完了時点でファイルが存在しないことが正である。** **現況（2026-09-01）: 引き継ぎ先の Issue #52 がレート制限を作る側になった**（`docs/specs/bff-auth-termination.md` AC-11）。**本行が禁じた「素通しの実装・空実装・仮置き」は、作る側でも引き続き禁止である**（同 AC-11-12） |
 
 ### AC-9. 本 Issue で実装しないもの（対象外の固定）
 
@@ -257,8 +257,8 @@ tester 工程の時点では **Vitest 自体が未導入**であり、テスト�
 | `src/lib/lambda-client.ts`（実行ロールでの SigV4 署名） | 呼び出すドメイン API Lambda が存在してから（Terraform の後） | ADR 0003 / 0014、`docs/rules/architecture.md` |
 | Cognito トークンの BFF 終端・検証、ログイン3方式 | 認証基盤の Terraform の後 | ADR 0016、`docs/specs/login-ui.md` |
 | 画面・コンポーネントの実装（`src/components/` の中身） | 後続の画面 Issue。本 Issue は置き場所のみ確定（AC-1-5） | `docs/specs/work-month-screen-ui.md` ほか、ADR 0015 |
-| **`src/lib/rate-limit.ts`（レート制限）** | **最初の Route Handler を作る Issue。** U-1 を 2026-08-14 に**案1**で決定し、本 Issue から外した。**スタブも置かない**（AC-8-5） | U-1、`docs/rules/cost-guardrails.md`、ADR 0010 §A |
-| Route Handler（`src/app/api/**`） | **U-1 が決まってから。** 最初の Route Handler を作る Issue は、レート制限の決定（U-1 の a〜e をセットで）なしに着手できない。**この着手条件は案1の決定後も外れない** | `docs/rules/cost-guardrails.md`、CLAUDE.md（ガードレールを「後で入れる」ことを許容しない） |
+| **`src/lib/rate-limit.ts`（レート制限）** | **最初の Route Handler を作る Issue。** U-1 を 2026-08-14 に**案1**で決定し、本 Issue から外した。**スタブも置かない**（AC-8-5）。**現況（2026-09-01）: その Issue は #52 であり、`docs/specs/bff-auth-termination.md` AC-11 が引き受けた** | U-1、`docs/rules/cost-guardrails.md`、ADR 0010 §A |
+| Route Handler（`src/app/api/**`） | **U-1 が決まってから。** 最初の Route Handler を作る Issue は、レート制限の決定（U-1 の a〜e をセットで）なしに着手できない。**この着手条件は案1の決定後も外れない**。**現況（2026-09-01）: 着手条件は Issue #52 で満たされた** —— 人間が a〜e をセットで決定し、値は `docs/specs/bff-auth-termination.md` AC-11 が持つ。**条件そのものは緩めていない**（以後 Route Handler を足す Issue も、レート制限を通す＝同 AC-11-12） | `docs/rules/cost-guardrails.md`、CLAUDE.md（ガードレールを「後で入れる」ことを許容しない） |
 | OpenNext の導入・ビルド / デプロイ設定 | Terraform の Issue | ADR 0013 |
 | Claude Design / DesignSync の同期運用 | 画面 Issue | ADR 0015（本仕様は配置先のみ確定。AC-1-5） |
 | ドメイン API の HTTP 呼び出し実装 | `lambda-client.ts` と同時 | `docs/specs/domain-api-http-contract.md` |
@@ -274,14 +274,14 @@ tester 工程の時点では **Vitest 自体が未導入**であり、テスト�
 | 10-3 | **`npm ci` の再現性は lockfile に依存する。** lockfile を更新した PR で依存が何に入れ替わったかを、この検査は意味的に評価しない |
 | 10-4 | **CI と devcontainer で非対称がある。** GitHub runner に egress 制限は無く、`npm ci` は必ず通る。**CI が緑であることは、devcontainer で `npm ci` できることを意味しない**（P-3。`docs/specs/devcontainer-go-module-policy.md` AC-10-9 と同型） |
 | 10-5 | **本 Issue の完了は「ハーネスが web を実際に検査している」ことであり、アプリが動く・デプロイできることを意味しない。** **この限界は実装の進行に依らない** — インフラ側（OpenNext / Terraform）が未着手であっても、その後に構築が進んだとしても、ハーネスが見ているのは `apps/web` の lint / test であってアプリの動作・デプロイではない。**本項は実装状況の内訳を持たない**（内訳は README 側が現況として持つ・ADR 0004。`docs/specs/readme-adr-sync.md` AC-8-3 と同型） |
-| 10-6 | **コストガードレールの1枚（Route Handler のレート制限）は本 Issue 完了時点で未実装のままである。これは 2026-08-14 の決定（U-1 / 案1）による意図した状態であり、欠落ではない。** 本 Issue にレート制限の対象（Route Handler）が存在しないことと整合する。「後で入れる」で流さないための担保は、対象を作る Issue の着手条件として U-1 を AC-9 に固定したこと**のみ**であり、**機械検査は無い**（規律で守る） |
+| 10-6 | **コストガードレールの1枚（Route Handler のレート制限）は本 Issue 完了時点で未実装のままである。これは 2026-08-14 の決定（U-1 / 案1）による意図した状態であり、欠落ではない。** 本 Issue にレート制限の対象（Route Handler）が存在しないことと整合する。「後で入れる」で流さないための担保は、対象を作る Issue の着手条件として U-1 を AC-9 に固定したこと**のみ**であり、**機械検査は無い**（規律で守る）。**現況（2026-09-01）: この担保は実際に効き、Issue #52 が着手条件を満たしたうえでレート制限を実装する側になった**（`docs/specs/bff-auth-termination.md` AC-11・同 10-7）。**機械検査が無いという限界は解消していない** |
 | 10-7 | **Tailwind が「適用されている」ことは機械検査しない**（AC-1-4）。ビルドと型検査は通るが、見た目の妥当性はハーネスの外にある |
 
 ### AC-11. gitleaks の allowlist — `apps/web/.next/` に限定して導入する
 
 **2026-08-17 に人間が確定した決定。** 要否は tester / implementer / reviewer の判断対象ではない。AC-8-3 が定めた停止条件（「gitleaks の除外設定を黙って足さずに停止して人間へ上げる」）が実際に作動し、その結果として人間が決めたものである。**AC-8-3 は緩めない**（`apps/web/.next/` 以外へ広げる場合の停止条件は生きている。AC-11-9）。
 
-> U-1 の「案2」に現れる `AC-11` は**採らなかった案の中の仮の採番**であり、本節とは無関係である（レート制限のパラメータは本 AC に含まれない）。
+> U-1 の「案2」に現れる `AC-11` は**採らなかった案の中の仮の採番**であり、本節とは無関係である（レート制限のパラメータは本 AC に含まれない）。**現況（2026-09-01）: レート制限の受け入れ条件は別ファイルの `docs/specs/bff-auth-termination.md` AC-11 として実在する。これも本節（本仕様の AC-11 = gitleaks の allowlist）とは別物であり、番号が同じだけである。**
 
 #### 訂正の記録（2026-08-18） — 本 AC には事実に反する記述があった
 
@@ -642,6 +642,8 @@ tester 工程の時点では **Vitest 自体が未導入**であり、テスト�
 | #9 への影響 | **完了条件は変わらない**（`make lint-web` / `make test-web` が SKIP でなく走る・CI の `web` ジョブが実際に検査する・`make verify` が通る）。レート制限は元から完了条件に含まれていない |
 | 実装への拘束 | **素通しの実装・TODO スタブ・既定値の仮置きを置かない**（AC-8-5）。「ガードレールがあるように見えて効いていない」状態を作らない |
 | 引き継ぎ先 | 最初の Route Handler を作る Issue。着手条件は AC-9 に固定済み（案1の決定後も外れない） |
+| 引き継ぎの現況（2026-09-01） | **完了した。** 引き継ぎ先は **Issue #52（エンドユーザー認証基盤: Cognito）** であり、**人間が同日に a〜e をセットで決定した**（同 Issue の Q-E = (a)）。**着手条件は満たされた。条件そのものは緩めていない** |
+| **a〜e の決定値の正解の置き場所** | **`docs/specs/bff-auth-termination.md` AC-11。** 本節は**論点と決定の経緯（下記「なぜ #9 で決めなかったか」「決めるべき項目」「提示した選択肢と、採った案」）を記録として持ち、決定値そのものは持たない。** **理由**: a〜e は Vitest（`make test-web`）で検査される受け入れ条件であり、**検査対象（Route Handler とレート制限の実装）を持つ仕様が値を持つのが正しい**。#9 は対象を持たないため検査できない（下表の案2 を採らなかった理由と同じ）。**両方へ値を書き写すと正解が二重になる**（ADR 0004） |
 
 ### なぜ #9 で決めなかったか（記録）
 
@@ -654,9 +656,9 @@ tester 工程の時点では **Vitest 自体が未導入**であり、テスト�
 | `docs/ai-collaboration.md`「AIの停止条件」 | 仕様に書かれていない判断が必要になったら停止する。**推測で埋めることを禁止する** |
 | `docs/rules/cost-guardrails.md` | 「Route Handler | レート制限」とあるだけで、**上限・ウィンドウ・キー・超過時の応答のいずれも決まっていない** |
 
-### 決めるべき項目（**次の Issue へ持ち越し。a〜e はセットで決める**）
+### 決めるべき項目（**次の Issue へ持ち越した。a〜e はセットで決める**）
 
-**以下はいずれも未決のままである。** 案1は「#9 で決めない」ことを決めたのであって、a〜e の中身を決めたのではない。**部分的に先取りして実装しない。**
+**現況（2026-09-01）: 以下の a〜e は Issue #52 で人間がセットで決定済みであり、決定値は `docs/specs/bff-auth-termination.md` AC-11 が持つ。下表は「何を論点として引き継いだか」の記録であり、決定値を持たない**（ADR 0004。**両方へ書き写さない**）。**2026-08-14 の決定時点では、いずれも未決であった** —— 案1は「#9 で決めない」ことを決めたのであって、a〜e の中身を決めたのではない。**#9 の側では引き続き、部分的に先取りして実装しない**（AC-8-5）。
 
 | # | 項目 | なぜ AI が決められないか | 選択肢の例 |
 |---|---|---|---|
@@ -674,7 +676,7 @@ tester 工程の時点では **Vitest 自体が未導入**であり、テスト�
 | **案2** | いま a〜e を人間が決め、本仕様に AC-11 として追記してから tester 工程へ渡す | 本 Issue の中で実装できる。ただしレート制限の対象（Route Handler）が無い状態で関数だけが入るため、**実際に効いているかを本 Issue では検証できない**（AC-3-3 の「対象が壊れても落ちないテスト」に近づく） | 採らない |
 | **案3** | AI が既定値を仮置きし、後で調整する | ADR 0010 §A に反する。かつ「ガードレールがあるように見えて効いていない」状態を作り、CLAUDE.md の「コストとセキュリティのガードレールは機能要件と同格」に反する | 採らない |
 
-**決定の正解はこの仕様にある。** Issue コメント・PR コメントに書き写して終わらせない（ADR 0004）。**a〜e が決まるまで、tester / implementer は rate-limit に着手しない**（AC-8-5 / AC-9）。
+**「#9 から外す」という決定（案1）の正解はこの仕様にある。** Issue コメント・PR コメントに書き写して終わらせない（ADR 0004）。**a〜e が決まるまで、tester / implementer は rate-limit に着手しない**（AC-8-5 / AC-9）—— **この条件は 2026-09-01 に Issue #52 で満たされた。a〜e の決定値そのものの正解は `docs/specs/bff-auth-termination.md` AC-11 にあり、本節にはない。**
 
 ---
 
@@ -685,6 +687,7 @@ tester 工程の時点では **Vitest 自体が未導入**であり、テスト�
 - `docs/rules/commands.md`: `make verify` の中身、版の固定箇所（P-2 / AC-6-5）
 - `docs/rules/architecture.md`: BFF 経由の一方通行、`apps/web/src/lib/lambda-client.ts`（AC-1-6 / AC-9）
 - `docs/rules/cost-guardrails.md`: Route Handler のレート制限（U-1。本 Issue から外す決定 = 2026-08-14 / 案1）
+- `docs/specs/bff-auth-termination.md` AC-11: **U-1 の a〜e の決定値の持ち主**（2026-09-01 / Issue #52。本仕様は経緯だけを持ち、値を書き写さない）
 - `docs/rules/security.md`: `.env` と機密ファイルの扱い（AC-8-1）
 - `docs/adr/0007-testing-with-stdlib-and-go-cmp.md` §5: Vitest の選定と #9 への委譲（P-5 / AC-3）
 - `docs/adr/0010-harness-engineering.md` §A: 独断してよい範囲／承認が要る範囲（U-1 / AC-8-3 / AC-11-9a）。§B: `docs/rules/` の肥大化（AC-7-5 / AC-11-10c）
