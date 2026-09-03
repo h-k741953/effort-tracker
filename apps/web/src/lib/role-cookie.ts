@@ -111,6 +111,34 @@ export function verifyRoleCookie(params: {
   return { ok: true, role };
 }
 
+/**
+ * デモ用ロール切替の反転元（既定のロール）を決める（AC-5-11・Q-J）。
+ *
+ * **検証済みセッションがあり、5-5 (i) を満たす正当なロール Cookie が無い**
+ * ときの反転元は `Engineer` とする。「正当なロール Cookie が無い」に含める
+ * もの —— Cookie が存在しない・署名が欠けている・署名が検証できない・値が
+ * 許可外、のいずれも同じ扱いにする（5-11 (i)）。**検証に失敗した Cookie を
+ * 昇格の根拠にしない** —— Cookie が主張する値ではなく、既定（Engineer）へ
+ * 落ちる（5-11 (ii)）。
+ *
+ * **本関数が決めるのは反転元だけである。** ゲストへの不適用（5-11 (v)）・
+ * 反転そのもの（切替の要求）は呼び出し側（handleRoleSwitch）の責務であり、
+ * ここに持ち込まない。
+ */
+export function resolveEffectiveRole(params: {
+  cookieValue: string | undefined;
+  signingKey: string;
+}): Role {
+  const { cookieValue, signingKey } = params;
+
+  if (cookieValue === undefined) {
+    return "Engineer";
+  }
+
+  const verified = verifyRoleCookie({ cookieValue, signingKey });
+  return verified.ok ? verified.role : "Engineer";
+}
+
 function signaturesMatch(presented: string, expected: string): boolean {
   const presentedBytes = Buffer.from(presented, "utf8");
   const expectedBytes = Buffer.from(expected, "utf8");

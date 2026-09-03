@@ -9,7 +9,11 @@
 // - AC-9: ここで作るのは AC-11-2 の 3 つだけ。業務エンドポイントを発明しない。
 //   lambda-client（SigV4）はスタブも置かない。
 import type { Environment } from "./auth-config";
-import { loadAuthConfig, loadRoleCookieSigningKey } from "./auth-config";
+import {
+  loadAuthConfig,
+  loadPublicOrigin,
+  loadRoleCookieSigningKey,
+} from "./auth-config";
 import {
   buildAuthorizeUrl,
   createOAuthState,
@@ -20,7 +24,7 @@ import {
 import type { PublicKeyResolver } from "./jwt-verifier";
 import { createCognitoPublicKeyResolver, verifyToken } from "./jwt-verifier";
 import type { Role } from "./role-cookie";
-import { ROLE_COOKIE_NAME, signRoleCookie } from "./role-cookie";
+import { ROLE_COOKIE_NAME, resolveEffectiveRole, signRoleCookie } from "./role-cookie";
 import {
   OAUTH_CODE_VERIFIER_COOKIE_NAME,
   OAUTH_STATE_COOKIE_NAME,
@@ -78,20 +82,44 @@ function misconfiguredResponse(): Response {
 }
 
 /**
+ * AC-12-7 (iii): サインインの開始が使う一時的な値（state・code_verifier）は
+ * 呼ぶ側から差し替えられる形にする（P-7・AC-8-3。テストが決定的であるため）。
+ * **本番の既定は暗号論的に安全な乱数から作る**（差し替え可能にしたことを理由に
+ * 既定を弱くしない）。
+ */
+interface OAuthValues {
+  readonly state: string;
+  readonly codeVerifier: string;
+}
+
+function defaultOAuthValues(): OAuthValues {
+  return { state: createOAuthState(), codeVerifier: createPkcePair().codeVerifier };
+}
+
+/**
  * (i) サインインの開始（AC-11-2 (i)）。ホストされたサインイン画面へ送り出す。
  */
 export async function handleSignInStart(
   request: Request,
-  options: { environment?: Environment } = {},
+  options: {
+    environment?: Environment;
+    generateOAuthValues?: () => OAuthValues;
+  } = {},
 ): Promise<Response> {
   const config = loadAuthConfig(options.environment);
   if (!config.ok) {
     return misconfiguredResponse();
   }
+  // AC-7-6: 戻り先は構成側から受け取った公開オリジンだけから決める。要求
+  // ヘッダ（X-Forwarded-Host 等）からは導かない。未設定・空なら失敗として扱う。
+  const publicOrigin = loadPublicOrigin(options.environment);
+  if (!publicOrigin.ok) {
+    return misconfiguredResponse();
+  }
 
-  const redirectUri = resolveRedirectUri(request.headers, request.url);
-  const state = createOAuthState();
-  const pkce = createPkcePair();
+  const redirectUri = resolveRedirectUri(publicOrigin.value);
+  const { state, codeVerifier } = (options.generateOAuthValues ?? defaultOAuthValues)();
+  const pkce = createPkcePair(codeVerifier);
 
   return redirectResponse(
     buildAuthorizeUrl({
@@ -128,6 +156,11 @@ export async function handleSignInCallback(
   if (!config.ok) {
     return misconfiguredResponse();
   }
+  // AC-7-6: 戻り先は構成側から受け取った公開オリジンだけから決める。
+  const publicOrigin = loadPublicOrigin(options.environment);
+  if (!publicOrigin.ok) {
+    return misconfiguredResponse();
+  }
 
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
@@ -136,13 +169,19 @@ export async function handleSignInCallback(
   const expectedState = cookies.get(OAUTH_STATE_COOKIE_NAME);
   const codeVerifier = cookies.get(OAUTH_CODE_VERIFIER_COOKIE_NAME);
 
+  // AC-12-3 / AC-12-4: 欠落・不一致・空はすべて拒否側に含める。空の state
+  // 同士が一致してしまう／空の検証値が undefined 判定を抜けることのないよう、
+  // 明示的に長さ 0 も拒否する。
   if (
     typeof code !== "string" ||
     code.length === 0 ||
     typeof state !== "string" ||
+    state.length === 0 ||
     expectedState === undefined ||
+    expectedState.length === 0 ||
     state !== expectedState ||
-    codeVerifier === undefined
+    codeVerifier === undefined ||
+    codeVerifier.length === 0
   ) {
     return unauthenticatedResponse();
   }
@@ -150,7 +189,7 @@ export async function handleSignInCallback(
   const exchanged = await exchangeAuthorizationCode({
     config: config.value,
     code,
-    redirectUri: resolveRedirectUri(request.headers, request.url),
+    redirectUri: resolveRedirectUri(publicOrigin.value),
     codeVerifier,
   });
   if (!exchanged.ok) {
@@ -221,18 +260,20 @@ export async function handleRoleSwitch(
     return unauthenticatedResponse();
   }
 
-  const requestedRole = await readRequestedRole(request);
-  if (requestedRole === undefined) {
-    return textResponse(400, "Bad Request");
-  }
-
-  // AC-5-5 (iii): Engineer / Approver 以外は成立させない（判定は role-cookie 側）。
-  const signed = signRoleCookie({
-    role: requestedRole as Role,
+  // AC-5-5 (ii): 要求ヘッダ・クエリ・本文で与えられたロールを採用しない。
+  // 採用するのは、BFF が発行し BFF 自身が検証した現在のロール Cookie だけで
+  // あり、それを反転させる（AC-5-11。正当な Cookie が無ければ反転元は
+  // Engineer）。
+  const cookies = parseCookieHeader(request.headers.get("cookie"));
+  const currentRole = resolveEffectiveRole({
+    cookieValue: cookies.get(ROLE_COOKIE_NAME),
     signingKey: signingKey.value,
   });
+  const nextRole: Role = currentRole === "Engineer" ? "Approver" : "Engineer";
+
+  const signed = signRoleCookie({ role: nextRole, signingKey: signingKey.value });
   if (!signed.ok) {
-    return textResponse(400, "Bad Request");
+    return misconfiguredResponse();
   }
 
   // AC-5-5 (iv): 切替はロールにのみ効き、利用者識別子（セッション）を書き換えない。
@@ -245,36 +286,4 @@ export async function handleRoleSwitch(
   );
   headers.set("Cache-Control", "no-store");
   return new Response(null, { status: 204, headers });
-}
-
-/**
- * 切替の申告を要求から読む。**ここで読むのは申告に過ぎず**、採用されるのは
- * 許可リストを通り署名できた値だけである（AC-5-5 (i)(iii)）。
- */
-async function readRequestedRole(request: Request): Promise<string | undefined> {
-  const contentType = request.headers.get("content-type") ?? "";
-
-  try {
-    if (contentType.includes("application/json")) {
-      const payload: unknown = await request.json();
-      if (typeof payload === "object" && payload !== null) {
-        const role = (payload as Record<string, unknown>)["role"];
-        return typeof role === "string" ? role : undefined;
-      }
-      return undefined;
-    }
-
-    if (
-      contentType.includes("application/x-www-form-urlencoded") ||
-      contentType.includes("multipart/form-data")
-    ) {
-      const form = await request.formData();
-      const role = form.get("role");
-      return typeof role === "string" ? role : undefined;
-    }
-  } catch {
-    return undefined;
-  }
-
-  return undefined;
 }

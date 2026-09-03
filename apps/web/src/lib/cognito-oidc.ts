@@ -25,13 +25,17 @@ export interface PkcePair {
   readonly codeChallenge: string;
 }
 
-/** PKCE（S256）の組を作る。認可コードの横取りに対する備え。 */
-export function createPkcePair(): PkcePair {
-  const codeVerifier = randomBytes(32).toString("base64url");
+/**
+ * PKCE（S256）の組を作る。認可コードの横取りに対する備え。
+ * **`codeVerifier` を省略すると新しく生成する**（本番の既定）。**呼ぶ側から
+ * 差し替えられる形にする**（AC-12-7 (iii)。テストが決定的であるため）。
+ */
+export function createPkcePair(codeVerifier?: string): PkcePair {
+  const verifier = codeVerifier ?? randomBytes(32).toString("base64url");
   const codeChallenge = createHash("sha256")
-    .update(codeVerifier)
+    .update(verifier)
     .digest("base64url");
-  return { codeVerifier, codeChallenge };
+  return { codeVerifier: verifier, codeChallenge };
 }
 
 /** CSRF 対策の state を作る（コールバックで Cookie の値と突き合わせる）。 */
@@ -63,24 +67,19 @@ export function buildAuthorizeUrl(params: {
 }
 
 /**
- * サインインの戻り先（redirect_uri）を組み立てる。
+ * サインインの戻り先（redirect_uri）を組み立てる（AC-7-6・AC-12-9）。
+ *
+ * **要求（ヘッダ・クエリ・本文・Cookie）から公開オリジンを導かない。** 構成側
+ * から与えられた公開オリジンだけから決める —— 要求元のホストへフォールバック
+ * しない（AC-7-6 (i)(ii)・AC-12-9 (ii)）。
  *
  * **戻り先は Cognito 側の許可リスト（構成側の `cognito_callback_urls`）で
- * 検証される**ため、要求ヘッダから導いた出所が登録されていなければ Cognito が
- * サインインを拒否する。**この対応づけは機械検査されず、ずれは apply 後の
- * サインインで初めて現れる**（限界 10-10）。
+ * 検証される**ため、公開オリジンが登録されていなければ Cognito がサインインを
+ * 拒否する。**この対応づけは機械検査されず、ずれは apply 後のサインインで
+ * 初めて現れる**（限界 10-10・10-15）。
  */
-export function resolveRedirectUri(
-  headers: Pick<Headers, "get">,
-  requestUrl: string,
-): string {
-  const forwardedHost = headers.get("x-forwarded-host");
-  const forwardedProto = headers.get("x-forwarded-proto");
-  const base =
-    typeof forwardedHost === "string" && forwardedHost.length > 0
-      ? `${forwardedProto ?? "https"}://${forwardedHost}`
-      : new URL(requestUrl).origin;
-  return new URL(CALLBACK_PATH, base).toString();
+export function resolveRedirectUri(publicOrigin: string): string {
+  return new URL(CALLBACK_PATH, publicOrigin).toString();
 }
 
 export interface TokenExchanged {

@@ -33,6 +33,11 @@ variable "role_cookie_signing_key" {
   sensitive   = true
 }
 
+variable "public_origin" {
+  description = "サインインの戻り先（redirect_uri）の組み立てに用いる公開オリジン（AC-8-8・AC-8-9。bff-auth-termination.md AC-7-6）。秘密ではないため sensitive にしない。既定値を持たない"
+  type        = string
+}
+
 locals {
   cognito_user_pool_name  = "effort-tracker-users"
   cognito_app_client_name = "effort-tracker-bff"

@@ -74,6 +74,10 @@ resource "aws_lambda_function" "bff_ssr" {
       COGNITO_REGION          = var.aws_region
       COGNITO_DOMAIN_PREFIX   = var.cognito_domain_prefix
       ROLE_COOKIE_SIGNING_KEY = var.role_cookie_signing_key
+      # AC-8-8・AC-8-9（cognito-auth-infra.md）: サインインの戻り先の組み立てに
+      # 用いる公開オリジンも、同じ environment ブロック内で注入する
+      # （bff-auth-termination.md AC-7-6。要求ヘッダから導かない代わり）。
+      PUBLIC_ORIGIN = var.public_origin
     }
   }
 
