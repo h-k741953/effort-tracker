@@ -35,6 +35,8 @@ const CLIENT_ID = "dummy0000000000000000000000client";
 const ISSUER = `https://cognito-idp.${REGION}.amazonaws.com/${USER_POOL_ID}`;
 const SUB = "11111111-1111-1111-1111-111111111111";
 const SIGNING_KEY = "dummy-role-cookie-signing-key-0123456789";
+/** AC-5-11 検査（5-c・5-d）専用: 別の鍵で署名された Cookie を作るためだけに使う。 */
+const OTHER_SIGNING_KEY = "dummy-other-signing-key-0000000000";
 
 const ENVIRONMENT: Environment = {
   COGNITO_REGION: REGION,
@@ -102,6 +104,29 @@ function signedRoleCookieValue(role: Role): string {
   return `${role}.${signature}`;
 }
 
+// --- AC-5-11 検査用: 検証できないロール Cookie の生の値（5-c・5-d） ---------
+//
+// 「Approver を主張するが検証できない」の3通り（5-5 (i)(iii)。role-cookie.test.ts
+// の buildCookieValue と同じ組み立て方）。
+
+/** 改竄された署名。 */
+function tamperedRoleCookieValue(role: Role): string {
+  return `${signedRoleCookieValue(role)}x`;
+}
+
+/** 別の鍵で署名された。 */
+function roleCookieValueSignedWithOtherKey(role: Role): string {
+  const signature = createHmac("sha256", OTHER_SIGNING_KEY)
+    .update(role)
+    .digest("base64url");
+  return `${role}.${signature}`;
+}
+
+/** 署名が欠けた（ロールのみ）。 */
+function roleCookieValueWithoutSignature(role: Role): string {
+  return role;
+}
+
 // --- 要求の組み立て ---------------------------------------------------------
 
 interface RoleSwitchRequestOptions {
@@ -109,6 +134,11 @@ interface RoleSwitchRequestOptions {
   readonly idToken?: string | null;
   /** 現在の（署名済み）ロール。null で持たせない。 */
   readonly currentRole?: Role | null;
+  /**
+   * AC-5-11（5-c・5-d）検査用: 正当な署名を経ない、生のロール Cookie 値を
+   * そのまま載せる。指定された場合、currentRole より優先する。
+   */
+  readonly rawRoleCookieValue?: string;
   /** 要求が名乗るロール（5-5 (ii)。採用されてはならない）。 */
   readonly declaredRole?: string;
   /** 名乗りをどこへ載せるか。 */
@@ -124,7 +154,9 @@ function roleSwitchRequest(options: RoleSwitchRequestOptions = {}): Request {
   if (idToken !== null) {
     cookies.push(`${SESSION_COOKIE_NAME}=${idToken}`);
   }
-  if (currentRole !== null) {
+  if (options.rawRoleCookieValue !== undefined) {
+    cookies.push(`${ROLE_COOKIE_NAME}=${options.rawRoleCookieValue}`);
+  } else if (currentRole !== null) {
     cookies.push(`${ROLE_COOKIE_NAME}=${signedRoleCookieValue(currentRole)}`);
   }
 
@@ -319,6 +351,90 @@ describe("ロール切替: 検証済みセッションが無ければ切替を�
     // 3-4 (i): 状態を変える操作へ至る Route Handler は未認証に 401 を返す。
     // ここまで見ないと、**申告が無いから 400 になっただけ**の応答と区別できず、
     // セッションの検証を外しても落ちないテストになる（AC-8-5）。
+    expect(response.status).toBe(401);
+  });
+});
+
+// --- AC-5-11: デモ用ロール切替の反転元（既定のロール） ----------------------
+//
+// 検査（Vitest）— 5-11 の反転元。下表がそのままテストの入出力になる
+// （bff-auth-termination.md「検査（Vitest）— 5-11 の反転元」）。5-a・5-c・5-e・
+// 5-f（resolveEffectiveRole の直接検査）は role-cookie.test.ts が持つ。ここでは
+// 反転そのもの（5-b・5-d）と、ゲストへの不適用（5-g）を handleRoleSwitch 越しに
+// 検査する。
+//
+// **Red を先に踏む**（AC-8-2）。**反転後の値だけを見て緑にしない** ——
+// 切替を要求した場合だけを検査すると、Cookie の主張を反転元に採る実装も緑に
+// なりうる（AC-8-5 と同じ理由。5-c と 5-d を対で検査する。5-c は role-cookie
+// 側にある）。**拒否の文言は検査しない**（AC-2 前文）。
+
+describe("ロール切替: ロール Cookie が無いときの反転元は Engineer（AC-5-11・5-b）", () => {
+  // 5-5 (ii) により申告は無視されるべきだが、**申告が採用される実装でも
+  // 偶然 Approver が一致して緑になる**ことを避けるため、あえて逆の
+  // "Engineer" を名乗らせる。反転元が Engineer から正しく反転していれば、
+  // 申告に関わらず Approver になる。
+  it("ロール Cookie が無い状態で切替を1回要求すると Approver になる（反転元が Engineer であること）", async () => {
+    const response = await switchRole(
+      roleSwitchRequest({
+        currentRole: null,
+        declaredRole: "Engineer",
+        declaredVia: "json",
+      }),
+    );
+
+    expect(issuedRole(response)).toBe("Approver");
+  });
+});
+
+describe("ロール切替: 検証できない Approver 主張の Cookie を反転元に採らない（AC-5-11・5-d）", () => {
+  const cases: Array<{ name: string; rawRoleCookieValue: string }> = [
+    {
+      name: "改竄された署名",
+      rawRoleCookieValue: tamperedRoleCookieValue("Approver"),
+    },
+    {
+      name: "別の鍵で署名された",
+      rawRoleCookieValue: roleCookieValueSignedWithOtherKey("Approver"),
+    },
+    {
+      name: "署名が欠けた",
+      rawRoleCookieValue: roleCookieValueWithoutSignature("Approver"),
+    },
+  ];
+
+  it.each(cases)(
+    "$name の Approver 主張 Cookie がある状態で切替を1回要求すると Approver になる —— Engineer にならない（5-11 (ii)）",
+    async ({ rawRoleCookieValue }) => {
+      const response = await switchRole(
+        roleSwitchRequest({
+          rawRoleCookieValue,
+          declaredRole: "Engineer",
+          declaredVia: "json",
+        }),
+      );
+
+      // Engineer になるのは Cookie の主張（Approver）を反転元に採った場合で
+      // あり、5-11 (ii) に反する。反転元は Engineer であるべきなので、
+      // 反転結果は Approver になる。
+      expect(issuedRole(response)).toBe("Approver");
+    },
+  );
+});
+
+describe("ロール切替: ゲストには本行を適用しない（AC-5-11 (v)・5-g）", () => {
+  it("検証済みセッションが無い要求は、切替を要求しても既定として Engineer を与えず、ロール Cookie を発行しない", async () => {
+    const response = await switchRole(
+      roleSwitchRequest({
+        idToken: null,
+        currentRole: null,
+        declaredRole: "Approver",
+        declaredVia: "json",
+      }),
+    );
+
+    expect(issuedRole(response)).toBeUndefined();
+    // 5-3・P-3: ゲストは両ヘッダの不在で表す。5-11 (v) はゲストへ既定として
+    // Engineer を与えない —— 3-4 (i) の 401 で未認証であることを確認する。
     expect(response.status).toBe(401);
   });
 });
