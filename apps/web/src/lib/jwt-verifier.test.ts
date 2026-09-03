@@ -51,6 +51,12 @@ interface BuildJwtOptions {
   payloadOverrides?: Record<string, unknown>;
   signWith?: typeof privateKey;
   corruptSignature?: boolean;
+  /**
+   * AC-2-3: 許可リストを検査するには、**その alg で正しく署名された**トークンが
+   * 要る。署名が壊れているだけのトークンでは、署名検証の側で落ちてしまい
+   * 「こちら側の許可リスト」を一度も通らないためである。
+   */
+  signDigest?: string;
 }
 
 function buildJwt(options: BuildJwtOptions = {}): string {
@@ -79,7 +85,7 @@ function buildJwt(options: BuildJwtOptions = {}): string {
   }
 
   const signature = cryptoSign(
-    "RSA-SHA256",
+    options.signDigest ?? "RSA-SHA256",
     Buffer.from(signingInput),
     options.signWith ?? privateKey,
   );
@@ -143,6 +149,31 @@ describe("verifyToken - 拒否（AC-2-2〜AC-2-9）", () => {
     {
       name: "AC-2-3: 署名アルゴリズムを none にし、署名部が空のトークン",
       token: () => buildJwt({ headerOverrides: { alg: "none" } }),
+    },
+    // AC-2-3 の後段「**許可するアルゴリズムを許可リストで固定し、トークン側の
+    // 申告に従わない**」を検査する行。alg=none だけでは足りない —— 採用した
+    // 検証ライブラリは alg=none を自ら拒む（tester 工程の実測）ため、その 1 行
+    // が緑でも**こちら側の許可リストは一度も通らない**。
+    //
+    // 実測（tester 工程）: 検証ライブラリの署名検証は RS256 / RS384 / RS512 を
+    // いずれも受理する。したがって **RS384 / RS512 で正しく署名したトークン**が
+    // 拒否されることは、こちら側の許可リスト（RS256 のみ）が効いていることを
+    // 示す。許可リストの判定を外すと、この 2 行だけが赤になる。
+    {
+      name: "AC-2-3: alg=RS384 で正しく署名されたトークン（許可リストの外）",
+      token: () =>
+        buildJwt({
+          headerOverrides: { alg: "RS384" },
+          signDigest: "RSA-SHA384",
+        }),
+    },
+    {
+      name: "AC-2-3: alg=RS512 で正しく署名されたトークン（許可リストの外）",
+      token: () =>
+        buildJwt({
+          headerOverrides: { alg: "RS512" },
+          signDigest: "RSA-SHA512",
+        }),
     },
     {
       name: "AC-2-4: 発行者（iss）が当該 User Pool でないトークン",
