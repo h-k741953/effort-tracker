@@ -41,6 +41,8 @@ const USER_POOL_ID_VAR = "COGNITO_USER_POOL_ID";
 const CLIENT_ID_VAR = "COGNITO_CLIENT_ID";
 const DOMAIN_PREFIX_VAR = "COGNITO_DOMAIN_PREFIX";
 const ROLE_COOKIE_SIGNING_KEY_VAR = "ROLE_COOKIE_SIGNING_KEY";
+/** AC-7-6: サインインの戻り先の組み立てに用いる公開オリジン（構成側が注入）。 */
+const PUBLIC_ORIGIN_VAR = "PUBLIC_ORIGIN";
 
 function read(environment: Environment, name: string): string | undefined {
   const value = environment[name];
@@ -102,4 +104,18 @@ export function loadRoleCookieSigningKey(
     return { ok: false, missing: [ROLE_COOKIE_SIGNING_KEY_VAR] };
   }
   return { ok: true, value: signingKey };
+}
+
+/**
+ * 公開オリジンを読む（AC-7-6・Q-H = (a)）。**未設定・空なら失敗**であり、
+ * 既定値へ黙って落ちず、要求元のホストへも推測で落ちない（AC-7-6 (ii)）。
+ */
+export function loadPublicOrigin(
+  environment: Environment = process.env,
+): ConfigResult<string> {
+  const publicOrigin = read(environment, PUBLIC_ORIGIN_VAR);
+  if (publicOrigin === undefined) {
+    return { ok: false, missing: [PUBLIC_ORIGIN_VAR] };
+  }
+  return { ok: true, value: publicOrigin };
 }

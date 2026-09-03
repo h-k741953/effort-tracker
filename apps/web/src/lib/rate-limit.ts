@@ -40,6 +40,14 @@ export interface RateLimiter {
   check(key: string, now: Date): RateLimitResult;
   /** AC-11-7 (iv): テストから状態を明示的に初期化できる形にする。 */
   reset(): void;
+  /**
+   * AC-11-7 (iii) の観測点。**保持している記録の件数だけ**を返す
+   * （「何でも見える窓」にしない —— キーの一覧・カウンタ・ウィンドウの開始
+   * 時刻は公開しない）。掃除（sweepExpired）が実際に記録を落としていることを、
+   * ウィンドウの境界判定（check 自身の新規ウィンドウ判定）から独立に検査する
+   * ために要る。
+   */
+  trackedKeyCount(): number;
 }
 
 interface WindowState {
@@ -108,6 +116,10 @@ export function createRateLimiter(): RateLimiter {
     reset(): void {
       windows.clear();
       lastSweepMillis = undefined;
+    },
+
+    trackedKeyCount(): number {
+      return windows.size;
     },
   };
 }
