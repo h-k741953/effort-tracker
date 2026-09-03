@@ -27,6 +27,7 @@ variables {
   cognito_callback_urls                      = ["https://example.test/api/auth/callback"]
   cognito_domain_prefix                      = "effort-tracker-dummy"
   role_cookie_signing_key                    = "dummy-role-cookie-signing-key-0123456789"
+  public_origin                              = "https://public.example.test"
 }
 
 # --- AC-10-4-r: 遮断 Lambda の起動経路（SNS 購読1つ） ----------------------

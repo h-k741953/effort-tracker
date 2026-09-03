@@ -10,7 +10,13 @@ import { describe, expect, it } from "vitest";
 //
 // AC-11-5〜11-9（U-1 の a〜e。2026-09-01 人間決定）と、検査テーブル
 // 11-a〜11-j（236行〜）がそのまま本ファイルの入出力になる。
-import { createRateLimiter, resolveRateLimitKey, withRateLimit } from "./rate-limit";
+import {
+  createRateLimiter,
+  resolveRateLimitKey,
+  tooManyRequestsResponse,
+  withRateLimit,
+  withRequestRateLimit,
+} from "./rate-limit";
 
 // AC-11-10: ウィンドウの判定に用いる現在時刻は呼ぶ側から与える。
 const T0 = new Date("2026-09-01T00:00:00.000Z");
@@ -199,5 +205,215 @@ describe("withRateLimit - 超過時に本来の処理を実行しない（検査
     // ならない（callCount が61のままなら Red）。
     expect(callCount).toBe(60);
     expect(result).not.toBe("handled");
+  });
+});
+
+// --- AC-11-6 (iii): 境界判定を掃除から独立に検査する（検査 11-e の補強） ----
+//
+// 既存の 11-e（t0+60秒ちょうど）は、掃除（AC-11-7 (iii)）と**互いにマスクし
+// 合う**：check は先に掃除を呼び、初回 check(T0) で掃除の基準時刻が T0 に立つ
+// ため、t0+60秒 では掃除側が先に当該キーを消してしまう。よって
+// 「check 側の境界判定を『以上』から『超過』へ変える」ミューテーションでも、
+// 「掃除側の削除を消す」ミューテーションでも、もう一方が同じ結果を出して緑の
+// まま通る（tester 工程でコードを読んで確認）。
+//
+// 本 describe は**掃除が走らない時刻**に境界を置くことで、通るかどうかを
+// **check 側の境界判定だけ**で決まるようにする。
+describe("createRateLimiter - 境界判定を掃除から独立に検査する（AC-11-6 (iii)）", () => {
+  it("掃除が走らない時刻に置いた t0+60秒ちょうどの要求は通り、件数が1に戻る", () => {
+    const limiter = createRateLimiter();
+    const target = "203.0.113.70";
+
+    // (1) 掃除の基準時刻を T0 に立てる（初回の check で立つ）。
+    limiter.check("203.0.113.71", T0);
+
+    // (2) 対象キーのウィンドウを T0+10秒 から始める（掃除は走らない: 10 < 60）。
+    limiter.check(target, secondsAfter(T0, 10));
+
+    // (3) T0+60秒 に掃除を走らせ、基準時刻を T0+60秒 へ進める。対象キーは
+    //     60-10=50 < 60 なので、この掃除では消えない。
+    limiter.check("203.0.113.71", secondsAfter(T0, 60));
+
+    // (4) 対象キーを同一ウィンドウ内で 60 件まで満たす（掃除は走らない）。
+    for (let i = 0; i < 59; i += 1) {
+      limiter.check(target, secondsAfter(T0, 60));
+    }
+
+    // (5) 対象キーの t0（T0+10秒）から**ちょうど 60 秒**の T0+70秒。掃除の
+    //     基準時刻は T0+60秒 であり 70-60=10 < 60 なので**掃除は走らない**。
+    //     したがって、ここで通るかどうかは check 側の境界判定だけが決める
+    //     ——「以上」を「超過」に変えると、この行が赤になる。
+    const boundary = limiter.check(target, secondsAfter(T0, 70));
+    expect(boundary).toEqual({ allowed: true });
+
+    // 新しいウィンドウで件数が1に戻っていれば、59件追加しても60件目まで通る。
+    let lastResult = boundary;
+    for (let i = 0; i < 59; i += 1) {
+      lastResult = limiter.check(target, secondsAfter(T0, 70));
+    }
+    expect(lastResult).toEqual({ allowed: true });
+    expect(limiter.check(target, secondsAfter(T0, 70)).allowed).toBe(false);
+  });
+});
+
+// --- AC-11-7 (iii): 期限の切れた記録を保持し続けない -------------------------
+//
+// 「キーが際限なく増える形にしない」は、**保持件数を見ないと検査できない**。
+// 現行の公開 API（check / reset）だけでは、掃除を丸ごと消しても check の結果が
+// 変わらず緑のまま通る。そこで **保持している記録の件数だけ**を返す最小の
+// 観測点 trackedKeyCount() を要求する（AC-11-7 (iv) がテストのために reset() を
+// 許したのと同型。仕様の変更を要さない）。
+//
+// **「何でも見える窓」にしない** —— 返すのは件数だけであり、キーの一覧・
+// カウンタ・ウィンドウの開始時刻は公開しない。
+describe("createRateLimiter - 期限切れ記録の掃除（AC-11-7 (iii)）", () => {
+  it("掃除は期限の切れた記録だけを落とし、まだ生きている記録は落とさない", () => {
+    const limiter = createRateLimiter();
+
+    // 掃除の基準時刻が T0 に立ち、old のウィンドウは T0 から始まる。
+    limiter.check("203.0.113.80", T0);
+    // young のウィンドウは T0+30秒 から（ここでは掃除は走らない: 30 < 60）。
+    limiter.check("203.0.113.81", secondsAfter(T0, 30));
+    expect(limiter.trackedKeyCount()).toBe(2);
+
+    // T0+61秒 で掃除が走る（61 >= 60）。
+    // - old  : 61-0  = 61 >= 60 → 期限切れ。**保持し続けない**
+    // - young: 61-30 = 31 <  60 → まだ生きている。**落とさない**
+    limiter.check("203.0.113.82", secondsAfter(T0, 61));
+
+    // 残るのは young と、いま作られた trigger の 2 件。
+    // 掃除の削除を消すと 3 件になり、まとめて捨てる実装だと 1 件になる。
+    expect(limiter.trackedKeyCount()).toBe(2);
+  });
+
+  it("ウィンドウをまたいで別々のキーが来ても、保持件数は際限なく増えない", () => {
+    const limiter = createRateLimiter();
+    for (let i = 0; i < 10; i += 1) {
+      // 1 件ごとに 120 秒進める。直前のキーは必ず期限切れになる。
+      limiter.check(`203.0.113.${100 + i}`, secondsAfter(T0, i * 120));
+    }
+    // 最後の 1 件だけが生きている状態が期待値。保持し続ける実装なら 10 件。
+    expect(limiter.trackedKeyCount()).toBe(1);
+  });
+
+  it("reset() は保持している記録を落とす（AC-11-7 (iv)）", () => {
+    const limiter = createRateLimiter();
+    limiter.check("203.0.113.90", T0);
+    limiter.check("203.0.113.91", T0);
+    expect(limiter.trackedKeyCount()).toBe(2);
+
+    limiter.reset();
+
+    expect(limiter.trackedKeyCount()).toBe(0);
+  });
+});
+
+// --- AC-11-8: 超過時の応答（検査 11-b / 11-c） ------------------------------
+//
+// tooManyRequestsResponse / withRequestRateLimit にはテストが 1 本も無かった。
+// Retry-After を削っても、429 を 200 にしても緑のままだった（reviewer 指摘）。
+
+const DUMMY_SESSION_TOKEN = "dummy.session.token-0123456789";
+const DUMMY_IP = "203.0.113.200";
+
+function requestHeaders(): Pick<Headers, "get"> {
+  return headersOf({
+    "cloudfront-viewer-address": `${DUMMY_IP}:443`,
+    cookie: `et_session=${DUMMY_SESSION_TOKEN}`,
+  });
+}
+
+describe("tooManyRequestsResponse - 超過時の応答（AC-11-8 (ii)(iii)）", () => {
+  it("429 を返し、Retry-After に与えた残り秒数を添える", () => {
+    const response = tooManyRequestsResponse({
+      allowed: false,
+      retryAfterSeconds: 48,
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("48");
+  });
+
+  it("Retry-After は 1 以上の整数である", () => {
+    const response = tooManyRequestsResponse({
+      allowed: false,
+      retryAfterSeconds: 1,
+    });
+
+    const retryAfter = response.headers.get("Retry-After");
+    expect(retryAfter).not.toBeNull();
+    const parsed = Number(retryAfter);
+    expect(Number.isInteger(parsed)).toBe(true);
+    expect(parsed).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("withRequestRateLimit - 入口での超過（AC-11-8・検査 11-b / 11-c / 11-j）", () => {
+  it("超過した要求は 429 になり、Retry-After が必ず付く", async () => {
+    const limiter = createRateLimiter();
+    const headers = requestHeaders();
+    const handler = async () => new Response("ok", { status: 200 });
+
+    for (let i = 0; i < 60; i += 1) {
+      const passed = await withRequestRateLimit(headers, T0, handler, limiter);
+      expect(passed.status).toBe(200);
+    }
+
+    const response = await withRequestRateLimit(headers, T0, handler, limiter);
+
+    expect(response.status).toBe(429);
+    const retryAfter = response.headers.get("Retry-After");
+    expect(retryAfter).not.toBeNull();
+    // 61 件目は t0 と同時刻なので、残りはウィンドウ丸ごとの 60 秒。
+    expect(retryAfter).toBe("60");
+    expect(Number.isInteger(Number(retryAfter))).toBe(true);
+    expect(Number(retryAfter)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("超過した要求では本来の処理が実行されない（検査 11-j）", async () => {
+    const limiter = createRateLimiter();
+    const headers = requestHeaders();
+    let callCount = 0;
+    const handler = async () => {
+      callCount += 1;
+      return new Response("ok", { status: 200 });
+    };
+
+    for (let i = 0; i < 60; i += 1) {
+      await withRequestRateLimit(headers, T0, handler, limiter);
+    }
+    expect(callCount).toBe(60);
+
+    const response = await withRequestRateLimit(headers, T0, handler, limiter);
+
+    expect(response.status).toBe(429);
+    expect(callCount).toBe(60);
+  });
+
+  it("429 の本文・ヘッダにキー（IP）もトークンも載せない（AC-11-8 (iii)・AC-4-1）", async () => {
+    const limiter = createRateLimiter();
+    const headers = requestHeaders();
+    const handler = async () => new Response("ok", { status: 200 });
+
+    for (let i = 0; i < 61; i += 1) {
+      await withRequestRateLimit(headers, T0, handler, limiter);
+    }
+    const response = await withRequestRateLimit(headers, T0, handler, limiter);
+    expect(response.status).toBe(429);
+
+    // ヘッダは空ではない（Retry-After が必ず居る＝上の it）。空集合に対する
+    // 「含まない」で緑にならないよう、まず中身があることを確かめる。
+    const headerPairs = [...response.headers.entries()];
+    expect(headerPairs.length).toBeGreaterThan(0);
+    const serializedHeaders = headerPairs
+      .map(([name, value]) => `${name}: ${value}`)
+      .join("\n");
+
+    expect(serializedHeaders).not.toContain(DUMMY_IP);
+    expect(serializedHeaders).not.toContain(DUMMY_SESSION_TOKEN);
+
+    const body = await response.text();
+    expect(body).not.toContain(DUMMY_IP);
+    expect(body).not.toContain(DUMMY_SESSION_TOKEN);
   });
 });

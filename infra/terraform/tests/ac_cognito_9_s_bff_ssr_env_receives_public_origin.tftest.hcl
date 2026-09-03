@@ -1,18 +1,22 @@
-# AC-9-n（docs/specs/cognito-auth-infra.md）の検査。
+# AC-9-s（docs/specs/cognito-auth-infra.md）の検査。
 #
-# 本ファイルが検査するのは、BFF・SSR Lambda の環境変数に、クライアントシークレットの変数の値が現れないこと（AC-8-2・AC-5-7） だけである。
+# 本ファイルが検査するのは、BFF・SSR Lambda の環境変数に公開オリジンが注入されており（未設定でなく、空でなく）、その値が当該変数（public_origin）から与えられていること（リテラルの直書き・暫定値でないこと。AC-8-8・AC-8-9） だけである。
 #
 # mock_provider を用い、実際の AWS API を呼ばない（P-6・P-9）。
 #
 # リソース名・変数名はこのテストが暫定的に固定するインターフェースである。
 # 実装側は同じ名前で作ってよいし、都合が悪ければテストごと見直す。
 #
-# 実測（tester 工程）: aws_lambda_function.bff_ssr は #8 で既に存在するため、
-# 「environment が空である」状態でも !contains(...) は真になり（空集合には
-# 何も含まれないため）、実装が無いまま本 assert が pass してしまう
-# （vacuous true）。これでは何も検証していないのと同じであるため、
-# 「environment に値が実際に入っていること」を assert の前提として明示的に
-# 併記し、実装が無い間は Red になるようにする。
+# **値そのものを assert しない**（AC-9-s。ダミーであれ期待値として書かない
+# ＝P-4・9-g と同型）。右辺は var.public_origin の参照であり、リテラルの
+# URL ではない。
+#
+# 限界（AC-9-s・AC-11-15）: 変数の宣言側（既定値を持たないこと＝AC-8-9 (i)）は
+# 本 run では観測できず、AC-9 前文の例外は AC-9-g / AC-9-r の 2 条に限るため、
+# 本条を静的チェッカ（AC-12）へ足さない。帰結として「既定値を持たない」は
+# 機械検査されず、担保はレビューと規律である（要求としては緩めない）。
+# あわせて、ここで渡した公開オリジンと Cognito に登録された戻り先
+# （AC-5-3・AC-9-i）が同じ公開オリジンを指すことも検査されない（AC-11-15）。
 
 mock_provider "aws" {}
 
@@ -33,7 +37,7 @@ variables {
   public_origin                              = "https://public.example.test"
 }
 
-run "bff_ssr_env_excludes_google_client_secret" {
+run "bff_ssr_env_receives_public_origin" {
   command = plan
 
   # BFF・SSR Lambda の environment.variables には、この構成が作る User
@@ -41,8 +45,8 @@ run "bff_ssr_env_excludes_google_client_secret" {
   # COGNITO_CLIENT_ID）。これらは provider が採番する computed 値であり、
   # plan 時点では unknown になる（ac_cognito_9_m と同型の理由）。ダミーの
   # ID で override_during = plan により確定させる。environment 自体・
-  # var.google_client_secret・var.role_cookie_signing_key は override しない
-  # （本 assert が実際に検査している対象であるため）。
+  # var.public_origin は override しない（本 assert が実際に検査している
+  # 対象であるため）。
   override_resource {
     target = aws_cognito_user_pool.this
     values = {
@@ -61,13 +65,10 @@ run "bff_ssr_env_excludes_google_client_secret" {
   }
 
   assert {
-    condition = (
-      length(try(aws_lambda_function.bff_ssr.environment[0].variables, {})) > 0
-      && !contains(
-        values(try(aws_lambda_function.bff_ssr.environment[0].variables, {})),
-        var.google_client_secret
-      )
+    condition = contains(
+      values(try(aws_lambda_function.bff_ssr.environment[0].variables, {})),
+      var.public_origin
     )
-    error_message = "BFF・SSR Lambda の環境変数に、Google のクライアントシークレットの値が現れてはならない（AC-8-2・AC-5-7）。署名鍵（role_cookie_signing_key）は本 assert の対象に含めない（AC-9-n の除外・AC-8-6）。environment に値が1件も無い場合も、この assert は未実装として失敗する（vacuous true の回避）"
+    error_message = "BFF・SSR Lambda の環境変数は、サインインの戻り先の組み立てに要する公開オリジンを変数（public_origin）から受け取らなければならない。リテラルの直書き・暫定値でない（AC-8-8・AC-8-9）"
   }
 }
