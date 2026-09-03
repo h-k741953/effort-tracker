@@ -223,10 +223,11 @@ export async function handleSignInCallback(
  * (iii) デモ用ロール切替（AC-11-2 (iii)・AC-5-5）。**署名済み Cookie を発行する
  * 唯一の経路**である。
  *
- * 要求が運べるのは「どちらへ切り替えたいか」の申告までであり、**認可の根拠に
- * なるのは BFF が署名した Cookie を BFF 自身が検証して得た値だけ**である
- * （AC-5-5 (i)(ii)）。申告は許可リスト（Engineer / Approver）で検査し、
- * 署名できたときにだけ切替が成立する。
+ * **要求からロールの申告を読まない** —— 要求ヘッダ・クエリ・本文で与えられた
+ * ロールを採用しない（AC-5-5 (ii)）。**認可の根拠になるのは BFF が署名した
+ * Cookie を BFF 自身が検証して得た値だけ**であり（AC-5-5 (i)）、切替はその
+ * 現在のロールを反転させる。正当なロール Cookie が無いとき（欠落・署名の検証
+ * 失敗・Engineer / Approver 以外の値）の反転元は Engineer である（AC-5-11）。
  */
 export async function handleRoleSwitch(
   request: Request,
