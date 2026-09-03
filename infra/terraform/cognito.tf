@@ -94,7 +94,7 @@ resource "aws_cognito_identity_provider" "google" {
   provider_details = {
     client_id        = var.google_client_id
     client_secret    = var.google_client_secret
-    authorize_scopes = "openid email profile" # AC-4-5: 本人確認に要る最小のスコープに限る
+    authorize_scopes = "openid email" # AC-4-5: 本人確認に要る最小のスコープに限る
   }
 
   # AC-4-4: Google から受け取る属性を User Pool の属性へ明示的に対応づける。
