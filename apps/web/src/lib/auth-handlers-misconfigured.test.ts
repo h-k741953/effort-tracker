@@ -50,8 +50,42 @@ const FULL_ENVIRONMENT: Environment = {
   ROLE_COOKIE_SIGNING_KEY: SIGNING_KEY,
 };
 
-function withoutVar(name: keyof typeof FULL_ENVIRONMENT): Environment {
-  return { ...FULL_ENVIRONMENT, [name]: undefined };
+/**
+ * 7-a の入力欄「未設定／空」の両方を突く（`undefined` と `""`）。
+ * `undefined` はキー自体を消すのではなく値を `undefined` にする —— `read()`
+ * （auth-config.ts）は `typeof value !== "string"` で弾くため、値が
+ * `undefined` であることと、キーが存在しないことは同じ扱いになる。
+ */
+type MissingMode = "undefined" | "empty";
+
+const MISSING_MODE_LABELS: ReadonlyArray<{
+  readonly mode: MissingMode;
+  readonly label: string;
+}> = [
+  { mode: "undefined", label: "未設定" },
+  { mode: "empty", label: "空" },
+];
+
+function withMissingVar(
+  name: keyof typeof FULL_ENVIRONMENT,
+  mode: MissingMode,
+): Environment {
+  return { ...FULL_ENVIRONMENT, [name]: mode === "undefined" ? undefined : "" };
+}
+
+interface MissingCase {
+  readonly missing: keyof typeof FULL_ENVIRONMENT;
+  readonly mode: MissingMode;
+  readonly label: string;
+}
+
+/** 変数の集合 × {未設定, 空} の直積を作る（7-a を網羅する）。 */
+function missingCases(
+  vars: ReadonlyArray<keyof typeof FULL_ENVIRONMENT>,
+): readonly MissingCase[] {
+  return vars.flatMap((missing) =>
+    MISSING_MODE_LABELS.map(({ mode, label }) => ({ missing, mode, label })),
+  );
 }
 
 // --- 一時値（サインインの戻りに使う。正当な値を固定する） -------------------
@@ -244,18 +278,39 @@ async function assertMisconfiguredResponseShape(
 
 // --- 7-a〜7-c: 経路ごとの「本来の処理が成立しないこと」 ----------------------
 
+// サインインの開始・戻りが読むのは loadAuthConfig（COGNITO_REGION /
+// COGNITO_USER_POOL_ID / COGNITO_CLIENT_ID / COGNITO_DOMAIN_PREFIX）と
+// loadPublicOrigin（PUBLIC_ORIGIN）（auth-handlers.ts handleSignInStart /
+// handleSignInCallback）。ROLE_COOKIE_SIGNING_KEY はこの2経路では読まれない
+// （loadRoleCookieSigningKey を呼ばない）ため含めない。
 const START_AND_CALLBACK_MISSING_VARS: ReadonlyArray<
   keyof typeof FULL_ENVIRONMENT
-> = ["COGNITO_REGION", "PUBLIC_ORIGIN"];
+> = [
+  "COGNITO_REGION",
+  "COGNITO_USER_POOL_ID",
+  "COGNITO_CLIENT_ID",
+  "COGNITO_DOMAIN_PREFIX",
+  "PUBLIC_ORIGIN",
+];
+// デモ用ロール切替が読むのは loadAuthConfig（同上4変数）と
+// loadRoleCookieSigningKey（ROLE_COOKIE_SIGNING_KEY）（handleRoleSwitch）。
+// PUBLIC_ORIGIN はこの経路では読まれない（loadPublicOrigin を呼ばない）ため
+// 含めない。
 const ROLE_SWITCH_MISSING_VARS: ReadonlyArray<keyof typeof FULL_ENVIRONMENT> =
-  ["COGNITO_REGION", "ROLE_COOKIE_SIGNING_KEY"];
+  [
+    "COGNITO_REGION",
+    "COGNITO_USER_POOL_ID",
+    "COGNITO_CLIENT_ID",
+    "COGNITO_DOMAIN_PREFIX",
+    "ROLE_COOKIE_SIGNING_KEY",
+  ];
 
-describe("7-a〜7-c: サインインの開始（構成欠落時。7-5 / 7-6 のいずれか1つが未設定）", () => {
-  it.each(START_AND_CALLBACK_MISSING_VARS.map((missing) => ({ missing })))(
-    "$missing が未設定のとき、送り出し（302）が起きず、5xx を返し、本文が空である",
-    async ({ missing }) => {
+describe("7-a〜7-c: サインインの開始（構成欠落時。7-5 / 7-6 が読む値のいずれか1つが未設定／空）", () => {
+  it.each(missingCases(START_AND_CALLBACK_MISSING_VARS))(
+    "$missing が$label のとき、送り出し（302）が起きず、5xx を返し、本文が空である",
+    async ({ missing, mode }) => {
       const response = await handleSignInStart(signInRequest(), {
-        environment: withoutVar(missing),
+        environment: withMissingVar(missing, mode),
       });
 
       // 7-a (7-7 (ii)): 送り出しが成立しない。
@@ -268,13 +323,13 @@ describe("7-a〜7-c: サインインの開始（構成欠落時。7-5 / 7-6 の�
   );
 });
 
-describe("7-a〜7-c: サインインの戻り（構成欠落時。7-5 / 7-6 のいずれか1つが未設定）", () => {
-  it.each(START_AND_CALLBACK_MISSING_VARS.map((missing) => ({ missing })))(
-    "$missing が未設定のとき、コード交換へ進まず、セッション Cookie を発行せず、5xx を返し、本文が空である",
-    async ({ missing }) => {
+describe("7-a〜7-c: サインインの戻り（構成欠落時。7-5 / 7-6 が読む値のいずれか1つが未設定／空）", () => {
+  it.each(missingCases(START_AND_CALLBACK_MISSING_VARS))(
+    "$missing が$label のとき、コード交換へ進まず、セッション Cookie を発行せず、5xx を返し、本文が空である",
+    async ({ missing, mode }) => {
       const response = await handleSignInCallback(callbackRequest(), {
         now: NOW,
-        environment: withoutVar(missing),
+        environment: withMissingVar(missing, mode),
         publicKeyResolver: fakePublicKeySource,
       });
 
@@ -288,13 +343,13 @@ describe("7-a〜7-c: サインインの戻り（構成欠落時。7-5 / 7-6 の�
   );
 });
 
-describe("7-a〜7-c: デモ用ロール切替（構成欠落時。7-5 / 7-6 のいずれか1つが未設定）", () => {
-  it.each(ROLE_SWITCH_MISSING_VARS.map((missing) => ({ missing })))(
-    "$missing が未設定のとき、ロール Cookie を発行せず、5xx を返し、本文が空である",
-    async ({ missing }) => {
+describe("7-a〜7-c: デモ用ロール切替（構成欠落時。7-5 が読む値のいずれか1つが未設定／空）", () => {
+  it.each(missingCases(ROLE_SWITCH_MISSING_VARS))(
+    "$missing が$label のとき、ロール Cookie を発行せず、5xx を返し、本文が空である",
+    async ({ missing, mode }) => {
       const response = await handleRoleSwitch(roleSwitchRequest(), {
         now: NOW,
-        environment: withoutVar(missing),
+        environment: withMissingVar(missing, mode),
         publicKeyResolver: fakePublicKeySource,
       });
 
