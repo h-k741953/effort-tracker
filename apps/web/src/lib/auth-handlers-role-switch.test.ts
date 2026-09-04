@@ -438,3 +438,29 @@ describe("ロール切替: ゲストには本行を適用しない（AC-5-11 (v)
     expect(response.status).toBe(401);
   });
 });
+
+// --- 5-i ----------------------------------------------------------------
+
+// 検査（Vitest）— セッション Cookie（5-8 (i)）とロール Cookie（5-5 (vi)）の属性
+// （bff-auth-termination.md）。5-h（セッション Cookie 側）は
+// auth-handlers.test.ts の 5-h が持つ（同じ要求を両所へ置かない＝ADR 0004）。
+//
+// 見るのは HttpOnly / Secure / SameSite の3属性がいずれも欠けていないことまで
+// であり、SameSite の具体の値は実装側が持つため検査しない（5-5 (vi) が
+// 5-8 (i) と同じ属性を課す）。応答が実際に送出する Set-Cookie を直接見る ——
+// 共通の組み立て（serializeCookie）だけを呼んで確かめる形にしない。
+
+describe("5-i: デモ用ロール切替が成立した応答が送出する、ロール Cookie の Set-Cookie の属性（5-5 (vi)）", () => {
+  it("HttpOnly / Secure / SameSite の3属性をいずれも欠かない", async () => {
+    const response = await switchRole(roleSwitchRequest({ currentRole: "Engineer" }));
+
+    const header = response.headers
+      .getSetCookie()
+      .find((cookie) => cookie.startsWith(`${ROLE_COOKIE_NAME}=`));
+
+    expect(header).toBeDefined();
+    expect(header).toMatch(/;\s*HttpOnly\s*(;|$)/i);
+    expect(header).toMatch(/;\s*Secure\s*(;|$)/i);
+    expect(header).toMatch(/;\s*SameSite=[A-Za-z]+\s*(;|$)/i);
+  });
+});
