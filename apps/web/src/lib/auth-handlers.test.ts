@@ -573,3 +573,28 @@ describe("12-k: 一時 Cookie の属性（5-10 (ii)）", () => {
     }
   });
 });
+
+// --- 5-h ----------------------------------------------------------------
+
+// 検査（Vitest）— セッション Cookie（5-8 (i)）とロール Cookie（5-5 (vi)）の属性
+// （bff-auth-termination.md）。5-i（ロール Cookie 側）は
+// auth-handlers-role-switch.test.ts が持つ（同じ要求を両所へ置かない＝ADR 0004）。
+//
+// 見るのは HttpOnly / Secure / SameSite の3属性がいずれも欠けていないことまで
+// であり、SameSite の具体の値は実装側が持つため検査しない（5-8 (i)）。
+// 12-k と同じく、応答が実際に送出する Set-Cookie を直接見る —— 共通の組み立て
+// （serializeCookie）だけを呼んで確かめる形にしない。理由は、関数が属性を
+// 付けていても、経路がその関数を通らなければ属性は失われ、関数だけを見る検査は
+// 緑のまま残るためである。
+
+describe("5-h: サインインの戻りが成功した応答が送出する、セッション Cookie の Set-Cookie の属性（5-8 (i)）", () => {
+  it("HttpOnly / Secure / SameSite の3属性をいずれも欠かない", async () => {
+    const response = await runCallback(callbackRequest());
+
+    const header = findSetCookie(response, SESSION_COOKIE_NAME);
+    expect(header).toBeDefined();
+    expect(header).toMatch(/;\s*HttpOnly\s*(;|$)/i);
+    expect(header).toMatch(/;\s*Secure\s*(;|$)/i);
+    expect(header).toMatch(/;\s*SameSite=[A-Za-z]+\s*(;|$)/i);
+  });
+});
