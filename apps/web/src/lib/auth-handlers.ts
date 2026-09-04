@@ -76,9 +76,14 @@ function unauthenticatedResponse(): Response {
   return textResponse(401, "Unauthorized", headers);
 }
 
-/** 構成が欠けている状態を、既定値へ落ちずに失敗として表す（AC-7-5）。 */
+/**
+ * 構成が欠けている状態を、既定値へ落ちずに失敗として表す（AC-7-5・AC-7-7）。
+ * AC-7-7 (iv): 応答の本文で状態・理由を説明しない —— 本文を持たない（空）。
+ * AC-7-7 (i): ステータスは 5xx（401・429 と同じ値にしない）。具体の値は
+ * 実装側が持つ（AC-7-7 (v)・限界 10-17）。
+ */
 function misconfiguredResponse(): Response {
-  return textResponse(500, "Service Unavailable");
+  return textResponse(500, "");
 }
 
 /**
