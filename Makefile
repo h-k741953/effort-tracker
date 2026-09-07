@@ -30,7 +30,7 @@ verify: lint test check-domain-deps check-skills check-go-module-pins scan-secre
 	@echo "==> verify: 全検査を通過"
 
 .PHONY: test
-test: test-api test-web test-tf test-scripts test-hooks test-commands test-skills test-go-module-pins ## 全レイヤーのテスト
+test: test-api test-web test-tf test-scripts test-hooks test-commands test-skills test-go-module-pins test-public-api-diff ## 全レイヤーのテスト
 
 .PHONY: lint
 lint: lint-api lint-web lint-tf ## 全レイヤーの Lint / 型チェック
@@ -373,6 +373,31 @@ check-go-module-pins: ## Dockerfile の ARG pin と go.mod の direct require �
 test-go-module-pins: ## check-go-module-pins.sh のロジックを fixture で検査
 	@echo "==> test-go-module-pins"
 	@bash .github/scripts/test-check-go-module-pins.sh
+
+# =============================================================================
+# 公開 API 差分の比較器（Issue #93）
+#
+# check-public-api-diff.sh は、抽出器（services/api/cmd/exportlist、D-1）が
+# 出力する新旧2本のエクスポート一覧（AC-2）を比較し、ADDED /
+# SIGNATURE_CHANGED / REMOVED を判定する（docs/specs/public-api-diff-check.md
+# AC-4）。比較器自身は go を呼ばない純粋なフィルタである（AC-1-3）。
+#
+# test-scripts へ合流させないのは、D-2（fixture ターゲットも go ジョブへ置く）
+# のため。test-scripts は scripts ジョブから呼ばれる想定であり、そちらへ
+# 合流させると比較器 fixture が scripts ジョブへ引き込まれ、D-2 の決定と
+# 矛盾する。check-go-module-pins / test-go-module-pins と同じ理由で専用
+# ターゲットへ分ける。
+#
+# check-public-api-diff 自体を呼ぶ Makefile ターゲットは作らない
+# （比較器は引数（新旧2本の一覧パス）を呼び出し側が都度渡す前提であり、AC-1-1
+# は既定値を持たないことを明示している。呼び出しは CI step 側〈AC-7、実装
+# 工程の範囲〉が担う）。
+# =============================================================================
+
+.PHONY: test-public-api-diff
+test-public-api-diff: ## check-public-api-diff.sh のロジックを fixture で検査
+	@echo "==> test-public-api-diff"
+	@bash .github/scripts/test-check-public-api-diff.sh
 
 # =============================================================================
 # セキュリティ
