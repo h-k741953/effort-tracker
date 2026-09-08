@@ -215,7 +215,7 @@ func extractGenDecl(fset *token.FileSet, d *ast.GenDecl, pkgPath string) []recor
 				}
 				sig := "-"
 				if vs.Type != nil {
-					sig = normalizeWhitespace(printNode(fset, vs.Type))
+					sig = normalizeWhitespace(printNode(fset, typeExprSignature(vs.Type)))
 				}
 				out = append(out, record{
 					Pkg:       pkgPath,
@@ -233,12 +233,9 @@ func extractGenDecl(fset *token.FileSet, d *ast.GenDecl, pkgPath string) []recor
 // 型パラメータがあれば [...] を先頭に置き、続けて右辺の型式。型エイリアス
 // は右辺の前に "= " を付ける（AC-3-9 / AC-3-10 の非公開メンバー除去を含む）。
 //
-// stripSignatureNames は ts.Type そのものを書き換えず、印字用のコピーを
-// 返す（filterUnexportedMembers とは異なり、ts.Type は printNode に渡す
-// 直前でしか使わないコピーの起点として扱う）。
+// typeExprSignature は ts.Type そのものを書き換えず、印字用のコピーを返す。
 func typeSpecSignature(fset *token.FileSet, ts *ast.TypeSpec) string {
-	filterUnexportedMembers(ts.Type)
-	body := normalizeWhitespace(printNode(fset, stripSignatureNames(ts.Type)))
+	body := normalizeWhitespace(printNode(fset, typeExprSignature(ts.Type)))
 
 	var sb strings.Builder
 	if ts.TypeParams != nil && len(ts.TypeParams.List) > 0 {
@@ -252,22 +249,101 @@ func typeSpecSignature(fset *token.FileSet, ts *ast.TypeSpec) string {
 	return sb.String()
 }
 
-// filterUnexportedMembers は AC-3-9（構造体の非公開フィールド／インター
-// フェースの非公開メソッドを除去する）と AC-3-10（埋め込みフィールドは
-// 埋め込まれた型名の公開性で判定する）を、type 宣言の右辺（トップレベル）
-// に対して適用する。t のフィールドリストをその場で書き換える。
-func filterUnexportedMembers(t ast.Expr) {
-	switch v := t.(type) {
+// typeExprSignature は e のコピーを返し、<signature> に現れるあらゆる
+// 入れ子位置へ一様に次の2つを適用する（Issue #93 reviewer 往復2の
+// 指摘 W-2r: 経路ごとに個別対応すると適用漏れが再発するため、型式を
+// 1回のコピー再帰で走査する単一の入口をここに設ける）。
+//
+//   - AC-3-9: 構造体の非公開フィールド／インターフェースの非公開メソッド
+//     の除去
+//   - AC-3-10: 埋め込みフィールドは、埋め込まれた型名の公開性で除去を判定
+//   - AC-3-6: 関数の引数名・結果名の除去
+//
+// e 自身、および e から go/parser が返した既存の AST を辿って届く一切の
+// ノードは書き換えない。変更が要る場所でだけ新しいノードを作って返し、
+// 変更が不要な部分木はそのまま共有する（共有される部分木は以後どこからも
+// 変更されないため安全）。この単一の入口は、type 宣言の右辺
+// （typeSpecSignature）・var/const の宣言型（extractGenDecl）・関数の
+// 引数型／結果型（fieldListTypesString）・型パラメータの制約
+// （typeParamsString）のすべてから呼ばれる。printNode へ渡す直前は必ず
+// ここを通す。
+func typeExprSignature(e ast.Expr) ast.Expr {
+	switch v := e.(type) {
+	case nil:
+		return nil
 	case *ast.StructType:
-		if v.Fields != nil {
-			v.Fields.List = filterStructFields(v.Fields.List)
-			collapseIfEmpty(v.Fields)
-		}
+		nv := *v
+		nv.Fields = filterFieldList(v.Fields)
+		return &nv
 	case *ast.InterfaceType:
-		if v.Methods != nil {
-			v.Methods.List = filterInterfaceMembers(v.Methods.List)
-			collapseIfEmpty(v.Methods)
+		nv := *v
+		nv.Methods = filterFieldList(v.Methods)
+		return &nv
+	case *ast.FuncType:
+		nv := *v
+		nv.Params = stripFieldListNames(v.Params)
+		nv.Results = stripFieldListNames(v.Results)
+		return &nv
+	case *ast.StarExpr:
+		nv := *v
+		nv.X = typeExprSignature(v.X)
+		return &nv
+	case *ast.ArrayType:
+		nv := *v
+		nv.Elt = typeExprSignature(v.Elt)
+		return &nv
+	case *ast.Ellipsis:
+		nv := *v
+		nv.Elt = typeExprSignature(v.Elt)
+		return &nv
+	case *ast.MapType:
+		nv := *v
+		nv.Key = typeExprSignature(v.Key)
+		nv.Value = typeExprSignature(v.Value)
+		return &nv
+	case *ast.ChanType:
+		nv := *v
+		nv.Value = typeExprSignature(v.Value)
+		return &nv
+	case *ast.ParenExpr:
+		nv := *v
+		nv.X = typeExprSignature(v.X)
+		return &nv
+	case *ast.IndexExpr:
+		nv := *v
+		nv.X = typeExprSignature(v.X)
+		nv.Index = typeExprSignature(v.Index)
+		return &nv
+	case *ast.IndexListExpr:
+		nv := *v
+		nv.X = typeExprSignature(v.X)
+		newIndices := make([]ast.Expr, len(v.Indices))
+		for i, idx := range v.Indices {
+			newIndices[i] = typeExprSignature(idx)
 		}
+		nv.Indices = newIndices
+		return &nv
+	case *ast.BinaryExpr:
+		// 型集合の union 項（`T1 | T2`）。AC-3-9 が除去を許すのは
+		// インターフェースの非公開メソッド、AC-3-10 が除去を許すのは
+		// 埋め込みフィールドだけであり、union 項はどちらでもないため
+		// ここでは除去しない（Issue #93 reviewer 往復2 の指摘 C-2:
+		// embeddedName が名前を解釈できないことを非公開と同一視して
+		// 丸ごと消していた偽 Green の再発防止）。内部に関数型が現れうる
+		// ため、名前剥がしだけは再帰する。
+		nv := *v
+		nv.X = typeExprSignature(v.X)
+		nv.Y = typeExprSignature(v.Y)
+		return &nv
+	case *ast.UnaryExpr:
+		// 型集合の `~T`。BinaryExpr と同じ理由で除去しない。
+		nv := *v
+		nv.X = typeExprSignature(v.X)
+		return &nv
+	default:
+		// Ident・SelectorExpr など、名前を含む余地の無いノードはそのまま
+		// 返す（コピー不要。呼び出し側もこれを書き換えない）。
+		return e
 	}
 }
 
@@ -286,21 +362,43 @@ func filterUnexportedMembers(t ast.Expr) {
 // printer に「同じ行」と認識させることで、元から空の宣言と同じ
 // "struct{}" / "interface{}" 表記に揃える。メンバーが1つでも残る場合は
 // 触らない（AC-3-7 の正規化の対象を「連続空白の畳み込み」に留め、
-// メンバーが残るケースの表記を変えないため）。
+// メンバーが残るケースの表記を変えないため）。fl は呼び出し側が新しく
+// 割り当てたコピーであることを前提とする（元の AST を書き換えない）。
 func collapseIfEmpty(fl *ast.FieldList) {
 	if len(fl.List) == 0 {
 		fl.Closing = fl.Opening
 	}
 }
 
-func filterStructFields(fields []*ast.Field) []*ast.Field {
-	var out []*ast.Field
-	for _, f := range fields {
+// filterFieldList は fl（構造体のフィールドリスト、またはインターフェース
+// のメソッド／型集合の要素リスト）のコピーを返す。AC-3-9 の非公開メンバー
+// 除去・AC-3-10 の埋め込みフィールド除去を適用したうえで、残す各メンバーの
+// 型に typeExprSignature を再帰適用する。fl 自身・fl.List の要素は一切
+// 書き換えない（新しい FieldList / Field を作って返す）。
+//
+// 無名（Names が空）のメンバーは、埋め込みフィールド（AC-3-10）または
+// インターフェースの型集合の要素（union `T1 | T2`・`~T`）のいずれか。
+// embeddableTypeName が名前を取り出せる構文（Ident・SelectorExpr・
+// StarExpr・IndexExpr・IndexListExpr）のときだけ、その名前の公開性で
+// 除去を判定する。名前を取り出せない構文（union の *ast.BinaryExpr・`~T`
+// の *ast.UnaryExpr など）は無条件で残す —— 「名前として解釈できない」を
+// 「非公開」と同一視すると型集合の要素が丸ごと消え、破壊的な型集合の変更
+// が黙って見えなくなる（Issue #93 reviewer 往復2 の指摘 C-2、実装済みの
+// 偽 Green）。
+func filterFieldList(fl *ast.FieldList) *ast.FieldList {
+	if fl == nil {
+		return nil
+	}
+	nfl := *fl
+	var newList []*ast.Field
+	for _, f := range fl.List {
 		if len(f.Names) == 0 {
-			// 埋め込みフィールド（AC-3-10）。
-			if isExported(embeddedName(f.Type)) {
-				out = append(out, f)
+			if name, ok := embeddableTypeName(f.Type); ok && !isExported(name) {
+				continue
 			}
+			nf := *f
+			nf.Type = typeExprSignature(f.Type)
+			newList = append(newList, &nf)
 			continue
 		}
 		var keep []*ast.Ident
@@ -312,50 +410,35 @@ func filterStructFields(fields []*ast.Field) []*ast.Field {
 		if len(keep) == 0 {
 			continue
 		}
-		if len(keep) == len(f.Names) {
-			out = append(out, f)
-			continue
-		}
 		nf := *f
 		nf.Names = keep
-		out = append(out, &nf)
+		nf.Type = typeExprSignature(f.Type)
+		newList = append(newList, &nf)
 	}
-	return out
+	nfl.List = newList
+	collapseIfEmpty(&nfl)
+	return &nfl
 }
 
-func filterInterfaceMembers(fields []*ast.Field) []*ast.Field {
-	var out []*ast.Field
-	for _, f := range fields {
-		if len(f.Names) == 0 {
-			// 埋め込みインターフェース。
-			if isExported(embeddedName(f.Type)) {
-				out = append(out, f)
-			}
-			continue
-		}
-		if isExported(f.Names[0].Name) {
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
-// embeddedName は埋め込みフィールドの型名を取り出す。修飾がある場合は
-// 最終要素の識別子（AC-3-10）。ポインタ・型パラメータ実体化も剥がす。
-func embeddedName(e ast.Expr) string {
+// embeddableTypeName は埋め込みフィールド／埋め込みインターフェースの
+// 型名を取り出す。修飾がある場合は最終要素の識別子（AC-3-10）。ポインタ・
+// 型パラメータ実体化も剥がす。ok が偽なのは、そもそも型名を持たない構文
+// （型集合の union 項・`~T` など）のとき。この ok を「非公開」に読み替え
+// ないこと（filterFieldList のコメントを参照）。
+func embeddableTypeName(e ast.Expr) (name string, ok bool) {
 	switch v := e.(type) {
 	case *ast.Ident:
-		return v.Name
+		return v.Name, true
 	case *ast.SelectorExpr:
-		return v.Sel.Name
+		return v.Sel.Name, true
 	case *ast.StarExpr:
-		return embeddedName(v.X)
+		return embeddableTypeName(v.X)
 	case *ast.IndexExpr:
-		return embeddedName(v.X)
+		return embeddableTypeName(v.X)
 	case *ast.IndexListExpr:
-		return embeddedName(v.X)
+		return embeddableTypeName(v.X)
 	default:
-		return ""
+		return "", false
 	}
 }
 
@@ -403,7 +486,7 @@ func fieldListTypesString(fset *token.FileSet, fl *ast.FieldList) string {
 	}
 	var parts []string
 	for _, field := range fl.List {
-		typeStr := normalizeWhitespace(printNode(fset, stripSignatureNames(field.Type)))
+		typeStr := normalizeWhitespace(printNode(fset, typeExprSignature(field.Type)))
 		n := len(field.Names)
 		if n == 0 {
 			n = 1
@@ -415,92 +498,12 @@ func fieldListTypesString(fset *token.FileSet, fl *ast.FieldList) string {
 	return "(" + strings.Join(parts, ", ") + ")"
 }
 
-// stripSignatureNames は AC-3-6「引数名・結果名・受信者変数名を出力しない」
-// を <signature> 全体（型式の内部で入れ子になった関数型・インターフェースの
-// メソッド署名を含む）へ適用するため、e のコピーを作りながら関数型の
-// 引数名・結果名を落とす。
-//
-// e 自身（および e から辿れる既存の *ast.Field / *ast.FieldList など）は
-// 一切書き換えない。書き換えが要る場所ではその場で新しいノードを作って
-// 返す（値レシーバでの浅いコピー + 差し替えが必要なフィールドだけ新しい
-// スライス/ポインタに差し替える）。go/parser が返す AST は他のレコードの
-// 抽出でも使い回されるため、破壊的な変更は他の出力に影響しうる
-// （filterUnexportedMembers は type 宣言の右辺という「その TypeSpec でしか
-// 使われないノード」に限定して既に破壊的に書き換えているが、
-// stripSignatureNames はより広い経路（関数の引数型・結果型）から呼ばれる
-// ため、同じ書き方を踏襲しない）。
-//
-// 対象は Go の型式の構文（Ident / SelectorExpr / StarExpr / ArrayType /
-// Ellipsis / MapType / ChanType / ParenExpr / IndexExpr / IndexListExpr /
-// FuncType / StructType / InterfaceType）に限る。型式に現れない構文
-// （式・文）は対象外。
-func stripSignatureNames(e ast.Expr) ast.Expr {
-	switch v := e.(type) {
-	case nil:
-		return nil
-	case *ast.FuncType:
-		nv := *v
-		nv.Params = stripFieldListNames(v.Params)
-		nv.Results = stripFieldListNames(v.Results)
-		return &nv
-	case *ast.StarExpr:
-		nv := *v
-		nv.X = stripSignatureNames(v.X)
-		return &nv
-	case *ast.ArrayType:
-		nv := *v
-		nv.Elt = stripSignatureNames(v.Elt)
-		return &nv
-	case *ast.Ellipsis:
-		nv := *v
-		nv.Elt = stripSignatureNames(v.Elt)
-		return &nv
-	case *ast.MapType:
-		nv := *v
-		nv.Key = stripSignatureNames(v.Key)
-		nv.Value = stripSignatureNames(v.Value)
-		return &nv
-	case *ast.ChanType:
-		nv := *v
-		nv.Value = stripSignatureNames(v.Value)
-		return &nv
-	case *ast.ParenExpr:
-		nv := *v
-		nv.X = stripSignatureNames(v.X)
-		return &nv
-	case *ast.IndexExpr:
-		nv := *v
-		nv.X = stripSignatureNames(v.X)
-		nv.Index = stripSignatureNames(v.Index)
-		return &nv
-	case *ast.IndexListExpr:
-		nv := *v
-		nv.X = stripSignatureNames(v.X)
-		newIndices := make([]ast.Expr, len(v.Indices))
-		for i, idx := range v.Indices {
-			newIndices[i] = stripSignatureNames(idx)
-		}
-		nv.Indices = newIndices
-		return &nv
-	case *ast.StructType:
-		nv := *v
-		nv.Fields = stripFieldListMemberTypes(v.Fields)
-		return &nv
-	case *ast.InterfaceType:
-		nv := *v
-		nv.Methods = stripFieldListMemberTypes(v.Methods)
-		return &nv
-	default:
-		// Ident・SelectorExpr など、名前を含む余地の無いノードはそのまま
-		// 返す（コピー不要。呼び出し側もこれを書き換えない）。
-		return e
-	}
-}
-
 // stripFieldListNames は関数型の引数リスト・結果リスト用: 各フィールドの
-// Names を落とし、Type は再帰的に stripSignatureNames を適用したコピーへ
+// Names を落とし、Type は再帰的に typeExprSignature を適用したコピーへ
 // 差し替える。fl 自身・fl.List の要素は書き換えない（新しい FieldList /
-// Field を作って返す）。
+// Field を作って返す）。typeExprSignature の FuncType ケースから呼ばれる
+// ほか、fieldListTypesString が関数の引数・結果型を組み立てる際にも
+// typeExprSignature 経由で使われる。
 func stripFieldListNames(fl *ast.FieldList) *ast.FieldList {
 	if fl == nil {
 		return nil
@@ -510,27 +513,7 @@ func stripFieldListNames(fl *ast.FieldList) *ast.FieldList {
 	for i, f := range fl.List {
 		nf := *f
 		nf.Names = nil
-		nf.Type = stripSignatureNames(f.Type)
-		newList[i] = &nf
-	}
-	nfl.List = newList
-	return &nfl
-}
-
-// stripFieldListMemberTypes は構造体フィールド・インターフェースメソッドの
-// リスト用: フィールド名／メソッド名（Names）はそのまま残し、各メンバーの
-// Type だけ再帰的に stripSignatureNames を適用したコピーへ差し替える
-// （AC-3-6 はメソッド名・フィールド名を対象にしない。対象はメソッドの
-// 引数名・結果名）。fl 自身・fl.List の要素は書き換えない。
-func stripFieldListMemberTypes(fl *ast.FieldList) *ast.FieldList {
-	if fl == nil {
-		return nil
-	}
-	nfl := *fl
-	newList := make([]*ast.Field, len(fl.List))
-	for i, f := range fl.List {
-		nf := *f
-		nf.Type = stripSignatureNames(f.Type)
+		nf.Type = typeExprSignature(f.Type)
 		newList[i] = &nf
 	}
 	nfl.List = newList
@@ -539,7 +522,9 @@ func stripFieldListMemberTypes(fl *ast.FieldList) *ast.FieldList {
 
 // typeParamsString は "[T any, U comparable]" の形を作る。型パラメータの
 // 名前はここでは剥がさない（引数名とは異なり、型パラメータ名自体が
-// シグネチャの一部であるため。AC-9-7）。
+// シグネチャの一部であるため。AC-9-7）。制約の型式には typeExprSignature
+// を適用し、制約が関数型のとき内側の引数名（AC-3-6）を剥がす
+// （Issue #93 reviewer 往復2 の指摘 C-1r-(b)）。
 func typeParamsString(fset *token.FileSet, fl *ast.FieldList) string {
 	var parts []string
 	for _, field := range fl.List {
@@ -547,7 +532,7 @@ func typeParamsString(fset *token.FileSet, fl *ast.FieldList) string {
 		for _, n := range field.Names {
 			names = append(names, n.Name)
 		}
-		typeStr := normalizeWhitespace(printNode(fset, field.Type))
+		typeStr := normalizeWhitespace(printNode(fset, typeExprSignature(field.Type)))
 		if len(names) == 0 {
 			parts = append(parts, typeStr)
 			continue
