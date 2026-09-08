@@ -372,6 +372,237 @@ func TestExtractRecords_AC3(t *testing.T) {
 				{Pkg: "unresolved", Kind: "var", Name: "X", Signature: "whatever.Foo"},
 			},
 		},
+		{
+			// AC-3-6（Issue #93 reviewer C-1r-(a)）: var/const の型式は
+			// extractGenDecl が vs.Type を stripSignatureNames を通さず
+			// そのまま printNode に渡している（extract.go:218 付近）。
+			// func 型の var/const は、型式の内部に *ast.FuncType の
+			// 引数名を含みうるため、そこが剥がされないままだと
+			// 「引数名だけを変えた2入力が同一 signature を出す」
+			// （AC-3-6）が var/const では成立しない。
+			//
+			// varfuncA / varfuncB は引数名（ctx / c）だけが異なる2入力。
+			// 両方が同一の絶対値 "func(int) error" を出すことを固定する
+			// （相対比較だけだと、両方とも剥がされていない誤った値
+			// "func(ctx int) error" のままでも一致してしまい検出できない
+			// ため、絶対値も併記する）。
+			name: "AC-3-6_C1r_a_var_const_type_expr_strips_nested_func_arg_names",
+			files: map[string]string{
+				"varfuncA/a.go": "package varfuncA\n\n" +
+					"var V func(ctx int) error\n" +
+					"const C func(ctx int) error = nil\n",
+				"varfuncB/a.go": "package varfuncB\n\n" +
+					"var V func(c int) error\n" +
+					"const C func(c int) error = nil\n",
+			},
+			want: []record{
+				{Pkg: "varfuncA", Kind: "var", Name: "V", Signature: "func(int) error"},
+				{Pkg: "varfuncA", Kind: "const", Name: "C", Signature: "func(int) error"},
+				{Pkg: "varfuncB", Kind: "var", Name: "V", Signature: "func(int) error"},
+				{Pkg: "varfuncB", Kind: "const", Name: "C", Signature: "func(int) error"},
+			},
+		},
+		{
+			// AC-3-6（Issue #93 reviewer C-1r-(b)）: 型パラメータの制約
+			// （typeParamsString）は field.Type を stripSignatureNames を
+			// 通さず printNode に直接渡している。制約が関数型
+			// （`F func(ctx int) error`）のとき、制約の**内側**の引数名
+			// （ctx）が残ってしまう。
+			//
+			// 型パラメータ名そのもの（F）は落とさない（AC-9-7:
+			// 型パラメータ名の変更は差分に出る、という要求と矛盾しない
+			// ため）。落とすのは制約の内側の引数名だけ。
+			//
+			// typeparamA / typeparamB は制約内の引数名（ctx / c）だけが
+			// 異なる2入力。両方が同一の絶対値
+			// "[F func(int) error] (F) ()" を出すことを固定する。
+			name: "AC-3-6_C1r_b_type_param_constraint_strips_nested_func_arg_names",
+			files: map[string]string{
+				"typeparamA/a.go": "package typeparamA\n\n" +
+					"func Do[F func(ctx int) error](f F) {}\n",
+				"typeparamB/a.go": "package typeparamB\n\n" +
+					"func Do[F func(c int) error](f F) {}\n",
+			},
+			want: []record{
+				{Pkg: "typeparamA", Kind: "func", Name: "Do", Signature: "[F func(int) error] (F) ()"},
+				{Pkg: "typeparamB", Kind: "func", Name: "Do", Signature: "[F func(int) error] (F) ()"},
+			},
+		},
+		{
+			// AC-3-6（Issue #93 reviewer C-1r-(c)）: 型集合の union
+			// （*ast.BinaryExpr）と `~T`（*ast.UnaryExpr）は
+			// stripSignatureNames の switch に case が無く default で
+			// そのまま（無変換で）返る。union の要素に関数型が現れると
+			// （`interface{ ~int | func(ctx int) error }`）、その内側の
+			// 引数名が剥がされない。
+			//
+			// unionfuncA / unionfuncB は union 内の関数型の引数名
+			// （ctx / c）だけが異なる2入力。両方が同一の絶対値
+			// "(interface{ ~int | func(int) error }) ()" を出すことを
+			// 固定する。
+			name: "AC-3-6_C1r_c_union_and_tilde_strip_nested_func_arg_names",
+			files: map[string]string{
+				"unionfuncA/a.go": "package unionfuncA\n\n" +
+					"func FUnion(x interface{ ~int | func(ctx int) error }) {}\n",
+				"unionfuncB/a.go": "package unionfuncB\n\n" +
+					"func FUnion(x interface{ ~int | func(c int) error }) {}\n",
+			},
+			want: []record{
+				{Pkg: "unionfuncA", Kind: "func", Name: "FUnion", Signature: "(interface{ ~int | func(int) error }) ()"},
+				{Pkg: "unionfuncB", Kind: "func", Name: "FUnion", Signature: "(interface{ ~int | func(int) error }) ()"},
+			},
+		},
+		{
+			// AC-3-9（Issue #93 reviewer C-2、最重要）: filterInterfaceMembers
+			// は無名（埋め込み）フィールドを一律 embeddedName で判定するが、
+			// embeddedName は *ast.BinaryExpr（union `~int | ~float64`）と
+			// *ast.UnaryExpr（`~T`）に対して "" を返す。isExported("") は
+			// false になるため、型集合の要素が丸ごと除去される。
+			//
+			// AC-3-9 が除去を許すのは「構造体の非公開フィールドと、
+			// インターフェースの非公開メソッド」だけであり、AC-3-10 が
+			// 除去を許すのは「埋め込みフィールド（埋め込まれた型名の
+			// 公開性）」だけである。union 項・`~T` 項はどちらでもなく、
+			// この除去を許す条文は無い。
+			//
+			// UnionKeepA: interface{ ~int | ~float64 } の signature を
+			// 絶対値で固定する（union 項が消えず、丸ごと残ること）。
+			name: "AC-3-9_C2_union_type_set_element_not_removed",
+			files: map[string]string{
+				"unionkeep/a.go": "package unionkeep\n\n" +
+					"type Number interface{ ~int | ~float64 }\n",
+			},
+			want: []record{
+				{Pkg: "unionkeep", Kind: "type", Name: "Number", Signature: "interface{ ~int | ~float64 }"},
+			},
+		},
+		{
+			// AC-3-9（Issue #93 reviewer C-2）: `~T` 単独（*ast.UnaryExpr）
+			// も同じ経路で除去される。単独ケースを union とは別に固定する。
+			name: "AC-3-9_C2_tilde_only_type_set_element_not_removed",
+			files: map[string]string{
+				"tildekeep/a.go": "package tildekeep\n\n" +
+					"type Other interface{ ~string }\n",
+			},
+			want: []record{
+				{Pkg: "tildekeep", Kind: "type", Name: "Other", Signature: "interface{ ~string }"},
+			},
+		},
+		{
+			// AC-3-9（Issue #93 reviewer C-2、偽 Green の直接の再発防止）:
+			// オーケストレーターが実測した偽 Green ―― 公開制約を
+			// `~int | ~float64` → `~string | ~bool` へ変える（破壊的な
+			// 公開 API 変更）と、除去バグにより出力が完全に同一
+			// （"interface{}"）になり差分が出ない。
+			//
+			// unionfalsegreenA / unionfalsegreenB は型集合の中身だけが
+			// 異なる2入力。**異なる signature を出す**ことを固定する
+			// （両方とも同一の誤った値 "interface{}" を返す偽 Green の
+			// 再発を防ぐ）。
+			name: "AC-3-9_C2_different_type_sets_yield_different_signatures",
+			files: map[string]string{
+				"unionfalsegreenA/a.go": "package unionfalsegreenA\n\n" +
+					"type WithConstraint interface{ ~int | ~float64 }\n",
+				"unionfalsegreenB/a.go": "package unionfalsegreenB\n\n" +
+					"type WithConstraint interface{ ~string | ~bool }\n",
+			},
+			want: []record{
+				{Pkg: "unionfalsegreenA", Kind: "type", Name: "WithConstraint", Signature: "interface{ ~int | ~float64 }"},
+				{Pkg: "unionfalsegreenB", Kind: "type", Name: "WithConstraint", Signature: "interface{ ~string | ~bool }"},
+			},
+		},
+		{
+			// AC-3-9（Issue #93 reviewer C-2、回帰）: union 項の保持
+			// （AC-3-9_C2_*）が、既存の AC-3-9（非公開メソッドの除去）・
+			// AC-3-10 の趣旨を壊していないことを、同一インターフェース内で
+			// 両方が混在する形で固定する。
+			// interface { hiddenMethod() int; ~int | ~string; Do() error }
+			// では、非公開メソッド hiddenMethod は除去され、union
+			// （~int | ~string）と公開メソッド Do は残る。
+			name: "AC-3-9_C2_union_coexists_with_unexported_method_removal",
+			files: map[string]string{
+				"mixedunion/a.go": "package mixedunion\n\n" +
+					"type Mixed interface {\n" +
+					"\thiddenMethod() int\n" +
+					"\t~int | ~string\n" +
+					"\tDo() error\n" +
+					"}\n",
+			},
+			want: []record{
+				{Pkg: "mixedunion", Kind: "type", Name: "Mixed", Signature: "interface { ~int | ~string Do() error }"},
+			},
+		},
+		{
+			// AC-3-9（Issue #93 reviewer C-2、回帰）: union 項とメソッドが
+			// 混在するとき、メソッドの引数名・結果名（AC-3-6）は従来どおり
+			// 剥がされる。union の保持を実装するときにメソッド側の名前剥がし
+			// を壊さないことを固定する。
+			name: "AC-3-9_C2_union_coexists_with_method_arg_name_stripping",
+			files: map[string]string{
+				"unionmethod/a.go": "package unionmethod\n\n" +
+					"type ConstraintWithMethod interface {\n" +
+					"\t~int | ~string\n" +
+					"\tDo() error\n" +
+					"}\n",
+			},
+			want: []record{
+				{Pkg: "unionmethod", Kind: "type", Name: "ConstraintWithMethod", Signature: "interface { ~int | ~string Do() error }"},
+			},
+		},
+		{
+			// AC-3-9 / AC-3-10（Issue #93 reviewer W-2r）: 非公開メンバー
+			// 除去（filterUnexportedMembers）は type 宣言の右辺の
+			// トップレベルにしか適用されておらず、入れ子の構造体・
+			// インターフェース（フィールドの型として現れる無名の
+			// struct{...} / interface{...}）には適用されない。AC-3-9 は
+			// `<signature>` 全体に掛かる要求であり、「型宣言の右辺
+			// トップレベルに限る」とは書かれていない。
+			//
+			// NestedStruct: フィールド Pub の型（無名 struct）の中の
+			// hidden、フィールド Inner の型（無名 interface）の中の
+			// secret() が、どちらも除去されることを固定する。
+			name: "AC-3-9_W2r_nested_type_expr_removes_unexported_members",
+			files: map[string]string{
+				"nestedhide/a.go": "package nestedhide\n\n" +
+					"type NestedStruct struct {\n" +
+					"\tPub struct {\n" +
+					"\t\thidden int\n" +
+					"\t\tShown  int\n" +
+					"\t}\n" +
+					"\tInner interface {\n" +
+					"\t\tsecret() int\n" +
+					"\t\tPublic() int\n" +
+					"\t}\n" +
+					"}\n",
+			},
+			want: []record{
+				{
+					Pkg:  "nestedhide",
+					Kind: "type",
+					Name: "NestedStruct",
+					Signature: "struct { Pub struct { Shown int } " +
+						"Inner interface { Public() int } }",
+				},
+			},
+		},
+		{
+			// AC-3-9（Issue #93 reviewer W-2r）: 関数の引数型に現れる無名
+			// 構造体（`struct{ hidden int; Fn func(int) error }`）の中の
+			// 非公開フィールド hidden も除去されることを固定する。
+			// あわせて、除去対象ではない Fn の型（AC-3-6 が既に対象とする
+			// 関数型の引数名 ctx）が剥がれていることも同じケースで固定する。
+			name: "AC-3-9_W2r_nested_struct_in_func_param_removes_unexported_field",
+			files: map[string]string{
+				"nestedparam/a.go": "package nestedparam\n\n" +
+					"func H(x struct {\n" +
+					"\thidden int\n" +
+					"\tFn     func(ctx int) error\n" +
+					"}) {}\n",
+			},
+			want: []record{
+				{Pkg: "nestedparam", Kind: "func", Name: "H", Signature: "(struct { Fn func(int) error }) ()"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
