@@ -198,9 +198,9 @@ func TestExtractRecords_AC3(t *testing.T) {
 		{
 			// AC-3-9: 構造体の非公開フィールド／インターフェースの
 			// 非公開メソッドを signature から除去する。
-			// （全メンバーが非公開になり0件へ落ちる境界での正規化後の
-			// 空白表現は仕様が一意に定めないため、ここでは1件が残る
-			// ケースだけを固定する。詳細は報告参照）
+			// （全メンバーが非公開になり0件へ落ちる境界は、別ケース
+			// AC-3-9_empty_after_removing_unexported_members が covering
+			// する。ここは1件が残るケースを固定する）
 			name: "AC-3-9_removes_unexported_fields_and_methods",
 			files: map[string]string{
 				"hide/a.go": "package hide\n\n" +
@@ -216,6 +216,46 @@ func TestExtractRecords_AC3(t *testing.T) {
 			want: []record{
 				{Pkg: "hide", Kind: "type", Name: "Box", Signature: "struct { Val int }"},
 				{Pkg: "hide", Kind: "type", Name: "Reader", Signature: "interface { Read(p []byte) (n int, err error) }"},
+			},
+		},
+		{
+			// AC-3-9（境界）: 非公開メンバの除去によって全メンバーが
+			// 無くなり0件へ落ちる型式は、ソースが元から空だった型と
+			// 同じ表記（`struct{}` / `interface{}`）になる。
+			//
+			// AC-3-9 は「非公開メンバの増減は公開 API の変化ではない」
+			// ことを担保する条文である。「元から空」と「除去後に空」を
+			// 同一ケースに並置し、両者が同一の絶対値表記に揃うことを
+			// 固定する。片方だけの表記変化（例: 除去後だけ
+			// `struct { }` のように空白が入る）を許すと、非公開
+			// フィールドの増減だけで SIGNATURE_CHANGED が生じる
+			// 偽陽性を許すことになり、AC-3-9 の趣旨に反する。
+			//
+			// AC-3-10 の帰結（埋め込みフィールドが全部非公開で
+			// 除去され空になる場合）も同じ趣旨で含める。
+			name: "AC-3-9_empty_after_removing_unexported_members",
+			files: map[string]string{
+				"hideempty/a.go": "package hideempty\n\n" +
+					"type OrigEmptyStruct struct{}\n" +
+					"type OrigEmptyIface interface{}\n\n" +
+					"type EmptiedStruct struct {\n" +
+					"\thidden int\n" +
+					"\tsecret string\n" +
+					"}\n\n" +
+					"type EmptiedIface interface {\n" +
+					"\thiddenMethod() int\n" +
+					"}\n\n" +
+					"type hiddenEmbed2 struct{}\n\n" +
+					"type EmptiedByEmbed struct {\n" +
+					"\thiddenEmbed2\n" +
+					"}\n",
+			},
+			want: []record{
+				{Pkg: "hideempty", Kind: "type", Name: "OrigEmptyStruct", Signature: "struct{}"},
+				{Pkg: "hideempty", Kind: "type", Name: "OrigEmptyIface", Signature: "interface{}"},
+				{Pkg: "hideempty", Kind: "type", Name: "EmptiedStruct", Signature: "struct{}"},
+				{Pkg: "hideempty", Kind: "type", Name: "EmptiedIface", Signature: "interface{}"},
+				{Pkg: "hideempty", Kind: "type", Name: "EmptiedByEmbed", Signature: "struct{}"},
 			},
 		},
 		{
