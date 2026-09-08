@@ -374,7 +374,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 		},
 		{
 			// AC-3-6（Issue #93 reviewer C-1r-(a)）: var/const の型式は
-			// extractGenDecl が vs.Type を stripSignatureNames を通さず
+			// extractGenDecl が vs.Type を名前剥がし（現 typeExprSignature）を通さず
 			// そのまま printNode に渡している（extract.go:218 付近）。
 			// func 型の var/const は、型式の内部に *ast.FuncType の
 			// 引数名を含みうるため、そこが剥がされないままだと
@@ -404,7 +404,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 		},
 		{
 			// AC-3-6（Issue #93 reviewer C-1r-(b)）: 型パラメータの制約
-			// （typeParamsString）は field.Type を stripSignatureNames を
+			// （typeParamsString）は field.Type を名前剥がし（現 typeExprSignature）を
 			// 通さず printNode に直接渡している。制約が関数型
 			// （`F func(ctx int) error`）のとき、制約の**内側**の引数名
 			// （ctx）が残ってしまう。
@@ -431,7 +431,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 		{
 			// AC-3-6（Issue #93 reviewer C-1r-(c)）: 型集合の union
 			// （*ast.BinaryExpr）と `~T`（*ast.UnaryExpr）は
-			// stripSignatureNames の switch に case が無く default で
+			// 名前剥がし（現 typeExprSignature）の switch に case が無く default で
 			// そのまま（無変換で）返る。union の要素に関数型が現れると
 			// （`interface{ ~int | func(ctx int) error }`）、その内側の
 			// 引数名が剥がされない。
@@ -453,9 +453,10 @@ func TestExtractRecords_AC3(t *testing.T) {
 			},
 		},
 		{
-			// AC-3-9（Issue #93 reviewer C-2、最重要）: filterInterfaceMembers
-			// は無名（埋め込み）フィールドを一律 embeddedName で判定するが、
-			// embeddedName は *ast.BinaryExpr（union `~int | ~float64`）と
+			// AC-3-9（Issue #93 reviewer C-2、最重要）: 当時のメンバー除去
+			// （現 filterFieldList）は無名（埋め込み）フィールドを一律に
+			// 埋め込み名で判定していたが、その判定（現 embeddableTypeName）は
+			// *ast.BinaryExpr（union `~int | ~float64`）と
 			// *ast.UnaryExpr（`~T`）に対して "" を返す。isExported("") は
 			// false になるため、型集合の要素が丸ごと除去される。
 			//
@@ -551,7 +552,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 		},
 		{
 			// AC-3-9 / AC-3-10（Issue #93 reviewer W-2r）: 非公開メンバー
-			// 除去（filterUnexportedMembers）は type 宣言の右辺の
+			// 除去（現 filterFieldList / typeExprSignature に統合）は type 宣言の右辺の
 			// トップレベルにしか適用されておらず、入れ子の構造体・
 			// インターフェース（フィールドの型として現れる無名の
 			// struct{...} / interface{...}）には適用されない。AC-3-9 は
