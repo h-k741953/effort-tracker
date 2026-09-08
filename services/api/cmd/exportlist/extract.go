@@ -171,7 +171,7 @@ func extractFuncDecl(fset *token.FileSet, d *ast.FuncDecl, pkgPath string) []rec
 		return nil
 	}
 
-	recvStr := normalizeWhitespace(printNode(fset, recvExpr))
+	recvStr := normalizeWhitespace(printNode(fset, typeExprSignature(recvExpr)))
 	argsRes := funcTypeSignature(fset, d.Type, false)
 	sig := "(" + recvStr + ") " + argsRes
 	return []record{{
