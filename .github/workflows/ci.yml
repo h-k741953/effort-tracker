@@ -36,6 +36,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # 公開 API 差分の警告 step（下記 "Public API diff"）がベース側
+          # ツリーを取得するために全履歴を要る（docs/specs/
+          # public-api-diff-check.md AC-7-9: 既定の浅いクローンに
+          # 依存しない）。他の step（lint-api / test-api /
+          # check-domain-deps）はこの変更の影響を受けない。
+          fetch-depth: 0
 
       - uses: actions/setup-go@v7
         with:
@@ -64,6 +71,36 @@ jobs:
       # この検査があるから「DDD でドメイン層を分離した」が主張ではなく事実になる。
       - name: make check-domain-deps
         run: make check-domain-deps
+
+      # ---------------------------------------------------------------------
+      # 公開 API 差分の警告（Issue #93）
+      #
+      # docs/specs/public-api-diff-check.md D-1 / D-2 により、以下の2 step
+      # を既存 go ジョブへ足す（scripts ジョブへは触れない）。ここへ置く
+      # 理由（AC-8-10）:
+      #   (i)   相乗り先（Go (lint / test / domain-deps)）は ruleset
+      #         protect-main の必須チェックであり、新規ジョブを起こすと
+      #         必須チェックの再登録（人間のブラウザ操作）が発生する
+      #         （docs/harness/verification-loop.md「必須チェックへの登録」）。
+      #   (ii)  scripts ジョブへ setup-go を足す形は取らない
+      #         （docs/specs/devcontainer-go-module-policy.md AC-9-6 の禁止）。
+      #   (iii) fixture（test-public-api-diff）も go を要さないが、fixture と
+      #         警告 step を同じジョブログに並べて「fixture は緑だが step が
+      #         走っていない」を読み分けられるようにするため、scripts では
+      #         なくこの go ジョブへ置く（D-2）。
+      # ---------------------------------------------------------------------
+
+      - name: make test-public-api-diff
+        run: make test-public-api-diff
+
+      # 警告 step 本体（AC-7）。抽出は head 側の抽出器（cmd/exportlist）を
+      # base 側にも使う（AC-7-11）。step 自身は常に exit 0 で終わる
+      # （AC-7-2。continue-on-error には依存しない）。
+      - name: Public API diff (Issue #93)
+        env:
+          PAD_EVENT_NAME: ${{ github.event_name }}
+          PAD_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash .github/scripts/ci-public-api-diff-step.sh
 
   # ---------------------------------------------------------------------------
   # Next.js: Lint / 型チェック / テスト
