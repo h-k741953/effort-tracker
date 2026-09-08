@@ -232,9 +232,13 @@ func extractGenDecl(fset *token.FileSet, d *ast.GenDecl, pkgPath string) []recor
 // typeSpecSignature は AC-3-6 の type 行を作る:
 // 型パラメータがあれば [...] を先頭に置き、続けて右辺の型式。型エイリアス
 // は右辺の前に "= " を付ける（AC-3-9 / AC-3-10 の非公開メンバー除去を含む）。
+//
+// stripSignatureNames は ts.Type そのものを書き換えず、印字用のコピーを
+// 返す（filterUnexportedMembers とは異なり、ts.Type は printNode に渡す
+// 直前でしか使わないコピーの起点として扱う）。
 func typeSpecSignature(fset *token.FileSet, ts *ast.TypeSpec) string {
 	filterUnexportedMembers(ts.Type)
-	body := normalizeWhitespace(printNode(fset, ts.Type))
+	body := normalizeWhitespace(printNode(fset, stripSignatureNames(ts.Type)))
 
 	var sb strings.Builder
 	if ts.TypeParams != nil && len(ts.TypeParams.List) > 0 {
@@ -399,7 +403,7 @@ func fieldListTypesString(fset *token.FileSet, fl *ast.FieldList) string {
 	}
 	var parts []string
 	for _, field := range fl.List {
-		typeStr := normalizeWhitespace(printNode(fset, field.Type))
+		typeStr := normalizeWhitespace(printNode(fset, stripSignatureNames(field.Type)))
 		n := len(field.Names)
 		if n == 0 {
 			n = 1
@@ -409,6 +413,128 @@ func fieldListTypesString(fset *token.FileSet, fl *ast.FieldList) string {
 		}
 	}
 	return "(" + strings.Join(parts, ", ") + ")"
+}
+
+// stripSignatureNames は AC-3-6「引数名・結果名・受信者変数名を出力しない」
+// を <signature> 全体（型式の内部で入れ子になった関数型・インターフェースの
+// メソッド署名を含む）へ適用するため、e のコピーを作りながら関数型の
+// 引数名・結果名を落とす。
+//
+// e 自身（および e から辿れる既存の *ast.Field / *ast.FieldList など）は
+// 一切書き換えない。書き換えが要る場所ではその場で新しいノードを作って
+// 返す（値レシーバでの浅いコピー + 差し替えが必要なフィールドだけ新しい
+// スライス/ポインタに差し替える）。go/parser が返す AST は他のレコードの
+// 抽出でも使い回されるため、破壊的な変更は他の出力に影響しうる
+// （filterUnexportedMembers は type 宣言の右辺という「その TypeSpec でしか
+// 使われないノード」に限定して既に破壊的に書き換えているが、
+// stripSignatureNames はより広い経路（関数の引数型・結果型）から呼ばれる
+// ため、同じ書き方を踏襲しない）。
+//
+// 対象は Go の型式の構文（Ident / SelectorExpr / StarExpr / ArrayType /
+// Ellipsis / MapType / ChanType / ParenExpr / IndexExpr / IndexListExpr /
+// FuncType / StructType / InterfaceType）に限る。型式に現れない構文
+// （式・文）は対象外。
+func stripSignatureNames(e ast.Expr) ast.Expr {
+	switch v := e.(type) {
+	case nil:
+		return nil
+	case *ast.FuncType:
+		nv := *v
+		nv.Params = stripFieldListNames(v.Params)
+		nv.Results = stripFieldListNames(v.Results)
+		return &nv
+	case *ast.StarExpr:
+		nv := *v
+		nv.X = stripSignatureNames(v.X)
+		return &nv
+	case *ast.ArrayType:
+		nv := *v
+		nv.Elt = stripSignatureNames(v.Elt)
+		return &nv
+	case *ast.Ellipsis:
+		nv := *v
+		nv.Elt = stripSignatureNames(v.Elt)
+		return &nv
+	case *ast.MapType:
+		nv := *v
+		nv.Key = stripSignatureNames(v.Key)
+		nv.Value = stripSignatureNames(v.Value)
+		return &nv
+	case *ast.ChanType:
+		nv := *v
+		nv.Value = stripSignatureNames(v.Value)
+		return &nv
+	case *ast.ParenExpr:
+		nv := *v
+		nv.X = stripSignatureNames(v.X)
+		return &nv
+	case *ast.IndexExpr:
+		nv := *v
+		nv.X = stripSignatureNames(v.X)
+		nv.Index = stripSignatureNames(v.Index)
+		return &nv
+	case *ast.IndexListExpr:
+		nv := *v
+		nv.X = stripSignatureNames(v.X)
+		newIndices := make([]ast.Expr, len(v.Indices))
+		for i, idx := range v.Indices {
+			newIndices[i] = stripSignatureNames(idx)
+		}
+		nv.Indices = newIndices
+		return &nv
+	case *ast.StructType:
+		nv := *v
+		nv.Fields = stripFieldListMemberTypes(v.Fields)
+		return &nv
+	case *ast.InterfaceType:
+		nv := *v
+		nv.Methods = stripFieldListMemberTypes(v.Methods)
+		return &nv
+	default:
+		// Ident・SelectorExpr など、名前を含む余地の無いノードはそのまま
+		// 返す（コピー不要。呼び出し側もこれを書き換えない）。
+		return e
+	}
+}
+
+// stripFieldListNames は関数型の引数リスト・結果リスト用: 各フィールドの
+// Names を落とし、Type は再帰的に stripSignatureNames を適用したコピーへ
+// 差し替える。fl 自身・fl.List の要素は書き換えない（新しい FieldList /
+// Field を作って返す）。
+func stripFieldListNames(fl *ast.FieldList) *ast.FieldList {
+	if fl == nil {
+		return nil
+	}
+	nfl := *fl
+	newList := make([]*ast.Field, len(fl.List))
+	for i, f := range fl.List {
+		nf := *f
+		nf.Names = nil
+		nf.Type = stripSignatureNames(f.Type)
+		newList[i] = &nf
+	}
+	nfl.List = newList
+	return &nfl
+}
+
+// stripFieldListMemberTypes は構造体フィールド・インターフェースメソッドの
+// リスト用: フィールド名／メソッド名（Names）はそのまま残し、各メンバーの
+// Type だけ再帰的に stripSignatureNames を適用したコピーへ差し替える
+// （AC-3-6 はメソッド名・フィールド名を対象にしない。対象はメソッドの
+// 引数名・結果名）。fl 自身・fl.List の要素は書き換えない。
+func stripFieldListMemberTypes(fl *ast.FieldList) *ast.FieldList {
+	if fl == nil {
+		return nil
+	}
+	nfl := *fl
+	newList := make([]*ast.Field, len(fl.List))
+	for i, f := range fl.List {
+		nf := *f
+		nf.Type = stripSignatureNames(f.Type)
+		newList[i] = &nf
+	}
+	nfl.List = newList
+	return &nfl
 }
 
 // typeParamsString は "[T any, U comparable]" の形を作る。型パラメータの
