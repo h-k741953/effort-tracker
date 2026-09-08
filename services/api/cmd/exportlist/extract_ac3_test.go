@@ -721,3 +721,168 @@ func TestExtractRecords_AC3_14_ParseFailure(t *testing.T) {
 		}
 	})
 }
+
+// TestExtractRecords_AC3_10_1_PredeclaredEmbeds は AC-3-10-1 を固定する:
+// Go の定義済み（predeclared）型名は、埋め込みフィールド／埋め込み要素
+// として現れた場合、公開として扱い <signature> に保持する。
+//
+// docs/specs/public-api-diff-check.md
+// 「定義済み型名を埋め込みとして保持する理由と、対象範囲の決め方
+// （AC-3-10-1 の根拠）」節の小節「3-10-1 が要求する期待値
+// （テストに落とす形）」の表 (i)〜(vii) を漏れなく落とす。
+//
+// (vi)（io.Reader = 公開の修飾埋め込みは 3-10 のまま保持される）と
+// (vii)（一覧の外側の非公開ローカル型は 3-10 のまま除去される）は
+// 対照ケースであり、「保持されること」だけでなく「除去され続けること」も
+// 併せて検査する（通る側だけを検査しない。AC-6-5 と同じ趣旨）。
+//
+// 期待する <signature> は go/printer の実際の出力を確認したうえでの
+// 絶対値である。相対比較（embed 有無で結果が違う、というだけの判定）は
+// 実装が両側とも同じ誤った値を返す偽 Green を検出できない
+// （progress.md の失敗ログ #4 と同じ失敗モード）ため、絶対値の cmp.Diff
+// による突き合わせを主とし、(i)〜(v)・(vii) については記録同士の
+// バイト一致／不一致も明示的に確認する。
+func TestExtractRecords_AC3_10_1_PredeclaredEmbeds(t *testing.T) {
+	files := map[string]string{
+		// (i): インターフェース埋め込みの `error`。
+		"i_with/a.go":    "package i_with\n\ntype T interface { error; Code() int }\n",
+		"i_without/a.go": "package i_without\n\ntype T interface { Code() int }\n",
+
+		// (ii): インターフェース埋め込みの `comparable`。
+		"ii_with/a.go":    "package ii_with\n\ntype T interface { comparable }\n",
+		"ii_without/a.go": "package ii_without\n\ntype T interface{}\n",
+
+		// (iii): インターフェース埋め込みの `any`。
+		"iii_with/a.go":    "package iii_with\n\ntype T interface { any }\n",
+		"iii_without/a.go": "package iii_without\n\ntype T interface{}\n",
+
+		// (iv): 構造体埋め込みの `error`。
+		"iv_with/a.go":    "package iv_with\n\ntype T struct { error; N int }\n",
+		"iv_without/a.go": "package iv_without\n\ntype T struct { N int }\n",
+
+		// (v): 構造体埋め込みの `int`。
+		"v_with/a.go":    "package v_with\n\ntype T struct { int; M string }\n",
+		"v_without/a.go": "package v_without\n\ntype T struct { M string }\n",
+
+		// (vi) 対照: 公開の修飾埋め込み（io.Reader）は 3-10 のまま保持
+		// される。本項（3-10-1）で振る舞いが変わらないこと。
+		"vi/a.go": "package vi\n\nimport \"io\"\n\ntype T struct { io.Reader }\n",
+
+		// (vii) 対照: 一覧の外側の小文字識別子（同パッケージの非公開型
+		// helper）は 3-10 のまま除去され、embed の無い宣言とバイト一致
+		// すること。
+		"vii_with/a.go": "package vii_with\n\n" +
+			"type helper struct{}\n\n" +
+			"type T struct { helper; N int }\n",
+		"vii_without/a.go": "package vii_without\n\ntype T struct { N int }\n",
+
+		// 3-10-1 の対象は22個に限る（一覧の全要素）。代表例だけでは
+		// 実装が一部（例: error / any / comparable の3つだけ）を許可
+		// リストに入れて他を見逃しても Green になりうるため、22個
+		// すべてをインターフェース埋め込みとして固定する。
+		"allpredeclared_iface/a.go": "package allpredeclared_iface\n\n" +
+			"type All interface {\n" +
+			"\tany\n\tbool\n\tbyte\n\tcomparable\n\tcomplex64\n\tcomplex128\n\terror\n" +
+			"\tfloat32\n\tfloat64\n\tint\n\tint8\n\tint16\n\tint32\n\tint64\n\trune\n" +
+			"\tstring\n\tuint\n\tuint8\n\tuint16\n\tuint32\n\tuint64\n\tuintptr\n" +
+			"}\n",
+
+		// 同じ22個のうち `comparable` を除いた21個を構造体埋め込みとして
+		// 固定する（`comparable` は構造体の埋め込みフィールドとしては
+		// 非合法で `type S struct{ comparable }` はコンパイルできないため、
+		// struct 側の網羅からは除く。オーケストレーターの指示どおり）。
+		"allpredeclared_struct/a.go": "package allpredeclared_struct\n\n" +
+			"type AllStruct struct {\n" +
+			"\tany\n\tbool\n\tbyte\n\tcomplex64\n\tcomplex128\n\terror\n" +
+			"\tfloat32\n\tfloat64\n\tint\n\tint8\n\tint16\n\tint32\n\tint64\n\trune\n" +
+			"\tstring\n\tuint\n\tuint8\n\tuint16\n\tuint32\n\tuint64\n\tuintptr\n" +
+			"}\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+	}
+
+	want := []record{
+		{Pkg: "i_with", Kind: "type", Name: "T", Signature: "interface { error Code() int }"},
+		{Pkg: "i_without", Kind: "type", Name: "T", Signature: "interface{ Code() int }"},
+
+		{Pkg: "ii_with", Kind: "type", Name: "T", Signature: "interface{ comparable }"},
+		{Pkg: "ii_without", Kind: "type", Name: "T", Signature: "interface{}"},
+
+		{Pkg: "iii_with", Kind: "type", Name: "T", Signature: "interface{ any }"},
+		{Pkg: "iii_without", Kind: "type", Name: "T", Signature: "interface{}"},
+
+		{Pkg: "iv_with", Kind: "type", Name: "T", Signature: "struct { error N int }"},
+		{Pkg: "iv_without", Kind: "type", Name: "T", Signature: "struct{ N int }"},
+
+		{Pkg: "v_with", Kind: "type", Name: "T", Signature: "struct { int M string }"},
+		{Pkg: "v_without", Kind: "type", Name: "T", Signature: "struct{ M string }"},
+
+		{Pkg: "vi", Kind: "type", Name: "T", Signature: "struct{ io.Reader }"},
+
+		{Pkg: "vii_with", Kind: "type", Name: "T", Signature: "struct{ N int }"},
+		{Pkg: "vii_without", Kind: "type", Name: "T", Signature: "struct{ N int }"},
+
+		{
+			Pkg: "allpredeclared_iface", Kind: "type", Name: "All",
+			Signature: "interface { any bool byte comparable complex64 complex128 error " +
+				"float32 float64 int int8 int16 int32 int64 rune string uint uint8 " +
+				"uint16 uint32 uint64 uintptr }",
+		},
+		{
+			Pkg: "allpredeclared_struct", Kind: "type", Name: "AllStruct",
+			Signature: "struct { any bool byte complex64 complex128 error " +
+				"float32 float64 int int8 int16 int32 int64 rune string uint uint8 " +
+				"uint16 uint32 uint64 uintptr }",
+		},
+	}
+
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(byRecord)); diff != "" {
+		t.Errorf("extractRecords(%q) mismatch (-want +got):\n%s", dir, diff)
+	}
+
+	// 期待値の絶対値一致（上の cmp.Diff）に加えて、AC-3-10-1 の根拠節の
+	// 表が直接要求する「バイト一致しない／する」を record 同士の比較でも
+	// 明示的に確認する。絶対値だけでは、たまたま両方の期待値リテラルを
+	// 見間違えて同じ値にしてしまった場合の書き損じを拾えないため。
+	sig := func(t *testing.T, pkg string) string {
+		t.Helper()
+		for _, r := range got {
+			if r.Pkg == pkg && r.Kind == "type" && r.Name == "T" {
+				return r.Signature
+			}
+		}
+		t.Fatalf("record not found for pkg %q, kind=type, name=T in %+v", pkg, got)
+		return ""
+	}
+
+	pairs := []struct {
+		label       string
+		with        string
+		without     string
+		wantEqualBy bool // true なら (vii) のようにバイト一致することを要求
+	}{
+		{"i_error", "i_with", "i_without", false},
+		{"ii_comparable", "ii_with", "ii_without", false},
+		{"iii_any", "iii_with", "iii_without", false},
+		{"iv_error_struct", "iv_with", "iv_without", false},
+		{"v_int_struct", "v_with", "v_without", false},
+		{"vii_local_unexported_helper", "vii_with", "vii_without", true},
+	}
+	for _, p := range pairs {
+		t.Run(p.label, func(t *testing.T) {
+			with := sig(t, p.with)
+			without := sig(t, p.without)
+			equal := with == without
+			if equal != p.wantEqualBy {
+				t.Errorf(
+					"pkg %q signature=%q, pkg %q signature=%q: byte-equal=%v, want byte-equal=%v",
+					p.with, with, p.without, without, equal, p.wantEqualBy,
+				)
+			}
+		})
+	}
+}
