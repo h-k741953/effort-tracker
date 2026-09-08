@@ -373,9 +373,10 @@ func collapseIfEmpty(fl *ast.FieldList) {
 
 // filterFieldList は fl（構造体のフィールドリスト、またはインターフェース
 // のメソッド／型集合の要素リスト）のコピーを返す。AC-3-9 の非公開メンバー
-// 除去・AC-3-10 の埋め込みフィールド除去を適用したうえで、残す各メンバーの
-// 型に typeExprSignature を再帰適用する。fl 自身・fl.List の要素は一切
-// 書き換えない（新しい FieldList / Field を作って返す）。
+// 除去・AC-3-10 の埋め込みフィールド除去・AC-3-10-1 の定義済み型名の例外を
+// 適用したうえで、残す各メンバーの型に typeExprSignature を再帰適用する。
+// fl 自身・fl.List の要素は一切書き換えない（新しい FieldList / Field を
+// 作って返す）。
 //
 // 無名（Names が空）のメンバーは、埋め込みフィールド（AC-3-10）または
 // インターフェースの型集合の要素（union `T1 | T2`・`~T`）のいずれか。
@@ -386,6 +387,11 @@ func collapseIfEmpty(fl *ast.FieldList) {
 // 「非公開」と同一視すると型集合の要素が丸ごと消え、破壊的な型集合の変更
 // が黙って見えなくなる（Issue #93 reviewer 往復2 の指摘 C-2、実装済みの
 // 偽 Green）。
+//
+// AC-3-10-1: 名前が非公開（小文字）と判定された場合でも、その埋め込みが
+// (a) パッケージ修飾子を持たずに書かれ、かつ (b) predeclaredTypeNames の
+// 22個に含まれるときは除去しない（unqualifiedEmbedName で (a) を判定する。
+// SelectorExpr は修飾子を持つため対象外のまま — 3-10 の除去を維持する）。
 func filterFieldList(fl *ast.FieldList) *ast.FieldList {
 	if fl == nil {
 		return nil
@@ -395,7 +401,9 @@ func filterFieldList(fl *ast.FieldList) *ast.FieldList {
 	for _, f := range fl.List {
 		if len(f.Names) == 0 {
 			if name, ok := embeddableTypeName(f.Type); ok && !isExported(name) {
-				continue
+				if uname, uok := unqualifiedEmbedName(f.Type); !uok || !predeclaredTypeNames[uname] {
+					continue
+				}
 			}
 			nf := *f
 			nf.Type = typeExprSignature(f.Type)
@@ -438,6 +446,58 @@ func embeddableTypeName(e ast.Expr) (name string, ok bool) {
 		return embeddableTypeName(v.X)
 	case *ast.IndexListExpr:
 		return embeddableTypeName(v.X)
+	default:
+		return "", false
+	}
+}
+
+// predeclaredTypeNames は AC-3-10-1 が定める、埋め込みとして現れた場合に
+// 公開扱いで保持する定義済み（predeclared）型名の一覧。Go 言語仕様の
+// predeclared identifiers のうち型名であるもの全22個に限る（型名でない
+// true/false/iota/nil と組み込み関数は埋め込みとして合法に書けないため
+// 対象にしない。AC-3-10-1 前文）。
+var predeclaredTypeNames = map[string]bool{
+	"any":        true,
+	"bool":       true,
+	"byte":       true,
+	"comparable": true,
+	"complex64":  true,
+	"complex128": true,
+	"error":      true,
+	"float32":    true,
+	"float64":    true,
+	"int":        true,
+	"int8":       true,
+	"int16":      true,
+	"int32":      true,
+	"int64":      true,
+	"rune":       true,
+	"string":     true,
+	"uint":       true,
+	"uint8":      true,
+	"uint16":     true,
+	"uint32":     true,
+	"uint64":     true,
+	"uintptr":    true,
+}
+
+// unqualifiedEmbedName は埋め込みフィールド／埋め込み要素の型式が、
+// パッケージ修飾子を持たずに書かれた識別子であるときにその名前を返す
+// （AC-3-10-1 適用条件 (a)）。ポインタ・型パラメータ実体化は識別子部分まで
+// 剥がして判定する（条文「*T の形で書かれていてもよく、判定は識別子部分で
+// 行う」）。*ast.SelectorExpr（pkg.T の形）はパッケージ修飾子を持つため
+// 対象外（ok=false）— embeddableTypeName とは異なり、ここでは修飾子付きを
+// 拾わない。
+func unqualifiedEmbedName(e ast.Expr) (name string, ok bool) {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return v.Name, true
+	case *ast.StarExpr:
+		return unqualifiedEmbedName(v.X)
+	case *ast.IndexExpr:
+		return unqualifiedEmbedName(v.X)
+	case *ast.IndexListExpr:
+		return unqualifiedEmbedName(v.X)
 	default:
 		return "", false
 	}
