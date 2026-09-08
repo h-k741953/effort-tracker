@@ -32,15 +32,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	for _, line := range formatRecords(records) {
+		fmt.Println(line)
+	}
+}
+
+// formatRecords は AC-2 のレコード書式に従って record 列を出力行へ直列化し、
+// AC-2-7 の順序に並べ替えて返す。返す各要素は行の内容であり、行終端の LF は
+// 含まない（LF は呼び出し側の書き出しが付ける＝AC-2-6）。
+//
+// AC-3-15 により、この関数と引数・戻り値の型はすべて非公開の識別子で書く。
+func formatRecords(records []record) []string {
 	lines := make([]string, 0, len(records))
 	for _, r := range records {
+		// AC-2-1: タブ区切りのちょうど4フィールド
+		// （<pkg> <kind> <name> <signature>）。
 		lines = append(lines, r.Pkg+"\t"+r.Kind+"\t"+r.Name+"\t"+r.Signature)
 	}
 	// AC-2-7: LC_ALL=C のバイト昇順。Go の文字列比較（sort.Strings）は
 	// バイト単位の比較であり、これと一致する。
 	sort.Strings(lines)
 
-	for _, line := range lines {
-		fmt.Println(line)
-	}
+	return lines
 }
