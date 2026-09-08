@@ -160,6 +160,54 @@ func TestExtractRecords_AC3(t *testing.T) {
 			},
 		},
 		{
+			// AC-3-6（Issue #93 reviewer C-1）: 「引数名・結果名・受信者
+			// 変数名を出力しない」は、トップレベルの引数だけでなく
+			// **関数型引数の内部**（`func(ctx int) error` のような、型式
+			// として現れる別の *ast.FuncType）にも掛かる。トップレベルの
+			// 引数名剥がしは AC-3-2 系のケースで既に固定済みだが、入れ子の
+			// 位置は別経路（printer にそのまま渡す fieldListTypesString）
+			// を通るため、独立したケースとして固定する。
+			name: "AC-3-6_nested_func_type_arg_names_stripped",
+			files: map[string]string{
+				"nestedfunc/a.go": "package nestedfunc\n\n" +
+					"func Run(f func(ctx int) error) {}\n",
+			},
+			want: []record{
+				{Pkg: "nestedfunc", Kind: "func", Name: "Run", Signature: "(func(int) error) ()"},
+			},
+		},
+		{
+			// AC-3-6（Issue #93 reviewer C-1）: 引数名・結果名だけを変えた
+			// 2つのソース（namesA / namesB）が同一の signature を出すことを
+			// 固定する。相対比較（A の結果 == B の結果）だけにせず、期待値
+			// そのもの（絶対値）も literal で固定する。相対一致だけを見る
+			// テストは、実装が不在で両方とも同じ（誤った）値を返している
+			// 場合にも緑になり得るため。
+			//
+			// 対象は2箇所: (1) 関数型引数の内部 `func(ctx int) error`、
+			// (2) インターフェースのメソッド署名
+			// `Read(p []byte) (n int, err error)`。
+			name: "AC-3-6_arg_result_names_only_diff_yield_identical_signature",
+			files: map[string]string{
+				"namesA/a.go": "package namesA\n\n" +
+					"func Run(f func(ctx int) error) {}\n\n" +
+					"type R interface {\n" +
+					"\tRead(p []byte) (n int, err error)\n" +
+					"}\n",
+				"namesB/a.go": "package namesB\n\n" +
+					"func Run(f func(c int) error) {}\n\n" +
+					"type R interface {\n" +
+					"\tRead(buf []byte) (count int, e error)\n" +
+					"}\n",
+			},
+			want: []record{
+				{Pkg: "namesA", Kind: "func", Name: "Run", Signature: "(func(int) error) ()"},
+				{Pkg: "namesA", Kind: "type", Name: "R", Signature: "interface { Read([]byte) (int, error) }"},
+				{Pkg: "namesB", Kind: "func", Name: "Run", Signature: "(func(int) error) ()"},
+				{Pkg: "namesB", Kind: "type", Name: "R", Signature: "interface { Read([]byte) (int, error) }"},
+			},
+		},
+		{
 			// AC-3-7: go/printer 出力の正規化。改行・タブ・連続空白・
 			// コメントが signature に現れない。
 			name: "AC-3-7_normalizes_whitespace_and_drops_comments",
@@ -182,17 +230,25 @@ func TestExtractRecords_AC3(t *testing.T) {
 		},
 		{
 			// AC-3-8: 引数・結果の括弧付けと区切り、可変長引数。
+			//
+			// Grouped は「複数名をまとめた引数・結果宣言（`x, y int`）は
+			// 名前の数だけ型を繰り返す」を固定する（Issue #93 reviewer
+			// W-2）。引数が `f(a string)` → `f(a, b string)` のように
+			// 増えたとき、型の重複展開が壊れていると引数の増加を
+			// 検出できない偽陰性になるため、絶対値で固定する。
 			name: "AC-3-8_parens_commas_variadic",
 			files: map[string]string{
 				"parens/a.go": "package parens\n\n" +
 					"func Variadic(nums ...int) []int { return nums }\n\n" +
 					"func NoArgsNoResults() {}\n\n" +
-					"func OneResult() int { return 0 }\n",
+					"func OneResult() int { return 0 }\n\n" +
+					"func Grouped(x, y int) (a, b error) { return nil, nil }\n",
 			},
 			want: []record{
 				{Pkg: "parens", Kind: "func", Name: "Variadic", Signature: "(...int) ([]int)"},
 				{Pkg: "parens", Kind: "func", Name: "NoArgsNoResults", Signature: "() ()"},
 				{Pkg: "parens", Kind: "func", Name: "OneResult", Signature: "() (int)"},
+				{Pkg: "parens", Kind: "func", Name: "Grouped", Signature: "(int, int) (error, error)"},
 			},
 		},
 		{
@@ -215,7 +271,12 @@ func TestExtractRecords_AC3(t *testing.T) {
 			},
 			want: []record{
 				{Pkg: "hide", Kind: "type", Name: "Box", Signature: "struct { Val int }"},
-				{Pkg: "hide", Kind: "type", Name: "Reader", Signature: "interface { Read(p []byte) (n int, err error) }"},
+				// AC-3-6:「引数名・結果名・受信者変数名を出力しない」は
+				// <signature> 全体に掛かる要求であり、型の右辺に現れる
+				// インターフェースのメソッド署名も対象に含む
+				// （Issue #93 reviewer C-1。名前だけを変えた2入力が
+				// 同一の signature を出すことを担保するための固定値）。
+				{Pkg: "hide", Kind: "type", Name: "Reader", Signature: "interface { Read([]byte) (int, error) }"},
 			},
 		},
 		{
