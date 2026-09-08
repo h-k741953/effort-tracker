@@ -787,6 +787,19 @@ func TestExtractRecords_AC3_10_1_PredeclaredEmbeds(t *testing.T) {
 			"\tstring\n\tuint\n\tuint8\n\tuint16\n\tuint32\n\tuint64\n\tuintptr\n" +
 			"}\n",
 
+		// (viii) 対照: 適用条件 (a) のパッケージ修飾子を持たないこと。
+		// io.error は綴りが一覧の定義済み型名 error と一致していても
+		// 修飾子付きは対象外であり、3-10 のまま除去され、embed の無い
+		// 宣言とバイト一致すること。
+		"viii_with/a.go": "package viii_with\n\nimport \"io\"\n\n" +
+			"type T struct { io.error; N int }\n",
+		"viii_without/a.go": "package viii_without\n\ntype T struct { N int }\n",
+
+		// (ix): 適用条件 (a) の `*T` の形でも識別子部分で判定すること。
+		// *int は保持され、embed の無い宣言とバイト一致しないこと。
+		"ix_with/a.go":    "package ix_with\n\ntype T struct { *int; M string }\n",
+		"ix_without/a.go": "package ix_without\n\ntype T struct { M string }\n",
+
 		// 同じ22個のうち `comparable` を除いた21個を構造体埋め込みとして
 		// 固定する（`comparable` は構造体の埋め込みフィールドとしては
 		// 非合法で `type S struct{ comparable }` はコンパイルできないため、
@@ -825,6 +838,12 @@ func TestExtractRecords_AC3_10_1_PredeclaredEmbeds(t *testing.T) {
 
 		{Pkg: "vii_with", Kind: "type", Name: "T", Signature: "struct{ N int }"},
 		{Pkg: "vii_without", Kind: "type", Name: "T", Signature: "struct{ N int }"},
+
+		{Pkg: "viii_with", Kind: "type", Name: "T", Signature: "struct{ N int }"},
+		{Pkg: "viii_without", Kind: "type", Name: "T", Signature: "struct{ N int }"},
+
+		{Pkg: "ix_with", Kind: "type", Name: "T", Signature: "struct { *int M string }"},
+		{Pkg: "ix_without", Kind: "type", Name: "T", Signature: "struct{ M string }"},
 
 		{
 			Pkg: "allpredeclared_iface", Kind: "type", Name: "All",
@@ -871,6 +890,8 @@ func TestExtractRecords_AC3_10_1_PredeclaredEmbeds(t *testing.T) {
 		{"iv_error_struct", "iv_with", "iv_without", false},
 		{"v_int_struct", "v_with", "v_without", false},
 		{"vii_local_unexported_helper", "vii_with", "vii_without", true},
+		{"viii_qualified_io_error", "viii_with", "viii_without", true},
+		{"ix_star_int", "ix_with", "ix_without", false},
 	}
 	for _, p := range pairs {
 		t.Run(p.label, func(t *testing.T) {
