@@ -342,11 +342,14 @@ assert_verdict "INDETERMINATE" || ok=0
 assert_detail_key "MALFORMED: new 2" || ok=0
 report "5-9b: 空行を含む → INDETERMINATE / MALFORMED: new 2" "$ok" "1"
 
-# 5-9c: タブが5個以上（フィールドが多すぎる） → INDETERMINATE / MALFORMED
-# split_fields はタブちょうど3個で4分割し、5個目以降のタブが残っていれば
+# 5-9c: タブが4個以上（フィールドが5個以上、多すぎる） → INDETERMINATE / MALFORMED
+# split_fields はタブちょうど3個で4分割し、4個目以降のタブが残っていれば
 # 不正形式として扱う（check-public-api-diff.sh:94-97）。「少なすぎ」側は
 # 5-9a が固定しているが「多すぎ」側は未検査だった（Issue #93 reviewer W-1:
 # この分岐を削っても fixture 21件が全通過していた実測）。
+# トリガ行 `.	func	Extra	() ()	EXTRA` の実際のタブ数は4個（5フィールド）
+# （Issue #93 reviewer W-1r: 旧コメント・旧 report ラベルの「5個」は
+# off-by-one。判定基準（rc / verdict / detail key）は変更していない）。
 write_list "$WORK/5-9-new-toomany.tsv" <<'EOF'
 .	func	Foo	() ()
 .	func	Extra	() ()	EXTRA
@@ -356,7 +359,7 @@ ok=1
 [ "$RC" = "1" ] || ok=0
 assert_verdict "INDETERMINATE" || ok=0
 assert_detail_key "MALFORMED: new 2" || ok=0
-report "5-9c: タブ5個以上（フィールドが多すぎる） → INDETERMINATE / MALFORMED: new 2" "$ok" "1"
+report "5-9c: タブ4個以上（フィールドが多すぎる） → INDETERMINATE / MALFORMED: new 2" "$ok" "1"
 
 # ==============================================================================
 # AC-5-10: 同一キーの行が同じ一覧に2つ以上 → INDETERMINATE / DUPLICATE
