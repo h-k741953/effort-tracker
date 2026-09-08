@@ -230,6 +230,8 @@ D-1 が決めたのは警告 step のジョブであり、`make test-public-api-
 | (v) | `type T struct { int; M string }` | `type T struct { M string }` | 同上（`int`） |
 | (vi) | `type T struct { io.Reader }` | — | **対照**: 公開の修飾埋め込みは 3-10 のまま保持される。本項で振る舞いが変わらないこと |
 | (vii) | `type T struct { helper; N int }`（`helper` は同パッケージの非公開型） | `type T struct { N int }` | **対照**: 一覧の外側の小文字識別子は 3-10 のまま**除去**され、両者の `<signature>` が**バイト一致する** |
+| (viii) | `type T struct { io.error; N int }` | `type T struct { N int }` | **対照**: 適用条件 (a) の**パッケージ修飾子を持たないこと**。綴りが一覧の定義済み型名と一致していても**修飾子付きは対象外**であり、3-10 のまま**除去**され、両者の `<signature>` が**バイト一致する** |
+| (ix) | `type T struct { *int; M string }` | `type T struct { M string }` | 適用条件 (a) の**`*T` の形でも識別子部分で判定すること**。`*int` は**保持**され、両者の `<signature>` が**バイト一致しない** |
 
 #### 抽出器の自己言及をパスの除外で解かない理由（AC-3-15 の根拠）
 
