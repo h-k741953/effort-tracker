@@ -382,11 +382,17 @@ test-go-module-pins: ## check-go-module-pins.sh のロジックを fixture で�
 # SIGNATURE_CHANGED / REMOVED を判定する（docs/specs/public-api-diff-check.md
 # AC-4）。比較器自身は go を呼ばない純粋なフィルタである（AC-1-3）。
 #
-# test-scripts へ合流させないのは、D-2（fixture ターゲットも go ジョブへ置く）
-# のため。test-scripts は scripts ジョブから呼ばれる想定であり、そちらへ
-# 合流させると比較器 fixture が scripts ジョブへ引き込まれ、D-2 の決定と
-# 矛盾する。check-go-module-pins / test-go-module-pins と同じ理由で専用
-# ターゲットへ分ける。
+# test-scripts へ合流させないのは、対象種別が違うため（AC-8-2）。
+# test-scripts が対象とするのは CI から呼ばれる *プロセス検査のチェッカ*
+# （往復証跡の形式等）だが、こちらは **ソースから抽出した公開 API 一覧の
+# 比較**であり、プロセスも設定ファイル間の整合も見ない
+# （check-go-module-pins が対象とする「設定ファイル間の整合検査」とも
+# 種別が違う）。check-go-module-pins / test-go-module-pins と同様、
+# Makefile のコメント区分と実体をずらさないよう専用ターゲットへ分ける。
+#
+# 加えて D-2（fixture ターゲットも go ジョブへ置く）の帰結として、
+# test-scripts（scripts ジョブから呼ばれる想定）へ合流させると比較器
+# fixture が scripts ジョブへ引き込まれ、D-2 の決定と矛盾する。
 #
 # check-public-api-diff 自体を呼ぶ Makefile ターゲットは作らない
 # （比較器は引数（新旧2本の一覧パス）を呼び出し側が都度渡す前提であり、AC-1-1
