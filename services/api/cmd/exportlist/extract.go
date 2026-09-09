@@ -348,29 +348,6 @@ func typeExprSignature(e ast.Expr) ast.Expr {
 	}
 }
 
-// collapseIfEmpty は非公開メンバーの除去によって fl.List が空になった場合、
-// Closing を Opening に合わせる。
-//
-// go/printer は構造体・インターフェースの中身を、AST 上の開き括弧・閉じ括弧
-// の「元の位置（行）が同じかどうか」で1行表記と複数行表記のどちらにするか
-// 決める。除去によって List が空になっても、元の宣言が複数行だった場合の
-// Opening/Closing の行番号はそのまま残るため、printer は「中身が無い複数行
-// ブロック」として "struct {\n}" のように空白入りで印字してしまう
-// （元から空の宣言 "struct{}" とは表記が食い違い、非公開メンバーを増減
-// しただけで SIGNATURE_CHANGED の偽陽性を生む）。
-//
-// 除去後に List が空である場合に限り Closing を Opening に一致させ、
-// printer に「同じ行」と認識させることで、元から空の宣言と同じ
-// "struct{}" / "interface{}" 表記に揃える。メンバーが1つでも残る場合は
-// 触らない（AC-3-7 の正規化の対象を「連続空白の畳み込み」に留め、
-// メンバーが残るケースの表記を変えないため）。fl は呼び出し側が新しく
-// 割り当てたコピーであることを前提とする（元の AST を書き換えない）。
-func collapseIfEmpty(fl *ast.FieldList) {
-	if len(fl.List) == 0 {
-		fl.Closing = fl.Opening
-	}
-}
-
 // filterFieldList は fl（構造体のフィールドリスト、またはインターフェース
 // のメソッド／型集合の要素リスト）のコピーを返す。AC-3-9 の非公開メンバー
 // 除去・AC-3-10 の埋め込みフィールド除去・AC-3-10-1 の定義済み型名の例外を
@@ -392,11 +369,35 @@ func collapseIfEmpty(fl *ast.FieldList) {
 // (a) パッケージ修飾子を持たずに書かれ、かつ (b) predeclaredTypeNames の
 // 22個に含まれるときは除去しない（unqualifiedEmbedName で (a) を判定する。
 // SelectorExpr は修飾子を持つため対象外のまま — 3-10 の除去を維持する）。
+//
+// # 括弧の位置を落とす理由（AC-3-7 / AC-3-9 / AC-4-3。Issue #93 reviewer 往復5 の指摘 C-5-1）
+//
+// go/printer は `struct` / `interface` / 引数リストの中身を、AST 上の
+// 開き括弧・閉じ括弧の「元の位置（行）が同じかどうか」で1行表記と複数行表記
+// のどちらにするか決める。つまり印字結果は、コピーに残った Opening / Closing
+// の行番号（＝元ソースの行取り）と、除去後に残ったメンバー数の**両方**に
+// 依存する。AC-4-3 の比較はバイト単位の完全一致であるため、この揺れは
+// そのまま偽の SIGNATURE_CHANGED になる。
+//
+// そこで、印字へ渡すコピーの Opening / Closing を常に token.NoPos にし、
+// printer を常に同じ分岐（複数行表記）へ通す。位置情報が無くなるので、
+// 印字結果は**元ソースの行取りにもメンバー数にも依存しない**。改行は
+// normalizeWhitespace が空白1つへ畳むため（AC-3-7）、綴りは
+// 「メンバー0個 / 1個 / 2個以上」×「元ソースが1行 / 複数行」の全組み合わせで
+// 一つに定まる。個数で場合分けしない（場合分けは境界の外側に同じ壊れ方を
+// 残す）。
+//
+// FieldList のコピーを作るのは本関数と stripFieldListNames の2つだけであり、
+// 印字へ届く FieldList は必ずどちらかを通る。両方で同じ扱いをすることで、
+// 構造体・インターフェース・関数の引数／結果リストのすべてに同一の規則が
+// 掛かる。
 func filterFieldList(fl *ast.FieldList) *ast.FieldList {
 	if fl == nil {
 		return nil
 	}
 	nfl := *fl
+	nfl.Opening = token.NoPos
+	nfl.Closing = token.NoPos
 	var newList []*ast.Field
 	for _, f := range fl.List {
 		if len(f.Names) == 0 {
@@ -425,7 +426,6 @@ func filterFieldList(fl *ast.FieldList) *ast.FieldList {
 		newList = append(newList, &nf)
 	}
 	nfl.List = newList
-	collapseIfEmpty(&nfl)
 	return &nfl
 }
 
@@ -565,11 +565,19 @@ func fieldListTypesString(fset *token.FileSet, fl *ast.FieldList) string {
 // Field を作って返す）。typeExprSignature の FuncType ケースから呼ばれる
 // ほか、fieldListTypesString が関数の引数・結果型を組み立てる際にも
 // typeExprSignature 経由で使われる。
+//
+// Opening / Closing を token.NoPos にする理由は filterFieldList の
+// 「括弧の位置を落とす理由」と同一である（同じ規則を、FieldList のコピーを
+// 作るもう一方の場所へも同じように掛ける）。引数リストでは、元ソースが
+// 複数行で末尾カンマを持つ宣言のときに printer が "func( int, int, ) error"
+// のような別の綴りを出すのを防ぐ。
 func stripFieldListNames(fl *ast.FieldList) *ast.FieldList {
 	if fl == nil {
 		return nil
 	}
 	nfl := *fl
+	nfl.Opening = token.NoPos
+	nfl.Closing = token.NoPos
 	newList := make([]*ast.Field, len(fl.List))
 	for i, f := range fl.List {
 		nf := *f
