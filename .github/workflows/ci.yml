@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           # 公開 API 差分の警告 step（下記 "Public API diff"）がベース側
-          # ツリーを取得するために全履歴を要る（docs/specs/
+          # ツリーを取得するために全履歴が要る（docs/specs/
           # public-api-diff-check.md AC-7-9: 既定の浅いクローンに
           # 依存しない）。他の step（lint-api / test-api /
           # check-domain-deps）はこの変更の影響を受けない。
