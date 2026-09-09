@@ -706,6 +706,10 @@ var posType = reflect.TypeOf(token.NoPos)
 // go/printer は Object / Scope の中身を印字結果に使わないため、共有しても
 // 出力に影響しない。
 //
+// ast.Object / ast.Scope の判定は、型の識別子を直接参照せず PkgPath /
+// Name で行う。ast.Object は Go 1.22 で deprecated になっており
+// （staticcheck SA1019）、deprecated な識別子への直接参照を避けるため。
+//
 // reflect の使用は標準ライブラリの範囲内であり、cmd/exportlist は domain
 // ではないため AC-3-11 / AC-3-12・check-domain-deps・ADR 0007 のいずれにも
 // 抵触しない（services/api/go.mod の require は増やしていない）。
@@ -717,11 +721,11 @@ func stripPositions(v reflect.Value) reflect.Value {
 		return reflect.ValueOf(token.NoPos)
 	}
 	switch v.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if v.IsNil() {
 			return v
 		}
-		if elem := v.Type().Elem(); elem == reflect.TypeOf(ast.Object{}) || elem == reflect.TypeOf(ast.Scope{}) {
+		if elem := v.Type().Elem(); elem.PkgPath() == "go/ast" && (elem.Name() == "Object" || elem.Name() == "Scope") {
 			return v
 		}
 		nv := reflect.New(v.Type().Elem())
