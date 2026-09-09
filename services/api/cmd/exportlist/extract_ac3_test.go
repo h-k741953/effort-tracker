@@ -1104,3 +1104,214 @@ func TestExtractRecords_AC3_9_SpellingIsIndependentOfRemovalCountAndLayout(t *te
 		})
 	}
 }
+
+// TestExtractRecords_AC3_7_NestedFuncTypeFieldListSpellingIsLayoutIndependent
+// は、TestExtractRecords_AC3_9_SpellingIsIndependentOfRemovalCountAndLayout が
+// 固定していなかった経路 —— stripFieldListNames（関数型の引数リスト・結果
+// リストから名前を剥がす関数。extract.go の typeExprSignature の
+// *ast.FuncType ケースから呼ばれる）を通る綴りの層依存性 —— を固定する。
+//
+// 【上の既存テストが固定していなかったもの】
+//
+//	既存テストの6グループはすべてトップレベルの struct / interface であり、
+//	どの variant も入れ子の関数型（引数リスト・結果リストを持つ func 型）を
+//	一度も含まない。そのため filterFieldList（構造体・インターフェース
+//	自身のフィールドリスト）の Opening/Closing 位置落としは固定されて
+//	いても、stripFieldListNames（関数型の引数リスト・結果リストの
+//	Opening/Closing 位置落とし。extract.go 574行〜）は一度も経由されず、
+//	そこにある同型のバグ（元ソースが複数行かつ末尾カンマを持つ引数／結果
+//	リストのとき go/printer が "func( int, string, ) error" のような
+//	別の綴りを出す）は既存テストでは検出できない。
+//
+// 【固定する不変条件】
+//
+//	stripFieldListNames を通る経路（引数リスト・結果リストの双方）は、
+//	同じ公開 API を表す型なら、元ソースが1行で書かれているか・複数行＋
+//	末尾カンマで書かれているかによらず同一の <signature> を出す。
+//
+// 【固定する経路】
+//
+//   - struct_field: 構造体フィールドに入れ子の関数型（引数リスト側）
+//   - toplevel_var: トップレベル var 宣言の型が関数型そのもの
+//     （引数リスト・結果リストの双方が stripFieldListNames を通る）
+//   - iface_method: インターフェースのメソッド（引数リスト側）
+//   - typeparam_constraint: 型パラメータ制約に現れる関数型（引数リスト側）
+//   - results_side: 引数リストは1行のまま、結果リストだけを複数行＋
+//     末尾カンマにする（結果リスト側が独立して stripFieldListNames を
+//     通ることを、引数リスト側の layout に依存させず固定する）
+//
+// 【期待する綴りが AC から一意に定まる理由（実装の出力に合わせたのではない）】
+//
+//	AC-3-7 が許すのは「go/printer の出力を用い、改行・タブ・連続空白を
+//	空白1つへ畳み、前後の空白を落とす」ことだけであり、空白の有無を
+//	変えられない。入れ子の関数型は AC-3-8 の "(<引数型…>) (<結果型…>)"
+//	という独自の組み立て（func/method kind 専用。fieldListTypesString /
+//	funcTypeSignature）を経由せず、go/printer が *ast.FuncType /
+//	フィールドをそのまま印字した結果を正規化するだけである
+//	（extractGenDecl の var/const 行、typeParamsString、および
+//	struct/interface の各フィールドの型は、いずれも
+//	normalizeWhitespace(printNode(...)) を直接呼ぶ。AC-3-6 の表で
+//	func/method 以外の行に "(<結果型…>)" の括弧強制が書かれていないのは
+//	このため）。したがって go/printer が単一の無名結果を丸括弧なしで
+//	印字する通常の Go 構文どおりの綴りになり、引数名・結果名は
+//	AC-3-6 により剥がされる。改行・タブを空白1つへ畳む操作は
+//	カンマの直後に残る空白の有無を変えないため、末尾カンマの直後に
+//	残った空白が消えず "int, string, )" のような綴りになるかどうかが、
+//	layout 依存のバグの有無を分ける。
+//
+// 【依存】標準 testing + go-cmp のみ（ADR 0007）。
+func TestExtractRecords_AC3_7_NestedFuncTypeFieldListSpellingIsLayoutIndependent(t *testing.T) {
+	type flVariant struct {
+		name string // パッケージ名の後半に使う
+		src  string // package 行に続けてそのまま書く宣言ソース（改行・タブを含む）
+	}
+	groups := []struct {
+		name     string // パッケージ名の前半
+		kind     string
+		ident    string // record.Name
+		want     string // AC-3-6/3-7/3-8 から導いた <signature> の絶対値
+		variants []flVariant
+	}{
+		{
+			// 経路: struct field の入れ子関数型（引数リスト側）。
+			name:  "struct_field",
+			kind:  "type",
+			ident: "T",
+			want:  "struct { Cb func(int, string) error }",
+			variants: []flVariant{
+				{
+					"oneline",
+					"type T struct { Cb func(a int, b string) error }",
+				},
+				{
+					"multiline_trailing_comma",
+					"type T struct {\n\tCb func(\n\t\ta int,\n\t\tb string,\n\t) error\n}",
+				},
+			},
+		},
+		{
+			// 経路: トップレベル var 宣言の型が関数型そのもの
+			// （引数リスト・結果リストの双方が stripFieldListNames を通る）。
+			name:  "toplevel_var",
+			kind:  "var",
+			ident: "V",
+			want:  "func(int, string) (int, error)",
+			variants: []flVariant{
+				{
+					"oneline",
+					"var V func(a int, b string) (int, error)",
+				},
+				{
+					"multiline_trailing_comma",
+					"var V func(\n\ta int,\n\tb string,\n) (\n\tint,\n\terror,\n)",
+				},
+			},
+		},
+		{
+			// 経路: インターフェースのメソッド（引数リスト側）。
+			name:  "iface_method",
+			kind:  "type",
+			ident: "T",
+			want:  "interface { Do(int, string) error }",
+			variants: []flVariant{
+				{
+					"oneline",
+					"type T interface { Do(a int, b string) error }",
+				},
+				{
+					"multiline_trailing_comma",
+					"type T interface {\n\tDo(\n\t\ta int,\n\t\tb string,\n\t) error\n}",
+				},
+			},
+		},
+		{
+			// 経路: 型パラメータ制約に現れる関数型（引数リスト側）。
+			name:  "typeparam_constraint",
+			kind:  "type",
+			ident: "T",
+			want:  "[F func(int, string) error] struct { }",
+			variants: []flVariant{
+				{
+					"oneline",
+					"type T[F func(a int, b string) error] struct{}",
+				},
+				{
+					"multiline_trailing_comma",
+					"type T[F func(\n\ta int,\n\tb string,\n) error] struct{}",
+				},
+			},
+		},
+		{
+			// 経路: 結果リスト側の独立検査。引数リストは1行のまま固定し、
+			// 結果リストだけを複数行＋末尾カンマにする。
+			name:  "results_side",
+			kind:  "type",
+			ident: "T",
+			want:  "struct { Cb func(int) (int, string) }",
+			variants: []flVariant{
+				{
+					"oneline",
+					"type T struct { Cb func(a int) (int, string) }",
+				},
+				{
+					"multiline_trailing_comma",
+					"type T struct {\n\tCb func(a int) (\n\t\tint,\n\t\tstring,\n\t)\n}",
+				},
+			},
+		},
+	}
+
+	for _, g := range groups {
+		t.Run(g.name, func(t *testing.T) {
+			files := make(map[string]string, len(g.variants))
+			want := make([]record, 0, len(g.variants))
+			for _, v := range g.variants {
+				pkg := g.name + "_" + v.name
+				files[pkg+"/a.go"] = "package " + pkg + "\n\n" + v.src + "\n"
+				want = append(want, record{
+					Pkg: pkg, Kind: g.kind, Name: g.ident, Signature: g.want,
+				})
+			}
+
+			dir := writeFixture(t, files)
+			got, err := extractRecords(dir)
+			if err != nil {
+				t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+			}
+
+			// (1) 絶対値。相対比較だけにすると、全 variant が同じ誤った
+			// 綴りを返す偽 Green を検出できない。
+			if diff := cmp.Diff(want, got, cmpopts.SortSlices(byRecord)); diff != "" {
+				t.Errorf("extractRecords(%q) mismatch (-want +got):\n%s", dir, diff)
+			}
+
+			// (2) 不変条件そのもの。oneline と multiline_trailing_comma が
+			// バイト一致すること（AC-4-3 の比較はバイト単位の完全一致で
+			// あり、部分一致・空白無視・正規表現へ緩めない）。
+			sigByPkg := make(map[string]string, len(got))
+			for _, r := range got {
+				sigByPkg[r.Pkg] = r.Signature
+			}
+			basePkg := g.name + "_" + g.variants[0].name
+			base, ok := sigByPkg[basePkg]
+			if !ok {
+				t.Fatalf("record not found for pkg %q in %+v", basePkg, got)
+			}
+			for _, v := range g.variants[1:] {
+				pkg := g.name + "_" + v.name
+				sig, ok := sigByPkg[pkg]
+				if !ok {
+					t.Fatalf("record not found for pkg %q in %+v", pkg, got)
+				}
+				if sig != base {
+					t.Errorf(
+						"pkg %q signature=%q, pkg %q signature=%q: byte-equal=false, want byte-equal=true"+
+							"（stripFieldListNames を通る経路も、元ソースの改行位置・末尾カンマの有無は"+
+							"公開 API の変化ではない。AC-4-3 はバイト単位で比較する）",
+						basePkg, base, pkg, sig,
+					)
+				}
+			}
+		})
+	}
+}
