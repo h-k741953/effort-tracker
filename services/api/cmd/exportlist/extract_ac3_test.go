@@ -297,9 +297,9 @@ func TestExtractRecords_AC3(t *testing.T) {
 			// 綴りを `struct { }` 側（`struct` と `{` のあいだに空白が
 			// 入る形）に採る根拠は
 			// TestExtractRecords_AC3_9_SpellingIsIndependentOfRemovalCountAndLayout
-			// の解説にある（メンバーが2個以上のときは go/printer が
-			// この形しか出さないため、AC-3-7 の下で全メンバー数に
-			// 通用する綴りはこれ1つに定まる）。
+			// の解説にある（メンバー0個には AC-3-9-2 (v) により区切りが
+			// 現れないため、`struct { }` / `interface { }` が唯一の綴り
+			// として定まる）。
 			//
 			// AC-3-10 の帰結（埋め込みフィールドが全部非公開で
 			// 除去され空になる場合）も同じ趣旨で含める。
@@ -345,7 +345,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 			},
 			want: []record{
 				{Pkg: "embed", Kind: "type", Name: "Pub", Signature: "struct { }"},
-				{Pkg: "embed", Kind: "type", Name: "Container", Signature: "struct { io.Reader Pub }"},
+				{Pkg: "embed", Kind: "type", Name: "Container", Signature: "struct { io.Reader; Pub }"},
 			},
 		},
 		{
@@ -539,7 +539,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 					"}\n",
 			},
 			want: []record{
-				{Pkg: "mixedunion", Kind: "type", Name: "Mixed", Signature: "interface { ~int | ~string Do() error }"},
+				{Pkg: "mixedunion", Kind: "type", Name: "Mixed", Signature: "interface { ~int | ~string; Do() error }"},
 			},
 		},
 		{
@@ -556,7 +556,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 					"}\n",
 			},
 			want: []record{
-				{Pkg: "unionmethod", Kind: "type", Name: "ConstraintWithMethod", Signature: "interface { ~int | ~string Do() error }"},
+				{Pkg: "unionmethod", Kind: "type", Name: "ConstraintWithMethod", Signature: "interface { ~int | ~string; Do() error }"},
 			},
 		},
 		{
@@ -590,7 +590,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 					Pkg:  "nestedhide",
 					Kind: "type",
 					Name: "NestedStruct",
-					Signature: "struct { Pub struct { Shown int } " +
+					Signature: "struct { Pub struct { Shown int }; " +
 						"Inner interface { Public() int } }",
 				},
 			},
@@ -828,7 +828,7 @@ func TestExtractRecords_AC3_10_1_PredeclaredEmbeds(t *testing.T) {
 	}
 
 	want := []record{
-		{Pkg: "i_with", Kind: "type", Name: "T", Signature: "interface { error Code() int }"},
+		{Pkg: "i_with", Kind: "type", Name: "T", Signature: "interface { error; Code() int }"},
 		{Pkg: "i_without", Kind: "type", Name: "T", Signature: "interface { Code() int }"},
 
 		{Pkg: "ii_with", Kind: "type", Name: "T", Signature: "interface { comparable }"},
@@ -837,10 +837,10 @@ func TestExtractRecords_AC3_10_1_PredeclaredEmbeds(t *testing.T) {
 		{Pkg: "iii_with", Kind: "type", Name: "T", Signature: "interface { any }"},
 		{Pkg: "iii_without", Kind: "type", Name: "T", Signature: "interface { }"},
 
-		{Pkg: "iv_with", Kind: "type", Name: "T", Signature: "struct { error N int }"},
+		{Pkg: "iv_with", Kind: "type", Name: "T", Signature: "struct { error; N int }"},
 		{Pkg: "iv_without", Kind: "type", Name: "T", Signature: "struct { N int }"},
 
-		{Pkg: "v_with", Kind: "type", Name: "T", Signature: "struct { int M string }"},
+		{Pkg: "v_with", Kind: "type", Name: "T", Signature: "struct { int; M string }"},
 		{Pkg: "v_without", Kind: "type", Name: "T", Signature: "struct { M string }"},
 
 		{Pkg: "vi", Kind: "type", Name: "T", Signature: "struct { io.Reader }"},
@@ -851,20 +851,20 @@ func TestExtractRecords_AC3_10_1_PredeclaredEmbeds(t *testing.T) {
 		{Pkg: "viii_with", Kind: "type", Name: "T", Signature: "struct { N int }"},
 		{Pkg: "viii_without", Kind: "type", Name: "T", Signature: "struct { N int }"},
 
-		{Pkg: "ix_with", Kind: "type", Name: "T", Signature: "struct { *int M string }"},
+		{Pkg: "ix_with", Kind: "type", Name: "T", Signature: "struct { *int; M string }"},
 		{Pkg: "ix_without", Kind: "type", Name: "T", Signature: "struct { M string }"},
 
 		{
 			Pkg: "allpredeclared_iface", Kind: "type", Name: "All",
-			Signature: "interface { any bool byte comparable complex64 complex128 error " +
-				"float32 float64 int int8 int16 int32 int64 rune string uint uint8 " +
-				"uint16 uint32 uint64 uintptr }",
+			Signature: "interface { any; bool; byte; comparable; complex64; complex128; error; " +
+				"float32; float64; int; int8; int16; int32; int64; rune; string; uint; uint8; " +
+				"uint16; uint32; uint64; uintptr }",
 		},
 		{
 			Pkg: "allpredeclared_struct", Kind: "type", Name: "AllStruct",
-			Signature: "struct { any bool byte complex64 complex128 error " +
-				"float32 float64 int int8 int16 int32 int64 rune string uint uint8 " +
-				"uint16 uint32 uint64 uintptr }",
+			Signature: "struct { any; bool; byte; complex64; complex128; error; " +
+				"float32; float64; int; int8; int16; int32; int64; rune; string; uint; uint8; " +
+				"uint16; uint32; uint64; uintptr }",
 		},
 	}
 
@@ -944,21 +944,35 @@ func TestExtractRecords_AC3_10_1_PredeclaredEmbeds(t *testing.T) {
 //
 //	AC-3-7 が許すのは「go/printer の出力を用い、改行・タブ・連続空白を空白
 //	1つへ畳み、前後の空白を落とす」ことだけである。空白を1つへ畳む操作は
-//	空白の**有無**を変えられない（削除も挿入もしない）。したがって綴りは
-//	go/printer が出す2つの形のどちらかに限られる。
+//	空白の**有無**を変えられない（削除も挿入もしない）。したがって残った
+//	メンバーが0個・1個のときの綴りは go/printer が出す形に一意に定まる。
 //
 //	  (1) `struct{ N int }`  … `struct` と `{` のあいだに空白が無い形。
 //	      go/printer はソースの `{` と `}` が同じ行にあり、かつ残った
 //	      フィールドが**ちょうど1個**（かつ短い）ときにだけこの形を出す。
 //	  (2) `struct { N int }` … 空白が入る形。上記以外のすべてで出る。
 //
-//	メンバーが**2個以上**残る型は (1) では書けない —— go/printer に (1) を
-//	選ばせる分岐が存在しない。よって「メンバー数によらず同一の綴り」を
-//	AC-3-7 の範囲で満たせる形は (2) ただ1つである。0個のときの (2) は
-//	`struct { }`、インターフェースなら `interface { }` になる。
+//	0個のときは (2) の空の形（`struct { }`、インターフェースなら
+//	`interface { }`）になる —— AC-3-9-2 (v) は「メンバー0個には区切りが
+//	現れない」ことを要求しており、(1)(2) の分岐に区切りは関与しない。
 //
-//	この導出の帰結として、本ファイルの既存ケースが持っていた `struct{}` /
-//	`interface{}` / `struct{ N int }` などの絶対値は (2) の綴りへ改めた。
+//	**メンバーが2個以上残る型は別の規則で決まる。** AC-3-7 の畳み込み
+//	だけを字面どおり適用すると、フィールド境界の改行も空白1つへ潰れて
+//	しまい `struct { N int M string }` のように区切りの無い形になる
+//	（(1)(2) はどちらもこの区切りを持たない）。AC-3-9-2 はこれを偽 Green
+//	として明示的に禁じ、「構造体のフィールド間・インターフェースの
+//	メンバー間には `<signature>` 上に区切りを出す」ことを要求する
+//	（メンバー1個以下には区切りが現れないことも同項が対照として固定する
+//	ため、(1)(2) の一致条件を変えない）。区切り文字の綴りそのものは
+//	AC-3-7 / AC-3-9-2 のどちらも固定しないが、
+//	TestExtractRecords_AC3_9_2_MemberBoundarySeparator が `"; "`
+//	（セミコロン + 空白1つ）を絶対値として先に固定しているため、本テストも
+//	これに揃える。
+//
+//	この導出の帰結として、本ファイルの既存ケースが持っていた
+//	`struct{ N int M string }` のような区切り無しの絶対値は、メンバーが
+//	2個以上残るケースに限り `"; "` 区切りへ改めた（0個・1個の綴りは
+//	変わらない）。
 //
 // 【依存】標準 testing + go-cmp のみ（ADR 0007）。
 func TestExtractRecords_AC3_9_SpellingIsIndependentOfRemovalCountAndLayout(t *testing.T) {
@@ -999,10 +1013,10 @@ func TestExtractRecords_AC3_9_SpellingIsIndependentOfRemovalCountAndLayout(t *te
 		},
 		{
 			// 公開 API: 公開フィールド N int / M string を持つ構造体。
-			// go/printer がこの形しか出せない（上記解説 (2)）ため、
-			// 綴りの基準点になるグループ。
+			// メンバーが2個残るため、AC-3-9-2 によりフィールド境界へ
+			// 区切り（"; "）が入る。
 			name: "struct_two",
-			want: "struct { N int M string }",
+			want: "struct { N int; M string }",
 			variants: []variant{
 				{"removed0_oneline", "struct{ N int; M string }"},
 				{"removed0_multiline", "struct {\n\tN int\n\tM string\n}"},
@@ -1038,9 +1052,10 @@ func TestExtractRecords_AC3_9_SpellingIsIndependentOfRemovalCountAndLayout(t *te
 		},
 		{
 			// 公開 API: 公開メソッド Do() error / Get() int を持つ
-			// インターフェース（struct_two と同じく綴りの基準点）。
+			// インターフェース（struct_two と同じく、メンバーが2個
+			// 残るため AC-3-9-2 により区切りが入る）。
 			name: "iface_two",
-			want: "interface { Do() error Get() int }",
+			want: "interface { Do() error; Get() int }",
 			variants: []variant{
 				{"removed0_oneline", "interface{ Do() error; Get() int }"},
 				{"removed0_multiline", "interface {\n\tDo() error\n\tGet() int\n}"},
@@ -1581,7 +1596,7 @@ func TestExtractRecords_AC3_7_1_IndexListLayoutSpellingIsInvariant(t *testing.T)
 			name:  "ii_struct_fields_split",
 			kind:  "type",
 			ident: "T",
-			want:  "struct { A int B int }",
+			want:  "struct { A int; B int }",
 			variants: []variant{
 				{"oneline", "type T struct { A int; B int }\n"},
 				{"multiline", "type T struct {\n\tA int\n\tB int\n}\n"},
@@ -1592,7 +1607,7 @@ func TestExtractRecords_AC3_7_1_IndexListLayoutSpellingIsInvariant(t *testing.T)
 			name:  "iii_iface_methods_split",
 			kind:  "type",
 			ident: "T",
-			want:  "interface { A() error B() error }",
+			want:  "interface { A() error; B() error }",
 			variants: []variant{
 				{"oneline", "type T interface { A() error; B() error }\n"},
 				{"multiline", "type T interface {\n\tA() error\n\tB() error\n}\n"},
@@ -1729,11 +1744,12 @@ func TestExtractRecords_AC3_7_1_IndexListLayoutSpellingIsInvariant(t *testing.T)
 //	する」と明示し、直後の期待値表 (i)〜(vi) がテストに落とす形をそのまま
 //	定める。**フィールド名は落とさない**ことも同項が明示しており、(iii) は
 //	これを「バイト一致しないこと」で固定する。絶対値の綴り
-//	（`struct { A int B int }` の形）は
+//	（`struct { A int; B int }` の形）は
 //	TestExtractRecords_AC3_9_SpellingIsIndependentOfRemovalCountAndLayout /
-//	TestExtractRecords_AC3_10_1_PredeclaredEmbeds が固定した「メンバー2個
-//	以上では go/printer がこの形しか出せない」規則と同一のものを流用する
-//	（新しい綴りを発明しない）。
+//	TestExtractRecords_AC3_10_1_PredeclaredEmbeds /
+//	TestExtractRecords_AC3_9_2_MemberBoundarySeparator が固定した
+//	「メンバーが2個以上残るときは AC-3-9-2 によりフィールド境界へ `"; "`
+//	区切りが入る」規則と同一のものを流用する（新しい綴りを発明しない）。
 //
 // 【依存】標準 testing + go-cmp のみ（ADR 0007）。
 func TestExtractRecords_AC3_9_1_GroupedFieldDeclsExpandAndPreserveNames(t *testing.T) {
@@ -1772,14 +1788,14 @@ func TestExtractRecords_AC3_9_1_GroupedFieldDeclsExpandAndPreserveNames(t *testi
 	}
 
 	want := []record{
-		{Pkg: "w71_i_grouped", Kind: "type", Name: "T", Signature: "struct { A int B int }"},
-		{Pkg: "w71_i_split", Kind: "type", Name: "T", Signature: "struct { A int B int }"},
+		{Pkg: "w71_i_grouped", Kind: "type", Name: "T", Signature: "struct { A int; B int }"},
+		{Pkg: "w71_i_split", Kind: "type", Name: "T", Signature: "struct { A int; B int }"},
 
-		{Pkg: "w71_ii_grouped", Kind: "type", Name: "T", Signature: "struct { A int B int C int }"},
-		{Pkg: "w71_ii_split", Kind: "type", Name: "T", Signature: "struct { A int B int C int }"},
+		{Pkg: "w71_ii_grouped", Kind: "type", Name: "T", Signature: "struct { A int; B int; C int }"},
+		{Pkg: "w71_ii_split", Kind: "type", Name: "T", Signature: "struct { A int; B int; C int }"},
 
-		{Pkg: "w71_iii_ab", Kind: "type", Name: "T", Signature: "struct { A int B int }"},
-		{Pkg: "w71_iii_ac", Kind: "type", Name: "T", Signature: "struct { A int C int }"},
+		{Pkg: "w71_iii_ab", Kind: "type", Name: "T", Signature: "struct { A int; B int }"},
+		{Pkg: "w71_iii_ac", Kind: "type", Name: "T", Signature: "struct { A int; C int }"},
 
 		{Pkg: "w71_iv_grouped", Kind: "type", Name: "T", Signature: "struct { A int }"},
 		{Pkg: "w71_iv_single", Kind: "type", Name: "T", Signature: "struct { A int }"},
@@ -1787,7 +1803,7 @@ func TestExtractRecords_AC3_9_1_GroupedFieldDeclsExpandAndPreserveNames(t *testi
 		{Pkg: "w71_v_grouped", Kind: "type", Name: "T", Signature: "struct { }"},
 		{Pkg: "w71_v_empty", Kind: "type", Name: "T", Signature: "struct { }"},
 
-		{Pkg: "w71_vi_embed", Kind: "type", Name: "T", Signature: "struct { error N int }"},
+		{Pkg: "w71_vi_embed", Kind: "type", Name: "T", Signature: "struct { error; N int }"},
 	}
 
 	if diff := cmp.Diff(want, got, cmpopts.SortSlices(byRecord)); diff != "" {
@@ -2151,7 +2167,7 @@ func TestExtractRecords_AC3_8_1_GroupedTypeParamDeclsExpand(t *testing.T) {
 		{Pkg: "w81_v_a", Kind: "func", Name: "F", Signature: "[T any, U any] (T) (error)"},
 		{Pkg: "w81_v_b", Kind: "func", Name: "F", Signature: "[T any, V any] (T) (error)"},
 
-		{Pkg: "w81_vi", Kind: "type", Name: "Pair", Signature: "[K any, V any] struct { First K Second V }"},
+		{Pkg: "w81_vi", Kind: "type", Name: "Pair", Signature: "[K any, V any] struct { First K; Second V }"},
 		{Pkg: "w81_vi", Kind: "method", Name: "Pair.M", Signature: "(Pair[K, V]) () (error)"},
 	}
 
