@@ -1835,3 +1835,591 @@ func TestExtractRecords_AC3_9_1_GroupedFieldDeclsExpandAndPreserveNames(t *testi
 		)
 	}
 }
+
+// TestExtractRecords_AC3_7_1_QualifiedIdentLineBreakIsInvariant は Issue #93
+// レビュー往復8 の指摘 C-8-1 を固定する。AC-3-7-1 の期待値表 (vii)〜(x) を
+// そのままテーブルへ落とす。
+//
+// 【指摘の要旨】
+//
+//	修飾識別子（`pkg.Name`）を `.` の直後で改行すると（Go の自動セミコロン
+//	挿入規則では `.` の直後に改行を入れても文が終わらないため、これは合法な
+//	書き方であり、gofmt もこの行取りを保存する —— 本テストの fixture は
+//	すべて gofmt 済みであることを別途確認している）、go/printer は
+//	SelectorExpr にも行ベースの分岐を持ち、Sel の元の行が `.` より後ろに
+//	あると改行を入れて印字する。構造体フィールド・トップレベル var・
+//	interface メソッドの引数と結果・関数の引数と結果のいずれの位置でも
+//	再現し、oneline 版と byte 不一致になる（偽の SIGNATURE_CHANGED）。
+//
+// 【期待値を AC から導出する根拠（実装の出力に合わせたのではない）】
+//
+//	AC-3-7-1 は「本項は型式が現れるすべての位置へ一様に掛かる」ものとして
+//	「修飾識別子（pkg.Name）の内部」を明示的に列挙し、直後の期待値表
+//	(vii)〜(x) がテストに落とす形をそのまま定める。各 want は AC-3-6/
+//	AC-3-7/AC-3-8 の組み立て規則（struct/interface/var/func の <signature>
+//	の形）から導出でき、実測上は oneline 版（バグの影響を受けない）が
+//	その導出結果と一致することを (1) の cmp.Diff で確認したうえで、
+//	linebreak 版が同じ絶対値とバイト一致することを (2) で確認する
+//	（TestExtractRecords_AC3_7_1_IndexListLayoutSpellingIsInvariant と
+//	同じ流儀）。
+//
+// 【固定する表の行】
+//
+//	(vii) 構造体フィールドの修飾識別子 (viii) トップレベル var の修飾識別子
+//	(ix) interface メソッドの引数・結果の修飾識別子（両方を1ケースで同時に
+//	改行する） (x) 関数の引数・結果の修飾識別子（同上）。
+//
+// 【依存】標準 testing + go-cmp のみ（ADR 0007）。
+func TestExtractRecords_AC3_7_1_QualifiedIdentLineBreakIsInvariant(t *testing.T) {
+	type variant struct {
+		name string
+		src  string // package 宣言に続けてそのまま書くソース全体（改行・タブを含む）
+	}
+	groups := []struct {
+		name     string
+		kind     string
+		ident    string
+		want     string // AC-3-6/AC-3-7/AC-3-8 から導いた <signature> の絶対値
+		variants []variant
+	}{
+		{
+			// (vii): 構造体フィールドの修飾識別子。
+			name:  "vii_struct_field",
+			kind:  "type",
+			ident: "T",
+			want:  "struct { Src io.Reader }",
+			variants: []variant{
+				{"oneline", "import \"io\"\n\ntype T struct {\n\tSrc io.Reader\n}\n"},
+				{"linebreak", "import \"io\"\n\ntype T struct {\n\tSrc io.\n\t\tReader\n}\n"},
+			},
+		},
+		{
+			// (viii): トップレベル var の修飾識別子。
+			name:  "viii_toplevel_var",
+			kind:  "var",
+			ident: "V",
+			want:  "io.Reader",
+			variants: []variant{
+				{"oneline", "import \"io\"\n\nvar V io.Reader\n"},
+				{"linebreak", "import \"io\"\n\nvar V io.\n\tReader\n"},
+			},
+		},
+		{
+			// (ix): interface メソッドの引数・結果の修飾識別子。
+			name:  "ix_iface_method",
+			kind:  "type",
+			ident: "T",
+			want:  "interface { M(io.Reader) io.Writer }",
+			variants: []variant{
+				{"oneline", "import \"io\"\n\ntype T interface {\n\tM(r io.Reader) io.Writer\n}\n"},
+				{
+					"linebreak",
+					"import \"io\"\n\ntype T interface {\n\tM(r io.\n\t\tReader) io.\n\t\tWriter\n}\n",
+				},
+			},
+		},
+		{
+			// (x): 関数の引数・結果の修飾識別子。
+			name:  "x_func",
+			kind:  "func",
+			ident: "F",
+			want:  "(io.Reader) (io.Writer)",
+			variants: []variant{
+				{"oneline", "import \"io\"\n\nfunc F(r io.Reader) io.Writer {\n\treturn nil\n}\n"},
+				{
+					"linebreak",
+					"import \"io\"\n\nfunc F(r io.\n\tReader) io.\n\tWriter {\n\treturn nil\n}\n",
+				},
+			},
+		},
+	}
+
+	for _, g := range groups {
+		t.Run(g.name, func(t *testing.T) {
+			files := make(map[string]string, len(g.variants))
+			want := make([]record, 0, len(g.variants))
+			for _, v := range g.variants {
+				pkg := g.name + "_" + v.name
+				files[pkg+"/a.go"] = "package " + pkg + "\n\n" + v.src
+				want = append(want, record{
+					Pkg: pkg, Kind: g.kind, Name: g.ident, Signature: g.want,
+				})
+			}
+
+			dir := writeFixture(t, files)
+			got, err := extractRecords(dir)
+			if err != nil {
+				t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+			}
+
+			var filtered []record
+			for _, r := range got {
+				if r.Kind == g.kind && r.Name == g.ident {
+					filtered = append(filtered, r)
+				}
+			}
+
+			// (1) 絶対値。相対比較だけにすると、全 variant が同じ誤った
+			// 綴りを返す偽 Green を検出できない。
+			if diff := cmp.Diff(want, filtered, cmpopts.SortSlices(byRecord)); diff != "" {
+				t.Errorf("extractRecords(%q) mismatch (-want +got):\n%s", dir, diff)
+			}
+
+			// (2) 不変条件そのもの。oneline と linebreak がバイト一致すること
+			// （AC-4-3 の比較はバイト単位の完全一致であり、部分一致・空白
+			// 無視・正規表現へ緩めない）。基準は oneline 版。
+			sigByPkg := make(map[string]string, len(filtered))
+			for _, r := range filtered {
+				sigByPkg[r.Pkg] = r.Signature
+			}
+			basePkg := g.name + "_" + g.variants[0].name
+			base, ok := sigByPkg[basePkg]
+			if !ok {
+				t.Fatalf("record not found for pkg %q (kind=%q name=%q) in %+v", basePkg, g.kind, g.ident, got)
+			}
+			for _, v := range g.variants[1:] {
+				pkg := g.name + "_" + v.name
+				sig, ok := sigByPkg[pkg]
+				if !ok {
+					t.Fatalf("record not found for pkg %q (kind=%q name=%q) in %+v", pkg, g.kind, g.ident, got)
+				}
+				if sig != base {
+					t.Errorf(
+						"pkg %q signature=%q, pkg %q signature=%q: byte-equal=false, want byte-equal=true"+
+							"（AC-3-7-1: 修飾識別子の内部で改行しても "+
+							"<signature> は公開 API の変化ではない。AC-4-3 はバイト単位で比較する）",
+						basePkg, base, pkg, sig,
+					)
+				}
+			}
+		})
+	}
+}
+
+// TestExtractRecords_AC3_7_1_ArrayLenCompositeLitLineBreakIsInvariant は
+// Issue #93 レビュー往復8 の指摘 I-8-1 を固定する。AC-3-7-1 の期待値表 (xi)
+// をそのままテーブルへ落とす。
+//
+// 【指摘の要旨】
+//
+//	型式の内部に現れる式（配列長の複合リテラル `[len([...]int{1, 2, 3})]int`）
+//	を要素ごとに改行し末尾カンマを置くと、oneline 版と byte 不一致になる
+//	（偽の SIGNATURE_CHANGED）。AC-3-7-1 は「型式の内部に現れる式（配列長
+//	など）の内部」へも一様に掛かると明示している。
+//
+// 【期待値を AC から導出する根拠（実装の出力に合わせたのではない）】
+//
+//	want は AC-3-8 の「カンマ + 空白1つで区切る」規則から導出でき、oneline
+//	版（バグの影響を受けない）がその導出結果と一致することを (1) の
+//	cmp.Diff で確認したうえで、multiline 版が同じ絶対値とバイト一致する
+//	ことを (2) で確認する。
+//
+// 【依存】標準 testing + go-cmp のみ（ADR 0007）。
+func TestExtractRecords_AC3_7_1_ArrayLenCompositeLitLineBreakIsInvariant(t *testing.T) {
+	files := map[string]string{
+		"xi_oneline/a.go": "package xi_oneline\n\ntype T [len([...]int{1, 2, 3})]int\n",
+		"xi_multiline_trailing_comma/a.go": "package xi_multiline_trailing_comma\n\n" +
+			"type T [len([...]int{\n\t1,\n\t2,\n\t3,\n})]int\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+	}
+
+	want := []record{
+		{Pkg: "xi_oneline", Kind: "type", Name: "T", Signature: "[len([...]int{1, 2, 3})]int"},
+		{Pkg: "xi_multiline_trailing_comma", Kind: "type", Name: "T", Signature: "[len([...]int{1, 2, 3})]int"},
+	}
+
+	// (1) 絶対値。
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(byRecord)); diff != "" {
+		t.Errorf("extractRecords(%q) mismatch (-want +got):\n%s", dir, diff)
+	}
+
+	// (2) 不変条件そのもの。バイト一致すること（AC-4-3 はバイト単位で比較
+	// する）。
+	sig := func(t *testing.T, pkg string) string {
+		t.Helper()
+		for _, r := range got {
+			if r.Pkg == pkg && r.Kind == "type" && r.Name == "T" {
+				return r.Signature
+			}
+		}
+		t.Fatalf("record not found for pkg %q in %+v", pkg, got)
+		return ""
+	}
+	oneline, multiline := sig(t, "xi_oneline"), sig(t, "xi_multiline_trailing_comma")
+	if oneline != multiline {
+		t.Errorf(
+			"pkg %q signature=%q, pkg %q signature=%q: byte-equal=false, want byte-equal=true"+
+				"（AC-3-7-1: 配列長の複合リテラルの行取りは"+
+				"公開 API の変化ではない。AC-4-3 はバイト単位で比較する）",
+			"xi_oneline", oneline, "xi_multiline_trailing_comma", multiline,
+		)
+	}
+}
+
+// TestExtractRecords_AC3_8_1_GroupedTypeParamDeclsExpand は Issue #93
+// レビュー往復8 の指摘 W-8-1 を固定する。AC-3-8-1 の「3-8-1 が要求する
+// 期待値（テストに落とす形）」表 (i)〜(vi) をそのままテーブルへ落とす。
+//
+// 【指摘の要旨】
+//
+//	型パラメータリストのまとめ宣言（`[T, U any]`）が名前ごとに分けて書いた
+//	形（`[T any, U any]`）へ展開されず、両者の <signature> がバイト不一致に
+//	なる。AC-3-8-1 は「n 個の名前は n 個の型パラメータとして現れる」ことを
+//	func / method の型パラメータリストと type の型パラメータリストの双方に
+//	要求する。
+//
+// 【期待値を AC から導出する根拠（実装の出力に合わせたのではない）】
+//
+//	絶対値は「名前ごとに分けて書いた形」（= 展開後にあるべき形。3-8-1 が
+//	定義する対照そのもの）の <signature> を使う。この綴り
+//	（`[T any, U any]` の形）は本ファイルの
+//	TestExtractRecords_AC3_7_1_IndexListLayoutSpellingIsInvariant
+//	vi_typeparam_list_split ケース（`func F[T any, U any](t T) error` の
+//	oneline 版）が既に確認済みの、go/printer が型パラメータリストへ一様に
+//	出す綴りである。**この絶対値が固定するのは
+//	「まとめ宣言と展開形がバイト一致すること」という不変条件であって、
+//	区切り文字や空白の綴りそのものではない**（3-8-1 の期待値表の直後の
+//	解説と同じ扱い）。実装工程が go/printer 以外の組み立てへ変えるなど
+//	してこの綴りが変わる場合は、want を実装が採る新しい綴りへ合わせて
+//	直してよい —— ただし「まとめ宣言側と展開形側が同じ絶対値になる」こと
+//	（下の (1) の cmp.Diff で両方が同じ want を指す構造）は変えないこと。
+//
+// 【固定する表の行】
+//
+//	(i) 2名のまとめ宣言（func） (ii) 3名のまとめ宣言（func。個数で場合分け
+//	しないこと） (iii) type の型パラメータリスト (iv) 対照: 制約が違えば
+//	バイト不一致 (v) 対照: 型パラメータ名を落とさない（AC-9-7） (vi) 対照:
+//	受信者型に書かれた型引数リストは本項の対象外（まとめ展開の影響を
+//	受けない）。
+//
+// 【依存】標準 testing + go-cmp のみ（ADR 0007）。
+func TestExtractRecords_AC3_8_1_GroupedTypeParamDeclsExpand(t *testing.T) {
+	files := map[string]string{
+		// (i): 2名のまとめ宣言と分割宣言はバイト一致する（func）。
+		"w81_i_grouped/a.go": "package w81_i_grouped\n\nfunc F[T, U any](t T, u U) error { return nil }\n",
+		"w81_i_split/a.go":   "package w81_i_split\n\nfunc F[T any, U any](t T, u U) error { return nil }\n",
+
+		// (ii): 3名でも同じ（個数で場合分けしない）。
+		"w81_ii_grouped/a.go": "package w81_ii_grouped\n\nfunc F[T, U, V any](t T) error { return nil }\n",
+		"w81_ii_split/a.go":   "package w81_ii_split\n\nfunc F[T any, U any, V any](t T) error { return nil }\n",
+
+		// (iii): type の型パラメータリストにも掛かる。
+		"w81_iii_grouped/a.go": "package w81_iii_grouped\n\ntype P[K, V any] struct {\n\tKey K\n}\n",
+		"w81_iii_split/a.go":   "package w81_iii_split\n\ntype P[K any, V any] struct {\n\tKey K\n}\n",
+
+		// (iv) 対照: 制約が違えばバイト不一致（展開が制約を取り違えない）。
+		"w81_iv_a/a.go": "package w81_iv_a\n\nfunc F[T any, U comparable](t T) error { return nil }\n",
+		"w81_iv_b/a.go": "package w81_iv_b\n\nfunc F[T, U any](t T) error { return nil }\n",
+
+		// (v) 対照: 型パラメータ名を落とさないこと（AC-9-7）。
+		"w81_v_a/a.go": "package w81_v_a\n\nfunc F[T, U any](t T) error { return nil }\n",
+		"w81_v_b/a.go": "package w81_v_b\n\nfunc F[T, V any](t T) error { return nil }\n",
+
+		// (vi) 対照: 受信者型に書かれた型引数リストはまとめ宣言ではなく
+		// 本項の対象外。Pair 自身の型パラメータリストは split 形で宣言し
+		// （(iii) の対象と混同しないため）、メソッドの受信者側
+		// `Pair[K, V]` が本項によって `Pair[K any, V any]` へ展開され
+		// ないことだけを固定する。
+		"w81_vi/a.go": "package w81_vi\n\ntype Pair[K any, V any] struct {\n\tFirst  K\n\tSecond V\n}\n\n" +
+			"func (p Pair[K, V]) M() error { return nil }\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+	}
+
+	want := []record{
+		{Pkg: "w81_i_grouped", Kind: "func", Name: "F", Signature: "[T any, U any] (T, U) (error)"},
+		{Pkg: "w81_i_split", Kind: "func", Name: "F", Signature: "[T any, U any] (T, U) (error)"},
+
+		{Pkg: "w81_ii_grouped", Kind: "func", Name: "F", Signature: "[T any, U any, V any] (T) (error)"},
+		{Pkg: "w81_ii_split", Kind: "func", Name: "F", Signature: "[T any, U any, V any] (T) (error)"},
+
+		{Pkg: "w81_iii_grouped", Kind: "type", Name: "P", Signature: "[K any, V any] struct { Key K }"},
+		{Pkg: "w81_iii_split", Kind: "type", Name: "P", Signature: "[K any, V any] struct { Key K }"},
+
+		{Pkg: "w81_iv_a", Kind: "func", Name: "F", Signature: "[T any, U comparable] (T) (error)"},
+		{Pkg: "w81_iv_b", Kind: "func", Name: "F", Signature: "[T any, U any] (T) (error)"},
+
+		{Pkg: "w81_v_a", Kind: "func", Name: "F", Signature: "[T any, U any] (T) (error)"},
+		{Pkg: "w81_v_b", Kind: "func", Name: "F", Signature: "[T any, V any] (T) (error)"},
+
+		{Pkg: "w81_vi", Kind: "type", Name: "Pair", Signature: "[K any, V any] struct { First K Second V }"},
+		{Pkg: "w81_vi", Kind: "method", Name: "Pair.M", Signature: "(Pair[K, V]) () (error)"},
+	}
+
+	// (1) 絶対値。相対比較だけにすると、まとめ宣言側と展開形側が同じ誤った
+	// 綴りを返す偽 Green を検出できない（レビュー往復8 の C-8-1/I-8-1 と
+	// 同じ注意）。
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(byRecord)); diff != "" {
+		t.Errorf("extractRecords(%q) mismatch (-want +got):\n%s", dir, diff)
+	}
+
+	// (2) 期待値表が直接要求する「バイト一致する／しない」を record 同士の
+	// 比較でも明示的に確認する（TestExtractRecords_AC3_9_1_... と同じ作法）。
+	sig := func(t *testing.T, pkg, kind, name string) string {
+		t.Helper()
+		for _, r := range got {
+			if r.Pkg == pkg && r.Kind == kind && r.Name == name {
+				return r.Signature
+			}
+		}
+		t.Fatalf("record not found for pkg %q kind %q name %q in %+v", pkg, kind, name, got)
+		return ""
+	}
+
+	equalPairs := []struct{ a, b, kind, name, label string }{
+		{"w81_i_grouped", "w81_i_split", "func", "F", "(i) grouped == split (2 names, func)"},
+		{"w81_ii_grouped", "w81_ii_split", "func", "F", "(ii) grouped == split (3 names, func)"},
+		{"w81_iii_grouped", "w81_iii_split", "type", "P", "(iii) grouped == split (type の型パラメータリスト)"},
+	}
+	for _, p := range equalPairs {
+		a, b := sig(t, p.a, p.kind, p.name), sig(t, p.b, p.kind, p.name)
+		if a != b {
+			t.Errorf(
+				"%s: pkg %q signature=%q, pkg %q signature=%q: byte-equal=false, want byte-equal=true",
+				p.label, p.a, a, p.b, b,
+			)
+		}
+	}
+
+	notEqualPairs := []struct{ a, b, kind, name, label string }{
+		{"w81_iv_a", "w81_iv_b", "func", "F", "(iv) 制約が違えばバイト不一致"},
+		{"w81_v_a", "w81_v_b", "func", "F", "(v) 型パラメータ名を落とさない（AC-9-7）"},
+	}
+	for _, p := range notEqualPairs {
+		a, b := sig(t, p.a, p.kind, p.name), sig(t, p.b, p.kind, p.name)
+		if a == b {
+			t.Errorf(
+				"%s: pkg %q signature=%q, pkg %q signature=%q: byte-equal=true, want byte-equal=false",
+				p.label, p.a, a, p.b, b,
+			)
+		}
+	}
+}
+
+// TestExtractRecords_AC3_9_2_MemberBoundarySeparator は Issue #93
+// レビュー往復8 の指摘 W-8-2（最優先）を固定する。AC-3-9-2 の「3-9-2 が
+// 要求する期待値（テストに落とす形）」表 (i)〜(x) をそのままテーブルへ
+// 落とす。
+//
+// 【指摘の要旨】
+//
+//	AC-3-7 の空白畳み込みを字面どおり適用すると、構造体フィールド間・
+//	インターフェースのメンバー間の境界（改行）が空白1つへ潰れる。すると
+//	名前付きフィールド1個（`Logger` という名前と `Clock` という型）と、
+//	埋め込みフィールド2個（`Logger` と `Clock`）が同じ綴り
+//	`struct { Logger Clock }` になる —— 公開フィールド `Logger` の消失と
+//	メソッド昇格という外形の変更がまるごとバイト一致に吸収され、この型が
+//	差分に1行も現れない（偽 Green）。
+//
+// 【期待値を AC から導出する根拠（実装の出力に合わせたのではない）】
+//
+//	AC-3-9-2 は「メンバーの並び（個数・各メンバーが名前付きか埋め込みかの
+//	区別・名前・型）が異なる型の <signature> は、バイト一致しない」ことを
+//	要求し、直後の期待値表 (i)〜(x) がテストに落とす形をそのまま定める。
+//	区切り文字の綴りそのものは 3-7 へ委ねられ本項では固定しないが、
+//	「メンバー境界に何らかの区切りを出すこと」自体は固定される。
+//
+//	(ii) は「区切りが無くてもメンバー数の違いだけでバイト不一致になる」
+//	ため、相対比較（不一致であること）だけでは区切り要求そのものの
+//	ミューテーション検出力を持たない（区切りを一切出さない実装でも
+//	(ii) は「不一致」を返してしまう）。同じ注意は (i) 以外の
+//	「明らかに不一致・一致になる」行にも当てはまるため、本テストは
+//	全行を1つの絶対値テーブル（want）として cmp.Diff で固定し、
+//	相対比較（等値・非等値）は AC の期待値表の意図を明示するための
+//	二重チェックとして追加する。
+//
+//	区切り文字の綴り自体（`"; "` の形）は本項が固定しないが、
+//	テストとしては何らかの具体的な絶対値が要る。ここでは
+//	docs/specs/public-api-diff-check.md の当該条文が持つ「一律の位置
+//	落とし＋メンバー境界の改行だけを区切りへ写す」という正規化の説明と
+//	整合する最小の綴り（セミコロン + 空白1つ。AC-3-8 が引数リストの
+//	区切りに使う「カンマ + 空白1つ」と対になる形）を採用する。
+//	**この絶対値が固定するのは「メンバーの並びが違えば異なる綴りになる
+//	こと」「行取りに依らないこと」という不変条件であって、区切り文字
+//	そのもの（`"; "` という具体的な1文字）ではない**（3-9-2 の期待値表
+//	直後の解説と同じ扱い）。実装工程が別の区切り文字を選ぶ場合は、
+//	want の区切り部分だけを実装が採る文字へ差し替えてよい —— ただし
+//	「(i) が持つ2つの pkg のバイト不一致」「(v)(vi) がメンバー0個・1個
+//	には区切りを出さないこと」「(iii)(iv) が行取りに依らずバイト一致
+//	すること」は変えないこと。
+//
+// 【固定する表の行】
+//
+//	(i) 本項の中心: 名前付きフィールド1個 vs 埋め込み2個
+//	(ii) interface にも一様に掛かること（対照。絶対値で押さえる）
+//	(iii) struct: 区切りは行取りで変わらない
+//	(iv) interface: 同上
+//	(v) 対照: メンバー0個には区切りが現れない
+//	(vi) 対照: メンバー1個にも区切りが現れない
+//	(vii) 対照: 3-9 の除去を先に適用すること
+//	(viii) 対照: 引数リストの区切りは 3-8 のカンマのまま変わらない
+//	(ix) 入れ子の構造体にも掛かる
+//	(x) map のキーに現れる構造体にも掛かる。
+//
+// 【依存】標準 testing + go-cmp のみ（ADR 0007）。
+func TestExtractRecords_AC3_9_2_MemberBoundarySeparator(t *testing.T) {
+	files := map[string]string{
+		// (i) 本項の中心: 名前付きフィールド1個（名前 Logger・型 Clock）と
+		// 埋め込みフィールド2個（Logger と Clock）。両者の違いは改行だけ
+		// であり、どちらも gofmt が保存する書き方である。
+		"w82_i_name/a.go": "package w82_i_name\n\ntype Clock struct{}\n\ntype Emb struct {\n\tLogger Clock\n}\n",
+		"w82_i_embed/a.go": "package w82_i_embed\n\ntype Logger struct{}\n\ntype Clock struct{}\n\n" +
+			"type Emb struct {\n\tLogger\n\tClock\n}\n",
+
+		// (ii) interface にも一様に掛かること。
+		"w82_ii_two/a.go": "package w82_ii_two\n\nimport \"io\"\n\ntype T interface {\n\tio.Reader\n\tio.Writer\n}\n",
+		"w82_ii_one/a.go": "package w82_ii_one\n\nimport \"io\"\n\ntype T interface {\n\tio.Reader\n}\n",
+
+		// (iii) struct: 区切りは行取りで変わらない。
+		"w82_iii_one/a.go":   "package w82_iii_one\n\ntype T struct { A int; B int }\n",
+		"w82_iii_split/a.go": "package w82_iii_split\n\ntype T struct {\n\tA int\n\tB int\n}\n",
+
+		// (iv) interface: 同上。
+		"w82_iv_one/a.go":   "package w82_iv_one\n\ntype T interface { A() error; B() error }\n",
+		"w82_iv_split/a.go": "package w82_iv_split\n\ntype T interface {\n\tA() error\n\tB() error\n}\n",
+
+		// (v) 対照: メンバー0個には区切りが現れない。
+		"w82_v_struct/a.go": "package w82_v_struct\n\ntype T struct{}\n",
+		"w82_v_iface/a.go":  "package w82_v_iface\n\ntype T interface{}\n",
+
+		// (vi) 対照: メンバー1個にも区切りが現れない。
+		"w82_vi_struct/a.go": "package w82_vi_struct\n\ntype T struct {\n\tA int\n}\n",
+		"w82_vi_iface/a.go":  "package w82_vi_iface\n\ntype T interface {\n\tM()\n}\n",
+
+		// (vii) 対照: 3-9 の除去を先に適用すること。除去された非公開
+		// フィールドのぶんの区切りが残らない。
+		"w82_vii_grouped/a.go": "package w82_vii_grouped\n\ntype T struct {\n\ta int\n\tB int\n}\n",
+		"w82_vii_single/a.go":  "package w82_vii_single\n\ntype T struct {\n\tB int\n}\n",
+
+		// (viii) 対照: 引数リストの区切りは 3-8 のカンマのまま変わらない。
+		"w82_viii_func/a.go": "package w82_viii_func\n\nfunc F(a int, b string) error { return nil }\n",
+
+		// (ix) 入れ子の構造体にも掛かる。
+		"w82_ix_two/a.go": "package w82_ix_two\n\ntype T struct {\n\tInner struct {\n\t\tA int\n\t\tB int\n\t}\n}\n",
+		"w82_ix_one/a.go": "package w82_ix_one\n\ntype T struct {\n\tInner struct {\n\t\tA int\n\t}\n}\n",
+
+		// (x) map のキーに現れる構造体にも掛かる。
+		"w82_x_two/a.go": "package w82_x_two\n\ntype T map[struct {\n\tA int\n\tB int\n}]int\n",
+		"w82_x_one/a.go": "package w82_x_one\n\ntype T map[struct {\n\tA int\n}]int\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+	}
+
+	want := []record{
+		{Pkg: "w82_i_name", Kind: "type", Name: "Emb", Signature: "struct { Logger Clock }"},
+		{Pkg: "w82_i_name", Kind: "type", Name: "Clock", Signature: "struct { }"},
+		{Pkg: "w82_i_embed", Kind: "type", Name: "Emb", Signature: "struct { Logger; Clock }"},
+		{Pkg: "w82_i_embed", Kind: "type", Name: "Logger", Signature: "struct { }"},
+		{Pkg: "w82_i_embed", Kind: "type", Name: "Clock", Signature: "struct { }"},
+
+		{Pkg: "w82_ii_two", Kind: "type", Name: "T", Signature: "interface { io.Reader; io.Writer }"},
+		{Pkg: "w82_ii_one", Kind: "type", Name: "T", Signature: "interface { io.Reader }"},
+
+		{Pkg: "w82_iii_one", Kind: "type", Name: "T", Signature: "struct { A int; B int }"},
+		{Pkg: "w82_iii_split", Kind: "type", Name: "T", Signature: "struct { A int; B int }"},
+
+		{Pkg: "w82_iv_one", Kind: "type", Name: "T", Signature: "interface { A() error; B() error }"},
+		{Pkg: "w82_iv_split", Kind: "type", Name: "T", Signature: "interface { A() error; B() error }"},
+
+		{Pkg: "w82_v_struct", Kind: "type", Name: "T", Signature: "struct { }"},
+		{Pkg: "w82_v_iface", Kind: "type", Name: "T", Signature: "interface { }"},
+
+		{Pkg: "w82_vi_struct", Kind: "type", Name: "T", Signature: "struct { A int }"},
+		{Pkg: "w82_vi_iface", Kind: "type", Name: "T", Signature: "interface { M() }"},
+
+		{Pkg: "w82_vii_grouped", Kind: "type", Name: "T", Signature: "struct { B int }"},
+		{Pkg: "w82_vii_single", Kind: "type", Name: "T", Signature: "struct { B int }"},
+
+		{Pkg: "w82_viii_func", Kind: "func", Name: "F", Signature: "(int, string) (error)"},
+
+		{Pkg: "w82_ix_two", Kind: "type", Name: "T", Signature: "struct { Inner struct { A int; B int } }"},
+		{Pkg: "w82_ix_one", Kind: "type", Name: "T", Signature: "struct { Inner struct { A int } }"},
+
+		{Pkg: "w82_x_two", Kind: "type", Name: "T", Signature: "map[struct { A int; B int }]int"},
+		{Pkg: "w82_x_one", Kind: "type", Name: "T", Signature: "map[struct { A int }]int"},
+	}
+
+	// (1) 絶対値。これが本テストの主張の核 —— (ii) をはじめとする「明らか
+	// に不一致になる」対照は、相対比較だけでは区切り要求そのものの
+	// ミューテーション検出力を持たない（上のコメント参照）。
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(byRecord)); diff != "" {
+		t.Errorf("extractRecords(%q) mismatch (-want +got):\n%s", dir, diff)
+	}
+
+	// (2) 期待値表が直接要求する「バイト一致する／しない」を record 同士の
+	// 比較でも明示的に確認する（期待値リテラルの書き損じを絶対値だけでは
+	// 拾えないため。TestExtractRecords_AC3_9_1_... と同じ作法）。
+	sig := func(t *testing.T, pkg, name string) string {
+		t.Helper()
+		for _, r := range got {
+			if r.Pkg == pkg && r.Kind == "type" && r.Name == name {
+				return r.Signature
+			}
+		}
+		t.Fatalf("record not found for pkg %q name %q in %+v", pkg, name, got)
+		return ""
+	}
+
+	// (i): 本項の中心。名前付きフィールド1個と埋め込み2個はバイト不一致。
+	if name, embed := sig(t, "w82_i_name", "Emb"), sig(t, "w82_i_embed", "Emb"); name == embed {
+		t.Errorf(
+			"(i) pkg %q signature=%q, pkg %q signature=%q: byte-equal=true, want byte-equal=false"+
+				"（AC-3-9-2: 名前付きフィールド1個からなる構造体と、埋め込み"+
+				"フィールド2個からなる構造体をバイト一致させない —— 境界が"+
+				"消えると公開フィールドの消失とメソッド昇格という外形の変更が"+
+				"まるごと吸収される）",
+			"w82_i_name/Emb", name, "w82_i_embed/Emb", embed,
+		)
+	}
+
+	// (ii): interface にも一様に掛かる。
+	if two, one := sig(t, "w82_ii_two", "T"), sig(t, "w82_ii_one", "T"); two == one {
+		t.Errorf(
+			"(ii) pkg %q signature=%q, pkg %q signature=%q: byte-equal=true, want byte-equal=false"+
+				"（AC-3-9-2: interface のメンバーの並びが違えばバイト一致しない）",
+			"w82_ii_two/T", two, "w82_ii_one/T", one,
+		)
+	}
+
+	equalPairs := []struct{ a, b, label string }{
+		{"w82_iii_one", "w82_iii_split", "(iii) struct: 区切りは行取りで変わらない"},
+		{"w82_iv_one", "w82_iv_split", "(iv) interface: 区切りは行取りで変わらない"},
+		{"w82_vii_grouped", "w82_vii_single", "(vii) 3-9 の除去を先に適用すること"},
+	}
+	for _, p := range equalPairs {
+		a, b := sig(t, p.a, "T"), sig(t, p.b, "T")
+		if a != b {
+			t.Errorf(
+				"%s: pkg %q signature=%q, pkg %q signature=%q: byte-equal=false, want byte-equal=true",
+				p.label, p.a, a, p.b, b,
+			)
+		}
+	}
+
+	notEqualPairs := []struct{ a, b, label string }{
+		{"w82_ix_two", "w82_ix_one", "(ix) 入れ子の構造体にも掛かる"},
+		{"w82_x_two", "w82_x_one", "(x) map のキーに現れる構造体にも掛かる"},
+	}
+	for _, p := range notEqualPairs {
+		a, b := sig(t, p.a, "T"), sig(t, p.b, "T")
+		if a == b {
+			t.Errorf(
+				"%s: pkg %q signature=%q, pkg %q signature=%q: byte-equal=true, want byte-equal=false",
+				p.label, p.a, a, p.b, b,
+			)
+		}
+	}
+}
