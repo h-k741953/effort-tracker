@@ -322,6 +322,15 @@ func typeExprSignature(e ast.Expr) ast.Expr {
 			newIndices[i] = typeExprSignature(idx)
 		}
 		nv.Indices = newIndices
+		// 括弧（ここでは大かっこ）の位置を落とす理由は filterFieldList の
+		// 「括弧の位置を落とす理由」と同一（AC-3-7-1。Issue #93 reviewer
+		// 往復7 の指摘 C-7-2）: go/printer は Lbrack/Rbrack の元の位置
+		// （行）が同じかどうかで型引数リストを1行表記にするか複数行表記に
+		// するか決める。FieldList の Opening/Closing と同じ壊れ方が
+		// IndexListExpr の Lbrack/Rbrack にも起こるため、同じ規則を同じ
+		// 理由で掛ける。
+		nv.Lbrack = token.NoPos
+		nv.Rbrack = token.NoPos
 		return &nv
 	case *ast.BinaryExpr:
 		// 型集合の union 項（`T1 | T2`）。AC-3-9 が除去を許すのは
@@ -354,6 +363,15 @@ func typeExprSignature(e ast.Expr) ast.Expr {
 // 適用したうえで、残す各メンバーの型に typeExprSignature を再帰適用する。
 // fl 自身・fl.List の要素は一切書き換えない（新しい FieldList / Field を
 // 作って返す）。
+//
+// 名前付きフィールド（Names が空でない）は、AC-3-9-1 のとおり非公開除去を
+// 先に適用したうえで、残った公開の名前ごとに Field を1つずつ作って展開
+// する（`A, B int` → `A int` / `B int` の2つの Field。Issue #93 reviewer
+// 往復7 の指摘 W-7-1）。フィールド名は AC-3-6 が引数名・結果名・受信者
+// 変数名に限って落とす対象へ含まれないため、展開後も残す（引数側の
+// stripFieldListNames が名前を落とすのとは扱いが違う）。名前の個数で
+// 分岐せず、keep の要素数ぶん一様にループするため「1個 / 2個以上」の
+// 場合分けを持ち込まない。
 //
 // 無名（Names が空）のメンバーは、埋め込みフィールド（AC-3-10）または
 // インターフェースの型集合の要素（union `T1 | T2`・`~T`）のいずれか。
@@ -420,10 +438,18 @@ func filterFieldList(fl *ast.FieldList) *ast.FieldList {
 		if len(keep) == 0 {
 			continue
 		}
-		nf := *f
-		nf.Names = keep
-		nf.Type = typeExprSignature(f.Type)
-		newList = append(newList, &nf)
+		// AC-3-9-1: 残った公開の名前ごとにフィールドを分割する（型は
+		// 名前の数だけ繰り返す）。typeExprSignature は f.Type に対して
+		// 1回だけ呼び、生成したコピーを各 Field で共有する（printer は
+		// 読み取り専用に辿るだけなので、同じ部分木を複数の Field から
+		// 参照しても安全）。
+		typ := typeExprSignature(f.Type)
+		for _, n := range keep {
+			nf := *f
+			nf.Names = []*ast.Ident{n}
+			nf.Type = typ
+			newList = append(newList, &nf)
+		}
 	}
 	nfl.List = newList
 	return &nfl
@@ -566,6 +592,20 @@ func fieldListTypesString(fset *token.FileSet, fl *ast.FieldList) string {
 // ほか、fieldListTypesString が関数の引数・結果型を組み立てる際にも
 // typeExprSignature 経由で使われる。
 //
+// 複数名をまとめた宣言（`a, b int`）は、名前の数だけ Field を展開する。
+// AC-3-6 が出力しないと定めるのは「引数名・結果名・受信者変数名」であって
+// 「引数そのもの」ではなく、AC-3-8 は n 個の引数が n 個の型として現れる
+// ことを要求する。この規則は fieldListTypesString（トップレベル関数の
+// 引数・結果を組み立てる側）に既に入っており、本関数はそれと同じ規則を、
+// stripFieldListNames を通るすべての経路（interface のメソッド引数、
+// 構造体フィールドの関数型の引数・結果、関数の引数位置に現れる関数型、
+// 型パラメータ制約に現れる関数型）へも一様に掛ける（Issue #93 reviewer
+// 往復7 の指摘 C-7-1: 経路ごとに個別対応すると適用漏れが再発するため、
+// 名前の個数で場合分けせず「名前の数だけ Field を作る」ループ1本で
+// 両経路に同じ規則を掛ける）。展開後は Names を nil にする（引数名は
+// AC-3-6 により出力しない — フィールド名を残す filterFieldList の
+// AC-3-9-1 とは扱いが違う）。
+//
 // Opening / Closing を token.NoPos にする理由は filterFieldList の
 // 「括弧の位置を落とす理由」と同一である（同じ規則を、FieldList のコピーを
 // 作るもう一方の場所へも同じように掛ける）。引数リストでは、元ソースが
@@ -578,12 +618,19 @@ func stripFieldListNames(fl *ast.FieldList) *ast.FieldList {
 	nfl := *fl
 	nfl.Opening = token.NoPos
 	nfl.Closing = token.NoPos
-	newList := make([]*ast.Field, len(fl.List))
-	for i, f := range fl.List {
-		nf := *f
-		nf.Names = nil
-		nf.Type = typeExprSignature(f.Type)
-		newList[i] = &nf
+	var newList []*ast.Field
+	for _, f := range fl.List {
+		typ := typeExprSignature(f.Type)
+		n := len(f.Names)
+		if n == 0 {
+			n = 1
+		}
+		for i := 0; i < n; i++ {
+			nf := *f
+			nf.Names = nil
+			nf.Type = typ
+			newList = append(newList, &nf)
+		}
 	}
 	nfl.List = newList
 	return &nfl
