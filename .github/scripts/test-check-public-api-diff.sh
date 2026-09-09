@@ -30,6 +30,15 @@
 #   本 fixture は go を一切呼ばない。AC-3（抽出規則）・AC-3-15 / 3-16（自己言及）
 #   の検査は services/api/cmd/exportlist の Go テストが持つ。
 #
+# 【警告 step の SKIP 判定も本 fixture が持つ（AC-9-10）】
+#   AC-9-10 のとおり、警告 step（ci-public-api-diff-step.sh）のうち
+#   **SKIP 判定だけ**は git もネットワークも $GITHUB_STEP_SUMMARY も要さず
+#   ローカルで再現できるため、本 fixture の対象とする。検査不能地帯として
+#   残るのはベースライン取得（AC-7-9 / 7-10）を要する経路だけである。
+#   SKIP の2分岐（PR 文脈でない実行／ベース側の ref が取れない）は
+#   ファイル末尾のケースが固定する。**go も git も呼ばないこと自体を
+#   スタブで固定する**ため、AC-1-3 の必須要件も AC-6-9 の禁止も崩さない。
+#
 # 【終了コードは 0/1/3 のみ（AC-5 前文）】
 #   `2` は UserPromptSubmit hook のブロックに予約されているため、このテストで
 #   `2` を期待するケースは作らない。
@@ -37,6 +46,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="${SCRIPT_DIR}/check-public-api-diff.sh"
+# 警告 step 本体（AC-7）。SKIP 判定だけを本 fixture が検査する（AC-9-10）。
+STEP_TARGET="${SCRIPT_DIR}/ci-public-api-diff-step.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -115,6 +126,65 @@ write_list() {
 # to_crlf <入力パス> <出力パス>: 各行末に \r を付けて CRLF 化する（AC-5-12）。
 to_crlf() {
   sed 's/$/\r/' "$1" > "$2"
+}
+
+# assert_file_contains <パス> <部分文字列>: ファイルに部分文字列が現れること。
+# $GITHUB_STEP_SUMMARY への出力（AC-7-4）を見るために使う。
+assert_file_contains() {
+  grep -qF -- "$2" "$1" 2> /dev/null
+}
+
+# --- 警告 step（AC-7）の SKIP 判定を回すための足回り（AC-9-10） ------------------
+#
+# STUB_BIN は git / go のスタブを置くディレクトリ。PATH の先頭に差し込んで
+# 実行することで、SKIP 判定の経路が git も go も呼ばないこと（AC-9-10 /
+# AC-6-9 / AC-1-3）を「呼ばれたら痕跡が残る」形で固定する。呼ばれた場合は
+# $PAD_FIXTURE_STUB_MARKER が生成され、ケースが FAIL する。
+# 副作用ファイルの有無で判定する作法は AC-1-4 / 5-11 のケースと同じ。
+STUB_BIN="$WORK/stub-bin"
+mkdir -p "$STUB_BIN"
+for stub_cmd in git go; do
+  cat > "$STUB_BIN/$stub_cmd" <<'STUB_EOF'
+#!/usr/bin/env bash
+# fixture のスタブ。呼ばれた事実だけを残して失敗する。
+printf '%s %s\n' "$0" "$*" >> "${PAD_FIXTURE_STUB_MARKER:?}"
+exit 127
+STUB_EOF
+  chmod +x "$STUB_BIN/$stub_cmd"
+done
+unset stub_cmd
+
+SUMMARY_FILE=""
+STUB_MARKER=""
+
+# run_step <PAD_EVENT_NAME> <PAD_BASE_SHA>: 警告 step 本体を WORK をカレント
+# ディレクトリとして実行し、RC/OUT/ERR と SUMMARY_FILE/STUB_MARKER を埋める。
+#
+# SUMMARY_FILE はケースごとに新しい一時ファイルにする。step 側は
+# $GITHUB_STEP_SUMMARY へ `>>` で追記するため、使い回すとケース間で内容が
+# 混ざり、前のケースの出力で後のケースが緑になりうる。
+run_step() {
+  local event="$1" base_sha="$2"
+  local outf errf
+  outf="$(mktemp -p "$WORK")"
+  errf="$(mktemp -p "$WORK")"
+  SUMMARY_FILE="$(mktemp -p "$WORK")"
+  STUB_MARKER="$(mktemp -p "$WORK")"
+  # スタブが呼ばれたときにだけ作られるようにする（存在＝呼ばれた）。
+  rm -f "$STUB_MARKER"
+  (
+    cd "$WORK" \
+      && PATH="$STUB_BIN:$PATH" \
+        PAD_FIXTURE_STUB_MARKER="$STUB_MARKER" \
+        PAD_EVENT_NAME="$event" \
+        PAD_BASE_SHA="$base_sha" \
+        GITHUB_STEP_SUMMARY="$SUMMARY_FILE" \
+        bash "$STEP_TARGET" > "$outf" 2> "$errf"
+  )
+  RC=$?
+  OUT="$(cat "$outf")"
+  ERR="$(cat "$errf")"
+  rm -f "$outf" "$errf"
 }
 
 # --- verdict 別の期待値ヘルパー -------------------------------------------------
@@ -487,6 +557,44 @@ ok=1
 assert_verdict "OK" || ok=0
 [ "$BEFORE_HASH" = "$AFTER_HASH" ] || ok=0
 report "6-6 / 6-1: 検査対象スクリプト自身を書き換えず、対象不在でも黙って通らない" "$ok" "0"
+
+# ==============================================================================
+# AC-9-10 が fixture の対象とする、警告 step（ci-public-api-diff-step.sh）の
+# SKIP 判定。2分岐とも AC-7-2（step 自身は常に exit 0）・AC-7-4（verdict を
+# ジョブログと $GITHUB_STEP_SUMMARY の両方へ出す。SKIP でも黙らない）・
+# AC-7-8（表示文言に「ベースラインが無い」ことを含める）を満たすこと。
+#
+# 対象（$STEP_TARGET）が無ければ bash が rc=127 を返し、期待 rc=0 と verdict
+# の両方が不一致になって FAIL する（AC-6-1 と同じ扱い。SKIP しない）。
+# ==============================================================================
+
+# --- SKIP その1: PR 文脈でない実行（AC-7-7 前半、AC-9-3） ----------------------
+run_step "push" ""
+SKIP_REASON_NO_PR="$(printf '%s\n' "$OUT" | tail -n +2)"
+ok=1
+[ "$RC" = "0" ] || ok=0
+assert_verdict "SKIP" || ok=0
+assert_detail_key "ベースラインが無い" || ok=0
+assert_file_contains "$SUMMARY_FILE" "VERDICT: SKIP" || ok=0
+assert_file_contains "$SUMMARY_FILE" "ベースラインが無い" || ok=0
+[ ! -e "$STUB_MARKER" ] || ok=0
+report "7-7 / 7-2 / 7-4 / 7-8 / 9-10: PR 文脈でない実行 → SKIP（git / go を呼ばず exit 0）" "$ok" "0"
+
+# --- SKIP その2: PR 文脈だがベース側の ref が取れない（AC-7-7 後半） -----------
+# AC-7-7 は「どちらの理由かを1行添える」ことも要求する。2分岐の理由文言が
+# 互いに異なることを、その1の理由と突き合わせて固定する（同じ文言なら
+# どちらの理由かが読めない）。
+run_step "pull_request" ""
+SKIP_REASON_NO_BASE="$(printf '%s\n' "$OUT" | tail -n +2)"
+ok=1
+[ "$RC" = "0" ] || ok=0
+assert_verdict "SKIP" || ok=0
+assert_detail_key "ベースラインが無い" || ok=0
+assert_file_contains "$SUMMARY_FILE" "VERDICT: SKIP" || ok=0
+assert_file_contains "$SUMMARY_FILE" "ベースラインが無い" || ok=0
+[ ! -e "$STUB_MARKER" ] || ok=0
+[ "$SKIP_REASON_NO_BASE" != "$SKIP_REASON_NO_PR" ] || ok=0
+report "7-7 / 7-2 / 7-4 / 7-8 / 9-10: ベース側 ref を取得できない → SKIP（その1とは別の理由を1行添える）" "$ok" "0"
 
 echo ""
 if [ "$fail" -ne 0 ]; then

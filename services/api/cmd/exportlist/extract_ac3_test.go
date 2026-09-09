@@ -129,7 +129,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 					"func (p priv) PubMethod() {}\n",
 			},
 			want: []record{
-				{Pkg: "methods", Kind: "type", Name: "Pub", Signature: "struct{}"},
+				{Pkg: "methods", Kind: "type", Name: "Pub", Signature: "struct { }"},
 				{Pkg: "methods", Kind: "method", Name: "Pub.PubMethod", Signature: "(Pub) () ()"},
 				{Pkg: "methods", Kind: "method", Name: "Pub.PtrMethod", Signature: "(*Pub) () ()"},
 			},
@@ -283,15 +283,23 @@ func TestExtractRecords_AC3(t *testing.T) {
 		{
 			// AC-3-9（境界）: 非公開メンバの除去によって全メンバーが
 			// 無くなり0件へ落ちる型式は、ソースが元から空だった型と
-			// 同じ表記（`struct{}` / `interface{}`）になる。
+			// 同じ表記（`struct { }` / `interface { }`）になる。
 			//
 			// AC-3-9 は「非公開メンバの増減は公開 API の変化ではない」
 			// ことを担保する条文である。「元から空」と「除去後に空」を
 			// 同一ケースに並置し、両者が同一の絶対値表記に揃うことを
 			// 固定する。片方だけの表記変化（例: 除去後だけ
-			// `struct { }` のように空白が入る）を許すと、非公開
-			// フィールドの増減だけで SIGNATURE_CHANGED が生じる
-			// 偽陽性を許すことになり、AC-3-9 の趣旨に反する。
+			// `struct{}` のように `struct` と `{` のあいだの空白が
+			// 落ちる）を許すと、非公開フィールドの増減だけで
+			// SIGNATURE_CHANGED が生じる偽陽性を許すことになり、
+			// AC-3-9 の趣旨に反する。
+			//
+			// 綴りを `struct { }` 側（`struct` と `{` のあいだに空白が
+			// 入る形）に採る根拠は
+			// TestExtractRecords_AC3_9_SpellingIsIndependentOfRemovalCountAndLayout
+			// の解説にある（メンバーが2個以上のときは go/printer が
+			// この形しか出さないため、AC-3-7 の下で全メンバー数に
+			// 通用する綴りはこれ1つに定まる）。
 			//
 			// AC-3-10 の帰結（埋め込みフィールドが全部非公開で
 			// 除去され空になる場合）も同じ趣旨で含める。
@@ -313,11 +321,11 @@ func TestExtractRecords_AC3(t *testing.T) {
 					"}\n",
 			},
 			want: []record{
-				{Pkg: "hideempty", Kind: "type", Name: "OrigEmptyStruct", Signature: "struct{}"},
-				{Pkg: "hideempty", Kind: "type", Name: "OrigEmptyIface", Signature: "interface{}"},
-				{Pkg: "hideempty", Kind: "type", Name: "EmptiedStruct", Signature: "struct{}"},
-				{Pkg: "hideempty", Kind: "type", Name: "EmptiedIface", Signature: "interface{}"},
-				{Pkg: "hideempty", Kind: "type", Name: "EmptiedByEmbed", Signature: "struct{}"},
+				{Pkg: "hideempty", Kind: "type", Name: "OrigEmptyStruct", Signature: "struct { }"},
+				{Pkg: "hideempty", Kind: "type", Name: "OrigEmptyIface", Signature: "interface { }"},
+				{Pkg: "hideempty", Kind: "type", Name: "EmptiedStruct", Signature: "struct { }"},
+				{Pkg: "hideempty", Kind: "type", Name: "EmptiedIface", Signature: "interface { }"},
+				{Pkg: "hideempty", Kind: "type", Name: "EmptiedByEmbed", Signature: "struct { }"},
 			},
 		},
 		{
@@ -336,7 +344,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 					"}\n",
 			},
 			want: []record{
-				{Pkg: "embed", Kind: "type", Name: "Pub", Signature: "struct{}"},
+				{Pkg: "embed", Kind: "type", Name: "Pub", Signature: "struct { }"},
 				{Pkg: "embed", Kind: "type", Name: "Container", Signature: "struct { io.Reader Pub }"},
 			},
 		},
@@ -438,7 +446,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 			//
 			// unionfuncA / unionfuncB は union 内の関数型の引数名
 			// （ctx / c）だけが異なる2入力。両方が同一の絶対値
-			// "(interface{ ~int | func(int) error }) ()" を出すことを
+			// "(interface { ~int | func(int) error }) ()" を出すことを
 			// 固定する。
 			name: "AC-3-6_C1r_c_union_and_tilde_strip_nested_func_arg_names",
 			files: map[string]string{
@@ -448,8 +456,8 @@ func TestExtractRecords_AC3(t *testing.T) {
 					"func FUnion(x interface{ ~int | func(c int) error }) {}\n",
 			},
 			want: []record{
-				{Pkg: "unionfuncA", Kind: "func", Name: "FUnion", Signature: "(interface{ ~int | func(int) error }) ()"},
-				{Pkg: "unionfuncB", Kind: "func", Name: "FUnion", Signature: "(interface{ ~int | func(int) error }) ()"},
+				{Pkg: "unionfuncA", Kind: "func", Name: "FUnion", Signature: "(interface { ~int | func(int) error }) ()"},
+				{Pkg: "unionfuncB", Kind: "func", Name: "FUnion", Signature: "(interface { ~int | func(int) error }) ()"},
 			},
 		},
 		{
@@ -474,7 +482,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 					"type Number interface{ ~int | ~float64 }\n",
 			},
 			want: []record{
-				{Pkg: "unionkeep", Kind: "type", Name: "Number", Signature: "interface{ ~int | ~float64 }"},
+				{Pkg: "unionkeep", Kind: "type", Name: "Number", Signature: "interface { ~int | ~float64 }"},
 			},
 		},
 		{
@@ -486,7 +494,7 @@ func TestExtractRecords_AC3(t *testing.T) {
 					"type Other interface{ ~string }\n",
 			},
 			want: []record{
-				{Pkg: "tildekeep", Kind: "type", Name: "Other", Signature: "interface{ ~string }"},
+				{Pkg: "tildekeep", Kind: "type", Name: "Other", Signature: "interface { ~string }"},
 			},
 		},
 		{
@@ -494,12 +502,13 @@ func TestExtractRecords_AC3(t *testing.T) {
 			// オーケストレーターが実測した偽 Green ―― 公開制約を
 			// `~int | ~float64` → `~string | ~bool` へ変える（破壊的な
 			// 公開 API 変更）と、除去バグにより出力が完全に同一
-			// （"interface{}"）になり差分が出ない。
+			// （型集合が丸ごと消えた空のインターフェース）になり
+			// 差分が出ない。
 			//
 			// unionfalsegreenA / unionfalsegreenB は型集合の中身だけが
 			// 異なる2入力。**異なる signature を出す**ことを固定する
-			// （両方とも同一の誤った値 "interface{}" を返す偽 Green の
-			// 再発を防ぐ）。
+			// （両方とも同一の誤った値＝空のインターフェースを返す
+			// 偽 Green の再発を防ぐ）。
 			name: "AC-3-9_C2_different_type_sets_yield_different_signatures",
 			files: map[string]string{
 				"unionfalsegreenA/a.go": "package unionfalsegreenA\n\n" +
@@ -508,8 +517,8 @@ func TestExtractRecords_AC3(t *testing.T) {
 					"type WithConstraint interface{ ~string | ~bool }\n",
 			},
 			want: []record{
-				{Pkg: "unionfalsegreenA", Kind: "type", Name: "WithConstraint", Signature: "interface{ ~int | ~float64 }"},
-				{Pkg: "unionfalsegreenB", Kind: "type", Name: "WithConstraint", Signature: "interface{ ~string | ~bool }"},
+				{Pkg: "unionfalsegreenA", Kind: "type", Name: "WithConstraint", Signature: "interface { ~int | ~float64 }"},
+				{Pkg: "unionfalsegreenB", Kind: "type", Name: "WithConstraint", Signature: "interface { ~string | ~bool }"},
 			},
 		},
 		{
@@ -820,30 +829,30 @@ func TestExtractRecords_AC3_10_1_PredeclaredEmbeds(t *testing.T) {
 
 	want := []record{
 		{Pkg: "i_with", Kind: "type", Name: "T", Signature: "interface { error Code() int }"},
-		{Pkg: "i_without", Kind: "type", Name: "T", Signature: "interface{ Code() int }"},
+		{Pkg: "i_without", Kind: "type", Name: "T", Signature: "interface { Code() int }"},
 
-		{Pkg: "ii_with", Kind: "type", Name: "T", Signature: "interface{ comparable }"},
-		{Pkg: "ii_without", Kind: "type", Name: "T", Signature: "interface{}"},
+		{Pkg: "ii_with", Kind: "type", Name: "T", Signature: "interface { comparable }"},
+		{Pkg: "ii_without", Kind: "type", Name: "T", Signature: "interface { }"},
 
-		{Pkg: "iii_with", Kind: "type", Name: "T", Signature: "interface{ any }"},
-		{Pkg: "iii_without", Kind: "type", Name: "T", Signature: "interface{}"},
+		{Pkg: "iii_with", Kind: "type", Name: "T", Signature: "interface { any }"},
+		{Pkg: "iii_without", Kind: "type", Name: "T", Signature: "interface { }"},
 
 		{Pkg: "iv_with", Kind: "type", Name: "T", Signature: "struct { error N int }"},
-		{Pkg: "iv_without", Kind: "type", Name: "T", Signature: "struct{ N int }"},
+		{Pkg: "iv_without", Kind: "type", Name: "T", Signature: "struct { N int }"},
 
 		{Pkg: "v_with", Kind: "type", Name: "T", Signature: "struct { int M string }"},
-		{Pkg: "v_without", Kind: "type", Name: "T", Signature: "struct{ M string }"},
+		{Pkg: "v_without", Kind: "type", Name: "T", Signature: "struct { M string }"},
 
-		{Pkg: "vi", Kind: "type", Name: "T", Signature: "struct{ io.Reader }"},
+		{Pkg: "vi", Kind: "type", Name: "T", Signature: "struct { io.Reader }"},
 
-		{Pkg: "vii_with", Kind: "type", Name: "T", Signature: "struct{ N int }"},
-		{Pkg: "vii_without", Kind: "type", Name: "T", Signature: "struct{ N int }"},
+		{Pkg: "vii_with", Kind: "type", Name: "T", Signature: "struct { N int }"},
+		{Pkg: "vii_without", Kind: "type", Name: "T", Signature: "struct { N int }"},
 
-		{Pkg: "viii_with", Kind: "type", Name: "T", Signature: "struct{ N int }"},
-		{Pkg: "viii_without", Kind: "type", Name: "T", Signature: "struct{ N int }"},
+		{Pkg: "viii_with", Kind: "type", Name: "T", Signature: "struct { N int }"},
+		{Pkg: "viii_without", Kind: "type", Name: "T", Signature: "struct { N int }"},
 
 		{Pkg: "ix_with", Kind: "type", Name: "T", Signature: "struct { *int M string }"},
-		{Pkg: "ix_without", Kind: "type", Name: "T", Signature: "struct{ M string }"},
+		{Pkg: "ix_without", Kind: "type", Name: "T", Signature: "struct { M string }"},
 
 		{
 			Pkg: "allpredeclared_iface", Kind: "type", Name: "All",
@@ -903,6 +912,194 @@ func TestExtractRecords_AC3_10_1_PredeclaredEmbeds(t *testing.T) {
 					"pkg %q signature=%q, pkg %q signature=%q: byte-equal=%v, want byte-equal=%v",
 					p.with, with, p.without, without, equal, p.wantEqualBy,
 				)
+			}
+		})
+	}
+}
+
+// TestExtractRecords_AC3_9_SpellingIsIndependentOfRemovalCountAndLayout は、
+// AC-3-9 が担保する「非公開メンバの増減は公開 API の変化ではない」を
+// <signature> の**綴り**のレベルで固定する（Issue #93 reviewer 往復5 の指摘
+// C-5-1）。
+//
+// 【何が壊れているか】
+//
+//	AC-3-9 の除去そのものは効いているが、除去後に go/printer が選ぶ表記が
+//	(α) 除去後に残ったメンバー数（0個 / 1個 / 2個以上）と
+//	(β) 元ソースが1行で書かれているか複数行で書かれているか
+//	の2つに依存する。AC-4-3 は <signature> を**バイト単位の完全一致**で
+//	比較するため、この揺れがそのまま偽の SIGNATURE_CHANGED になる。
+//	（比較器側で空白を正規化して吸収することは AC-4-3 が明示的に禁じている。
+//	正規化は抽出器の責務＝AC-3-7。）
+//
+// 【固定する不変条件】
+//
+//	**同じ公開 API を表す型は、(α)(β) がどうであっても同一の <signature> を
+//	出す。** 「除去後に空になったときだけ元から空の型に合わせる」ような
+//	場合分け（往復2 で入れた collapseIfEmpty の対症療法）は、(α) の 0個/1個
+//	の境界しか塞がず、1個/2個以上の境界と (β) をそのまま残すため、この
+//	不変条件を満たさない。
+//
+// 【期待する綴りが AC から一意に定まる理由（実装の出力に合わせたのではない）】
+//
+//	AC-3-7 が許すのは「go/printer の出力を用い、改行・タブ・連続空白を空白
+//	1つへ畳み、前後の空白を落とす」ことだけである。空白を1つへ畳む操作は
+//	空白の**有無**を変えられない（削除も挿入もしない）。したがって綴りは
+//	go/printer が出す2つの形のどちらかに限られる。
+//
+//	  (1) `struct{ N int }`  … `struct` と `{` のあいだに空白が無い形。
+//	      go/printer はソースの `{` と `}` が同じ行にあり、かつ残った
+//	      フィールドが**ちょうど1個**（かつ短い）ときにだけこの形を出す。
+//	  (2) `struct { N int }` … 空白が入る形。上記以外のすべてで出る。
+//
+//	メンバーが**2個以上**残る型は (1) では書けない —— go/printer に (1) を
+//	選ばせる分岐が存在しない。よって「メンバー数によらず同一の綴り」を
+//	AC-3-7 の範囲で満たせる形は (2) ただ1つである。0個のときの (2) は
+//	`struct { }`、インターフェースなら `interface { }` になる。
+//
+//	この導出の帰結として、本ファイルの既存ケースが持っていた `struct{}` /
+//	`interface{}` / `struct{ N int }` などの絶対値は (2) の綴りへ改めた。
+//
+// 【依存】標準 testing + go-cmp のみ（ADR 0007）。
+func TestExtractRecords_AC3_9_SpellingIsIndependentOfRemovalCountAndLayout(t *testing.T) {
+	type variant struct {
+		name string // パッケージ名の後半に使う（Go の識別子として有効な綴り）
+		decl string // `type T` の右辺。ソースの改行・空白をそのまま与える
+	}
+	groups := []struct {
+		name     string // パッケージ名の前半
+		want     string // AC-3-7 から導いた <signature> の絶対値
+		variants []variant
+	}{
+		{
+			// 公開 API: 公開フィールドを1つも持たない構造体。
+			name: "struct_zero",
+			want: "struct { }",
+			variants: []variant{
+				{"orig_oneline", "struct{}"},
+				{"orig_multiline", "struct {\n}"},
+				{"removed1_oneline", "struct{ hidden int }"},
+				{"removed1_multiline", "struct {\n\thidden int\n}"},
+				{"removed2_oneline", "struct{ hidden int; secret string }"},
+				{"removed2_multiline", "struct {\n\thidden int\n\tsecret string\n}"},
+			},
+		},
+		{
+			// 公開 API: 公開フィールド N int を1つだけ持つ構造体。
+			name: "struct_one",
+			want: "struct { N int }",
+			variants: []variant{
+				{"removed0_oneline", "struct{ N int }"},
+				{"removed0_multiline", "struct {\n\tN int\n}"},
+				{"removed1_oneline", "struct{ N int; hidden string }"},
+				{"removed1_multiline", "struct {\n\tN int\n\thidden string\n}"},
+				{"removed2_oneline", "struct{ hidden string; N int; secret bool }"},
+				{"removed2_multiline", "struct {\n\thidden string\n\tN int\n\tsecret bool\n}"},
+			},
+		},
+		{
+			// 公開 API: 公開フィールド N int / M string を持つ構造体。
+			// go/printer がこの形しか出せない（上記解説 (2)）ため、
+			// 綴りの基準点になるグループ。
+			name: "struct_two",
+			want: "struct { N int M string }",
+			variants: []variant{
+				{"removed0_oneline", "struct{ N int; M string }"},
+				{"removed0_multiline", "struct {\n\tN int\n\tM string\n}"},
+				{"removed1_oneline", "struct{ N int; hidden bool; M string }"},
+				{"removed1_multiline", "struct {\n\tN int\n\thidden bool\n\tM string\n}"},
+			},
+		},
+		{
+			// 公開 API: 公開メソッドを1つも持たないインターフェース。
+			name: "iface_zero",
+			want: "interface { }",
+			variants: []variant{
+				{"orig_oneline", "interface{}"},
+				{"orig_multiline", "interface {\n}"},
+				{"removed1_oneline", "interface{ hidden() int }"},
+				{"removed1_multiline", "interface {\n\thidden() int\n}"},
+				{"removed2_oneline", "interface{ hidden() int; secret() string }"},
+				{"removed2_multiline", "interface {\n\thidden() int\n\tsecret() string\n}"},
+			},
+		},
+		{
+			// 公開 API: 公開メソッド Do() error を1つだけ持つインターフェース。
+			name: "iface_one",
+			want: "interface { Do() error }",
+			variants: []variant{
+				{"removed0_oneline", "interface{ Do() error }"},
+				{"removed0_multiline", "interface {\n\tDo() error\n}"},
+				{"removed1_oneline", "interface{ Do() error; hidden() int }"},
+				{"removed1_multiline", "interface {\n\tDo() error\n\thidden() int\n}"},
+				{"removed2_oneline", "interface{ hidden() int; Do() error; secret() string }"},
+				{"removed2_multiline", "interface {\n\thidden() int\n\tDo() error\n\tsecret() string\n}"},
+			},
+		},
+		{
+			// 公開 API: 公開メソッド Do() error / Get() int を持つ
+			// インターフェース（struct_two と同じく綴りの基準点）。
+			name: "iface_two",
+			want: "interface { Do() error Get() int }",
+			variants: []variant{
+				{"removed0_oneline", "interface{ Do() error; Get() int }"},
+				{"removed0_multiline", "interface {\n\tDo() error\n\tGet() int\n}"},
+				{"removed1_oneline", "interface{ Do() error; hidden() bool; Get() int }"},
+				{"removed1_multiline", "interface {\n\tDo() error\n\thidden() bool\n\tGet() int\n}"},
+			},
+		},
+	}
+
+	for _, g := range groups {
+		t.Run(g.name, func(t *testing.T) {
+			files := make(map[string]string, len(g.variants))
+			want := make([]record, 0, len(g.variants))
+			for _, v := range g.variants {
+				pkg := g.name + "_" + v.name
+				files[pkg+"/a.go"] = "package " + pkg + "\n\ntype T " + v.decl + "\n"
+				want = append(want, record{
+					Pkg: pkg, Kind: "type", Name: "T", Signature: g.want,
+				})
+			}
+
+			dir := writeFixture(t, files)
+			got, err := extractRecords(dir)
+			if err != nil {
+				t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+			}
+
+			// (1) 絶対値。相対比較だけにすると、全 variant が同じ誤った
+			// 綴りを返す偽 Green を検出できない。
+			if diff := cmp.Diff(want, got, cmpopts.SortSlices(byRecord)); diff != "" {
+				t.Errorf("extractRecords(%q) mismatch (-want +got):\n%s", dir, diff)
+			}
+
+			// (2) 不変条件そのもの。どの variant 同士もバイト一致すること
+			// （AC-4-3 の比較はバイト単位の完全一致であり、部分一致・
+			// 空白無視・正規表現へ緩めない）。基準は先頭の variant。
+			sigByPkg := make(map[string]string, len(got))
+			for _, r := range got {
+				sigByPkg[r.Pkg] = r.Signature
+			}
+			basePkg := g.name + "_" + g.variants[0].name
+			base, ok := sigByPkg[basePkg]
+			if !ok {
+				t.Fatalf("record not found for pkg %q in %+v", basePkg, got)
+			}
+			for _, v := range g.variants[1:] {
+				pkg := g.name + "_" + v.name
+				sig, ok := sigByPkg[pkg]
+				if !ok {
+					t.Fatalf("record not found for pkg %q in %+v", pkg, got)
+				}
+				if sig != base {
+					t.Errorf(
+						"pkg %q signature=%q, pkg %q signature=%q: byte-equal=false, want byte-equal=true"+
+							"（AC-3-9: 非公開メンバの増減と元ソースの改行位置は"+
+							"公開 API の変化ではない。AC-4-3 はバイト単位で比較する）",
+						basePkg, base, pkg, sig,
+					)
+				}
 			}
 		})
 	}
