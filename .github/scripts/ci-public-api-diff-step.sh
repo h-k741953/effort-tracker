@@ -4,12 +4,14 @@
 # .github/workflows/ci.yml の go ジョブ（`Go (lint / test / domain-deps)`）
 # から呼ばれる。仕様の単一情報源: docs/specs/public-api-diff-check.md AC-7。
 #
-# 【CI 専用（ローカル再現の対象外）】
-#   ここが読むのは base 側の git ツリーと $GITHUB_STEP_SUMMARY であり、
-#   いずれも CI 実行文脈にしか無い（AC-8-6）。抽出器（services/api/
-#   cmd/exportlist）と比較器（check-public-api-diff.sh）自体は
-#   `make test-api` / `make test-public-api-diff` で完全にローカル
-#   再現できる。CI にしか無いのはベースライン取得のこの1か所だけである。
+# 【ローカル再現の範囲 — スクリプト全体が CI 専用なのではない】
+#   このスクリプトのうち `SKIP` 判定の2分岐（AC-7-7）は fixture の対象で
+#   あり、`make test-public-api-diff` がローカルで踏む（AC-9-10）。
+#   $GITHUB_STEP_SUMMARY も fixture が一時ファイルを渡して読む。
+#   ローカル再現の対象外なのは base 側の git ツリーを取得する経路だけで
+#   ある（AC-8-6）。抽出器（services/api/cmd/exportlist）と比較器
+#   （check-public-api-diff.sh）自体は `make test-api` /
+#   `make test-public-api-diff` で完全にローカル再現できる。
 #
 # 【常に exit 0 で終わる（AC-7-2）】
 #   このジョブは ruleset protect-main の必須チェックである（P-2）。
