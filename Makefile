@@ -382,6 +382,13 @@ test-go-module-pins: ## check-go-module-pins.sh のロジックを fixture で�
 # SIGNATURE_CHANGED / REMOVED を判定する（docs/specs/public-api-diff-check.md
 # AC-4）。比較器自身は go を呼ばない純粋なフィルタである（AC-1-3）。
 #
+# test-public-api-diff の fixture は、比較器に加えて警告 step
+# （.github/scripts/ci-public-api-diff-step.sh）の SKIP 判定も対象とする
+# （AC-9-10）。SKIP 判定は git もネットワークも $GITHUB_STEP_SUMMARY も
+# 要さずローカルで再現できるため、go を要さない（AC-1-3）という本ターゲットの
+# 前提を崩さない。抽出規則（AC-3）の検査は本 fixture へ持ち込まず、抽出器の
+# Go テストが持つ（AC-6-9。make test-api が回す）。
+#
 # test-scripts へ合流させないのは、対象種別が違うため（AC-8-2）。
 # test-scripts が対象とするのは CI から呼ばれる *プロセス検査のチェッカ*
 # （往復証跡の形式等）だが、こちらは **ソースから抽出した公開 API 一覧の
@@ -401,7 +408,7 @@ test-go-module-pins: ## check-go-module-pins.sh のロジックを fixture で�
 # =============================================================================
 
 .PHONY: test-public-api-diff
-test-public-api-diff: ## check-public-api-diff.sh のロジックを fixture で検査
+test-public-api-diff: ## 公開 API 差分の比較器と警告 step の SKIP 判定を fixture で検査
 	@echo "==> test-public-api-diff"
 	@bash .github/scripts/test-check-public-api-diff.sh
 

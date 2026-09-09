@@ -22,7 +22,7 @@ AIは自分の書いたコードが正しいかを、**自分では判断でき�
 | `make test-hooks` | `.claude/hooks` のチェッカを fixture で検査（`make test` に含む） |
 | `make test-commands` | `.claude/scripts`（スラッシュコマンドの機械判定部）のチェッカを fixture で検査（`make test` に含む） |
 | `make test-go-module-pins` | `.github/scripts/check-go-module-pins.sh`（Dockerfile ⇔ go.mod の pin 整合検査）のロジックを fixture で検査（`make test` に含む） |
-| `make test-public-api-diff` | `.github/scripts/check-public-api-diff.sh`（公開 API 差分の比較器）のロジックを fixture で検査（`make test` に含む） |
+| `make test-public-api-diff` | 公開 API 差分の比較器（`.github/scripts/check-public-api-diff.sh`）のロジックと、警告 step（`.github/scripts/ci-public-api-diff-step.sh`）の `SKIP` 判定を fixture で検査（`make test` に含む） |
 | `make lint` | 全レイヤーの Lint / 型チェック |
 | `make verify` | `lint` + `test` + `check-domain-deps` + `check-skills` + `check-go-module-pins` + `scan-secrets` |
 | `make check-domain-deps` | ドメイン層の依存検査 |
@@ -262,7 +262,7 @@ PR に残すのは*決定した仕様*ではなく*経緯・証跡*であり、A
 
 | ジョブID | 必須チェック名（＝ジョブの `name:`） | 呼ぶもの |
 |---|---|---|
-| `go` | `Go (lint / test / domain-deps)` | `make lint-api` / `make test-api` / `make check-domain-deps` / `make test-public-api-diff`（比較器のロジックを fixture で検査） + `Public API diff (Issue #93)` step（`.github/scripts/ci-public-api-diff-step.sh` を直接呼ぶ。`make` 経由ではない。理由は下表「種類」参照） |
+| `go` | `Go (lint / test / domain-deps)` | `make lint-api` / `make test-api` / `make check-domain-deps` / `make test-public-api-diff`（比較器のロジックと警告 step の `SKIP` 判定を fixture で検査） + `Public API diff (Issue #93)` step（`.github/scripts/ci-public-api-diff-step.sh` を直接呼ぶ。`make` 経由ではない。理由は下表「種類」参照） |
 | `web` | `Web (lint / test)` | `make lint-web` / `make test-web` |
 | `secrets` | `Secrets (gitleaks)` | `make scan-secrets` |
 | `terraform` | `Terraform (fmt / validate)` | `make lint-tf` |
@@ -319,9 +319,9 @@ gh api repos/h-k741953/effort-tracker/rulesets/19056534 \
 | コード検査 | ソース・設定 | **可能（必須）** | `ci.yml`（`make` 経由） |
 | プロセス検査 | PR 本文・コメント・ラベル | 不可能 | `spec-link.yml` / `review-trail.yml` |
 | チェッカのロジック | fixture（入力を差し替えた検査本体） | **可能（必須）** | `ci.yml`（`scripts` ジョブの `make test-scripts` / `make test-hooks`） |
-| 公開 API 差分の警告（Issue #93） | 抽出器・比較器のロジックは fixture で**可能（必須）**（`make test-public-api-diff`）。PR のベース SHA を取得して比較する本体の実行は base 側の git ツリーを要し**不可能**（CI 専用） | 部分的 | `ci.yml`（`go` ジョブの `make test-public-api-diff` step + `Public API diff (Issue #93)` step） |
+| 公開 API 差分の警告（Issue #93） | 比較器のロジックと警告 step の `SKIP` 判定は fixture で**可能（必須）**（`make test-public-api-diff`）。抽出規則は抽出器の Go テストが持ち、こちらも**可能（必須）**（`make test-api` ＝ `go test ./cmd/exportlist/...`。本 fixture へは持ち込まない —— `docs/specs/public-api-diff-check.md` AC-6-9）。ベースライン取得（ベース側 ref の取得と、作業ツリーとは別ディレクトリへの展開）を要する経路だけが base 側の git ツリーを要し**不可能**（CI 専用。同 AC-9-10） | 部分的 | `ci.yml`（`go` ジョブの `make test-public-api-diff` step + `Public API diff (Issue #93)` step） |
 
-> **`Public API diff (Issue #93)` step は `make` 経由ではなく `.github/scripts/ci-public-api-diff-step.sh` を直接呼ぶ。** この step は PR のベース SHA が指すツリーを `git worktree add` で取得し、抽出器（`services/api/cmd/exportlist`）を base 側・head 側の両方へ実行してから比較器（`check-public-api-diff.sh`）へ渡す。ベース側ツリーの取得はローカルの `make` ターゲットには無い（対応する `make` ターゲットを作ると、比較対象の既定値を持たない比較器の設計〈AC-1-1〉と矛盾する）。**抽出器・比較器それぞれの単体ロジックは `make test-public-api-diff` / `go test ./cmd/exportlist/...` で完全にローカル再現できる**。この step が返す4種の verdict（OK / WARN / SKIP / INDETERMINATE）は**常に exit 0**で終わる（`docs/specs/public-api-diff-check.md` AC-7-2）ため、`go` ジョブ（ruleset `protect-main` の必須チェック）を赤くすることはない。人間が見るべき差分の候補は job log と `$GITHUB_STEP_SUMMARY` の両方へ出す。
+> **`Public API diff (Issue #93)` step は `make` 経由ではなく `.github/scripts/ci-public-api-diff-step.sh` を直接呼ぶ。** この step は PR のベース SHA が指すツリーを `git worktree add` で取得し、抽出器（`services/api/cmd/exportlist`）を base 側・head 側の両方へ実行してから比較器（`check-public-api-diff.sh`）へ渡す。ベース側ツリーの取得はローカルの `make` ターゲットには無い（対応する `make` ターゲットを作ると、比較対象の既定値を持たない比較器の設計〈AC-1-1〉と矛盾する）。**比較器の単体ロジックとこの step の `SKIP` 判定は `make test-public-api-diff` が、抽出器の単体ロジックは `go test ./cmd/exportlist/...`（`make test-api` が回す）が、それぞれ完全にローカル再現する**（`docs/specs/public-api-diff-check.md` AC-6-9 / AC-9-10）。**CI にしか無いのはベースライン取得の1か所だけである。**この step が返す4種の verdict（OK / WARN / SKIP / INDETERMINATE）は**常に exit 0**で終わる（`docs/specs/public-api-diff-check.md` AC-7-2）ため、`go` ジョブ（ruleset `protect-main` の必須チェック）を赤くすることはない。人間が見るべき差分の候補は job log と `$GITHUB_STEP_SUMMARY` の両方へ出す。
 
 ## ハーネスの限界
 
