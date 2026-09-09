@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -171,7 +172,7 @@ func extractFuncDecl(fset *token.FileSet, d *ast.FuncDecl, pkgPath string) []rec
 		return nil
 	}
 
-	recvStr := normalizeWhitespace(printNode(fset, typeExprSignature(recvExpr)))
+	recvStr := normalizeWhitespace(printNode(fset, typeExprSignature(fset, recvExpr)))
 	argsRes := funcTypeSignature(fset, d.Type, false)
 	sig := "(" + recvStr + ") " + argsRes
 	return []record{{
@@ -215,7 +216,7 @@ func extractGenDecl(fset *token.FileSet, d *ast.GenDecl, pkgPath string) []recor
 				}
 				sig := "-"
 				if vs.Type != nil {
-					sig = normalizeWhitespace(printNode(fset, typeExprSignature(vs.Type)))
+					sig = normalizeWhitespace(printNode(fset, typeExprSignature(fset, vs.Type)))
 				}
 				out = append(out, record{
 					Pkg:       pkgPath,
@@ -235,7 +236,7 @@ func extractGenDecl(fset *token.FileSet, d *ast.GenDecl, pkgPath string) []recor
 //
 // typeExprSignature は ts.Type そのものを書き換えず、印字用のコピーを返す。
 func typeSpecSignature(fset *token.FileSet, ts *ast.TypeSpec) string {
-	body := normalizeWhitespace(printNode(fset, typeExprSignature(ts.Type)))
+	body := normalizeWhitespace(printNode(fset, typeExprSignature(fset, ts.Type)))
 
 	var sb strings.Builder
 	if ts.TypeParams != nil && len(ts.TypeParams.List) > 0 {
@@ -267,70 +268,74 @@ func typeSpecSignature(fset *token.FileSet, ts *ast.TypeSpec) string {
 // 引数型／結果型（fieldListTypesString）・型パラメータの制約
 // （typeParamsString）のすべてから呼ばれる。printNode へ渡す直前は必ず
 // ここを通す。
-func typeExprSignature(e ast.Expr) ast.Expr {
+func typeExprSignature(fset *token.FileSet, e ast.Expr) ast.Expr {
 	switch v := e.(type) {
 	case nil:
 		return nil
 	case *ast.StructType:
-		nv := *v
-		nv.Fields = filterFieldList(v.Fields)
-		return &nv
+		// 構造体のフィールドリストは、もはや go/printer に FieldList ごと
+		// 渡さない。フィールド間の境界（AC-3-9-2）を go/printer の
+		// 改行判断に委ねると、改行が normalizeWhitespace で空白1つへ
+		// 畳まれた時点で境界の情報そのものが失われる（go/printer は複数
+		// フィールドの struct を必ず改行区切りで出力し、1行のセミコロン
+		// 区切りへは畳めない —— 実測済み）。そこで、フィールドごとに
+		// 個別に印字した文字列を自前で "; " で連結し、その結果を
+		// ast.Ident に埋め込んで返す。go/printer は Ident.Name をトークン
+		// 検証なしにそのまま出力するため、上位のどの入れ子位置
+		// （*、[]、map の key/value、他の struct のフィールド型など）に
+		// 置かれても正しく出力される（printFieldMembers のコメント参照）。
+		return &ast.Ident{Name: printFieldMembers(fset, "struct", filterFieldList(fset, v.Fields))}
 	case *ast.InterfaceType:
-		nv := *v
-		nv.Methods = filterFieldList(v.Methods)
-		return &nv
+		return &ast.Ident{Name: printFieldMembers(fset, "interface", filterFieldList(fset, v.Methods))}
 	case *ast.FuncType:
 		nv := *v
-		nv.Params = stripFieldListNames(v.Params)
-		nv.Results = stripFieldListNames(v.Results)
+		nv.Params = stripFieldListNames(fset, v.Params)
+		nv.Results = stripFieldListNames(fset, v.Results)
 		return &nv
 	case *ast.StarExpr:
 		nv := *v
-		nv.X = typeExprSignature(v.X)
+		nv.X = typeExprSignature(fset, v.X)
 		return &nv
 	case *ast.ArrayType:
 		nv := *v
-		nv.Elt = typeExprSignature(v.Elt)
+		nv.Elt = typeExprSignature(fset, v.Elt)
 		return &nv
 	case *ast.Ellipsis:
 		nv := *v
-		nv.Elt = typeExprSignature(v.Elt)
+		nv.Elt = typeExprSignature(fset, v.Elt)
 		return &nv
 	case *ast.MapType:
 		nv := *v
-		nv.Key = typeExprSignature(v.Key)
-		nv.Value = typeExprSignature(v.Value)
+		nv.Key = typeExprSignature(fset, v.Key)
+		nv.Value = typeExprSignature(fset, v.Value)
 		return &nv
 	case *ast.ChanType:
 		nv := *v
-		nv.Value = typeExprSignature(v.Value)
+		nv.Value = typeExprSignature(fset, v.Value)
 		return &nv
 	case *ast.ParenExpr:
 		nv := *v
-		nv.X = typeExprSignature(v.X)
+		nv.X = typeExprSignature(fset, v.X)
 		return &nv
 	case *ast.IndexExpr:
 		nv := *v
-		nv.X = typeExprSignature(v.X)
-		nv.Index = typeExprSignature(v.Index)
+		nv.X = typeExprSignature(fset, v.X)
+		nv.Index = typeExprSignature(fset, v.Index)
 		return &nv
 	case *ast.IndexListExpr:
 		nv := *v
-		nv.X = typeExprSignature(v.X)
+		nv.X = typeExprSignature(fset, v.X)
 		newIndices := make([]ast.Expr, len(v.Indices))
 		for i, idx := range v.Indices {
-			newIndices[i] = typeExprSignature(idx)
+			newIndices[i] = typeExprSignature(fset, idx)
 		}
 		nv.Indices = newIndices
-		// 括弧（ここでは大かっこ）の位置を落とす理由は filterFieldList の
-		// 「括弧の位置を落とす理由」と同一（AC-3-7-1。Issue #93 reviewer
-		// 往復7 の指摘 C-7-2）: go/printer は Lbrack/Rbrack の元の位置
-		// （行）が同じかどうかで型引数リストを1行表記にするか複数行表記に
-		// するか決める。FieldList の Opening/Closing と同じ壊れ方が
-		// IndexListExpr の Lbrack/Rbrack にも起こるため、同じ規則を同じ
-		// 理由で掛ける。
-		nv.Lbrack = token.NoPos
-		nv.Rbrack = token.NoPos
+		// 括弧（ここでは大かっこ）の位置は、ここでは落とさない。位置の
+		// 一律落としは printNode が印字直前に汎用処理として一度だけ適用する
+		// （stripPositions。Issue #93 reviewer 往復8 で人間が承認した設計）。
+		// 経路ごとに Lbrack/Rbrack だけを個別に NoPos 化する対処は、行取りが
+		// 漏れる位置を数え上げる形になり、修飾識別子の内部・配列長の式の
+		// 内部など数え上げから漏れた位置に同じ偽陽性を残す（AC-3-7-1 根拠）。
 		return &nv
 	case *ast.BinaryExpr:
 		// 型集合の union 項（`T1 | T2`）。AC-3-9 が除去を許すのは
@@ -342,13 +347,13 @@ func typeExprSignature(e ast.Expr) ast.Expr {
 		// 丸ごと消していた偽 Green の再発防止）。内部に関数型が現れうる
 		// ため、名前剥がしだけは再帰する。
 		nv := *v
-		nv.X = typeExprSignature(v.X)
-		nv.Y = typeExprSignature(v.Y)
+		nv.X = typeExprSignature(fset, v.X)
+		nv.Y = typeExprSignature(fset, v.Y)
 		return &nv
 	case *ast.UnaryExpr:
 		// 型集合の `~T`。BinaryExpr と同じ理由で除去しない。
 		nv := *v
-		nv.X = typeExprSignature(v.X)
+		nv.X = typeExprSignature(fset, v.X)
 		return &nv
 	default:
 		// Ident・SelectorExpr など、名前を含む余地の無いノードはそのまま
@@ -362,7 +367,9 @@ func typeExprSignature(e ast.Expr) ast.Expr {
 // 除去・AC-3-10 の埋め込みフィールド除去・AC-3-10-1 の定義済み型名の例外を
 // 適用したうえで、残す各メンバーの型に typeExprSignature を再帰適用する。
 // fl 自身・fl.List の要素は一切書き換えない（新しい FieldList / Field を
-// 作って返す）。
+// 作って返す）。戻り値は go/printer にそのまま渡されることはなく、
+// printFieldMembers が各 Field を個別に印字して自前で連結する
+// （filterFieldList のコメント内「メンバー境界の区切り」を参照）。
 //
 // 名前付きフィールド（Names が空でない）は、AC-3-9-1 のとおり非公開除去を
 // 先に適用したうえで、残った公開の名前ごとに Field を1つずつ作って展開
@@ -388,34 +395,25 @@ func typeExprSignature(e ast.Expr) ast.Expr {
 // 22個に含まれるときは除去しない（unqualifiedEmbedName で (a) を判定する。
 // SelectorExpr は修飾子を持つため対象外のまま — 3-10 の除去を維持する）。
 //
-// # 括弧の位置を落とす理由（AC-3-7 / AC-3-9 / AC-4-3。Issue #93 reviewer 往復5 の指摘 C-5-1）
+// # メンバー境界の区切り（AC-3-9-2。Issue #93 reviewer 往復8 で人間が承認した設計）
 //
-// go/printer は `struct` / `interface` / 引数リストの中身を、AST 上の
-// 開き括弧・閉じ括弧の「元の位置（行）が同じかどうか」で1行表記と複数行表記
-// のどちらにするか決める。つまり印字結果は、コピーに残った Opening / Closing
-// の行番号（＝元ソースの行取り）と、除去後に残ったメンバー数の**両方**に
-// 依存する。AC-4-3 の比較はバイト単位の完全一致であるため、この揺れは
-// そのまま偽の SIGNATURE_CHANGED になる。
+// go/printer は構造体・インターフェースのフィールドリストを、フィールドが
+// 2個以上あると常に改行区切りで出力する（1行のセミコロン区切りへは畳めない
+// —— 実測で確認済み。開き括弧・閉じ括弧の位置を揃えても変わらない）。
+// normalizeWhitespace は改行を空白1つへ畳むため、go/printer に FieldList
+// ごと渡す設計では、フィールドが2個以上あるときに境界の情報（区切り）が
+// 完全に失われる。名前付きフィールド1個（名前+型）と埋め込み2個が同じ綴り
+// になる偽 Green（AC-3-9-2 根拠1）はこれが原因である。
 //
-// そこで、印字へ渡すコピーの Opening / Closing を常に token.NoPos にし、
-// printer を常に同じ分岐（複数行表記）へ通す。位置情報が無くなるので、
-// 印字結果は**元ソースの行取りにもメンバー数にも依存しない**。改行は
-// normalizeWhitespace が空白1つへ畳むため（AC-3-7）、綴りは
-// 「メンバー0個 / 1個 / 2個以上」×「元ソースが1行 / 複数行」の全組み合わせで
-// 一つに定まる。個数で場合分けしない（場合分けは境界の外側に同じ壊れ方を
-// 残す）。
-//
-// FieldList のコピーを作るのは本関数と stripFieldListNames の2つだけであり、
-// 印字へ届く FieldList は必ずどちらかを通る。両方で同じ扱いをすることで、
-// 構造体・インターフェース・関数の引数／結果リストのすべてに同一の規則が
-// 掛かる。
-func filterFieldList(fl *ast.FieldList) *ast.FieldList {
+// そこで、FieldList を go/printer にまるごと渡すのをやめ、printFieldMembers
+// が各 Field を個別に印字してから "; " で連結する。区切りは行取り
+// （元ソースが1行か複数行か）に依存せず、除去後に残ったメンバーの並びだけで
+// 決まる。
+func filterFieldList(fset *token.FileSet, fl *ast.FieldList) *ast.FieldList {
 	if fl == nil {
 		return nil
 	}
 	nfl := *fl
-	nfl.Opening = token.NoPos
-	nfl.Closing = token.NoPos
 	var newList []*ast.Field
 	for _, f := range fl.List {
 		if len(f.Names) == 0 {
@@ -425,7 +423,7 @@ func filterFieldList(fl *ast.FieldList) *ast.FieldList {
 				}
 			}
 			nf := *f
-			nf.Type = typeExprSignature(f.Type)
+			nf.Type = typeExprSignature(fset, f.Type)
 			newList = append(newList, &nf)
 			continue
 		}
@@ -443,7 +441,7 @@ func filterFieldList(fl *ast.FieldList) *ast.FieldList {
 		// 1回だけ呼び、生成したコピーを各 Field で共有する（printer は
 		// 読み取り専用に辿るだけなので、同じ部分木を複数の Field から
 		// 参照しても安全）。
-		typ := typeExprSignature(f.Type)
+		typ := typeExprSignature(fset, f.Type)
 		for _, n := range keep {
 			nf := *f
 			nf.Names = []*ast.Ident{n}
@@ -573,7 +571,7 @@ func fieldListTypesString(fset *token.FileSet, fl *ast.FieldList) string {
 	}
 	var parts []string
 	for _, field := range fl.List {
-		typeStr := normalizeWhitespace(printNode(fset, typeExprSignature(field.Type)))
+		typeStr := normalizeWhitespace(printNode(fset, typeExprSignature(fset, field.Type)))
 		n := len(field.Names)
 		if n == 0 {
 			n = 1
@@ -606,21 +604,20 @@ func fieldListTypesString(fset *token.FileSet, fl *ast.FieldList) string {
 // AC-3-6 により出力しない — フィールド名を残す filterFieldList の
 // AC-3-9-1 とは扱いが違う）。
 //
-// Opening / Closing を token.NoPos にする理由は filterFieldList の
-// 「括弧の位置を落とす理由」と同一である（同じ規則を、FieldList のコピーを
-// 作るもう一方の場所へも同じように掛ける）。引数リストでは、元ソースが
-// 複数行で末尾カンマを持つ宣言のときに printer が "func( int, int, ) error"
-// のような別の綴りを出すのを防ぐ。
-func stripFieldListNames(fl *ast.FieldList) *ast.FieldList {
+// Opening / Closing はここでは落とさない。位置の一律落としは printNode が
+// 印字直前に汎用処理として一度だけ適用する（stripPositions。Issue #93
+// reviewer 往復8 で人間が承認した設計）。引数リスト・結果リストは
+// filterFieldList と違い、AC-3-8 の "カンマ + 空白1つ" の区切りをそのまま
+// go/printer に出させる（本項の対象外。区切りは 3-8 が既に持つ）ため、
+// FieldList は go/printer にまるごと渡す設計を維持する。
+func stripFieldListNames(fset *token.FileSet, fl *ast.FieldList) *ast.FieldList {
 	if fl == nil {
 		return nil
 	}
 	nfl := *fl
-	nfl.Opening = token.NoPos
-	nfl.Closing = token.NoPos
 	var newList []*ast.Field
 	for _, f := range fl.List {
-		typ := typeExprSignature(f.Type)
+		typ := typeExprSignature(fset, f.Type)
 		n := len(f.Names)
 		if n == 0 {
 			n = 1
@@ -641,24 +638,38 @@ func stripFieldListNames(fl *ast.FieldList) *ast.FieldList {
 // シグネチャの一部であるため。AC-9-7）。制約の型式には typeExprSignature
 // を適用し、制約が関数型のとき内側の引数名（AC-3-6）を剥がす
 // （Issue #93 reviewer 往復2 の指摘 C-1r-(b)）。
+//
+// AC-3-8-1: まとめて宣言された型パラメータ（`[T, U any]`）は、名前ごとに
+// 分けて宣言した形（`[T any, U any]`）と展開後にバイト一致させる。
+// filterFieldList / fieldListTypesString / stripFieldListNames が既に
+// 採っている「名前の数だけ Field 相当の要素を作る」ループと同じ形へ揃え、
+// 個数で場合分けしない（Issue #93 reviewer 往復8 で人間が承認した設計）。
 func typeParamsString(fset *token.FileSet, fl *ast.FieldList) string {
 	var parts []string
 	for _, field := range fl.List {
-		var names []string
-		for _, n := range field.Names {
-			names = append(names, n.Name)
-		}
-		typeStr := normalizeWhitespace(printNode(fset, typeExprSignature(field.Type)))
-		if len(names) == 0 {
+		typeStr := normalizeWhitespace(printNode(fset, typeExprSignature(fset, field.Type)))
+		if len(field.Names) == 0 {
 			parts = append(parts, typeStr)
 			continue
 		}
-		parts = append(parts, strings.Join(names, ", ")+" "+typeStr)
+		for _, n := range field.Names {
+			parts = append(parts, n.Name+" "+typeStr)
+		}
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 // printNode は go/printer の出力をそのまま返す（正規化前）。
+//
+// go/printer に渡す直前に stripPositions（下記）を通し、node のコピー内の
+// あらゆる token.Pos を token.NoPos にする（AC-3-7-1。Issue #93 reviewer
+// 往復8 で人間が承認した設計）。<signature> に現れるすべての位置
+// （struct/interface のフィールドリストの括弧・型引数リストの大かっこ・
+// 修飾識別子の内部・配列長の複合リテラルの内部を含む、あらゆる入れ子位置）
+// を一様にこの1箇所で処理することで、構文位置ごとに Opening/Closing や
+// Lbrack/Rbrack を個別に NoPos 化する対処（数え上げ漏れを構造的に残す）を
+// やめる。stripPositions は node のディープコピーを作るだけで、node
+// 自身・node から辿れる既存の AST は一切書き換えない。
 //
 // go/printer が返すエラーは、渡すノードが nil や不正な型のときにしか
 // 起こらない。呼び出し側はいずれも構文解析済みの AST から取り出したノード
@@ -667,10 +678,137 @@ func typeParamsString(fset *token.FileSet, fl *ast.FieldList) string {
 // 正規化前の印字失敗を握り潰しても検査の意図を損なわない）。
 func printNode(fset *token.FileSet, node any) string {
 	var buf bytes.Buffer
-	if err := printer.Fprint(&buf, fset, node); err != nil {
+	stripped := stripPositions(reflect.ValueOf(node))
+	var toPrint any
+	if stripped.IsValid() {
+		toPrint = stripped.Interface()
+	}
+	if err := printer.Fprint(&buf, fset, toPrint); err != nil {
 		return ""
 	}
 	return buf.String()
+}
+
+// posType は token.Pos そのものの reflect.Type（stripPositions が
+// フィールドの型を突き合わせるための基準）。
+var posType = reflect.TypeOf(token.NoPos)
+
+// stripPositions は v のディープコピーを返し、コピー内のあらゆる
+// token.Pos 型フィールドを token.NoPos にする（AC-3-7-1 / AC-3-8-1 が
+// 要求する「<signature> は元ソースの行取りで変わらない」を、go/printer へ
+// 渡す直前の一箇所で一様に満たすための汎用処理。printNode のコメント参照）。
+// v 自身が指す既存のノードは一切書き換えない —— 新しいコピーだけを作る。
+//
+// *ast.Object / *ast.Scope はコピーせずそのまま共有する。go/parser が
+// mode=0（ast.SkipObjectResolution を立てない）で名前解決を行うと、
+// Ident.Obj → Object.Decl → 元の宣言ノード（同じ Ident を含む）という
+// 循環参照ができるため、ここへ潜って再帰するとスタックオーバーフローする。
+// go/printer は Object / Scope の中身を印字結果に使わないため、共有しても
+// 出力に影響しない。
+//
+// reflect の使用は標準ライブラリの範囲内であり、cmd/exportlist は domain
+// ではないため AC-3-11 / AC-3-12・check-domain-deps・ADR 0007 のいずれにも
+// 抵触しない（services/api/go.mod の require は増やしていない）。
+func stripPositions(v reflect.Value) reflect.Value {
+	if !v.IsValid() {
+		return v
+	}
+	if v.Type() == posType {
+		return reflect.ValueOf(token.NoPos)
+	}
+	switch v.Kind() {
+	case reflect.Ptr:
+		if v.IsNil() {
+			return v
+		}
+		if elem := v.Type().Elem(); elem == reflect.TypeOf(ast.Object{}) || elem == reflect.TypeOf(ast.Scope{}) {
+			return v
+		}
+		nv := reflect.New(v.Type().Elem())
+		nv.Elem().Set(stripPositions(v.Elem()))
+		return nv
+	case reflect.Interface:
+		if v.IsNil() {
+			return v
+		}
+		nv := reflect.New(v.Type()).Elem()
+		nv.Set(stripPositions(v.Elem()))
+		return nv
+	case reflect.Struct:
+		nv := reflect.New(v.Type()).Elem()
+		for i := 0; i < v.NumField(); i++ {
+			nv.Field(i).Set(stripPositions(v.Field(i)))
+		}
+		return nv
+	case reflect.Slice:
+		if v.IsNil() {
+			return v
+		}
+		nv := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		for i := 0; i < v.Len(); i++ {
+			nv.Index(i).Set(stripPositions(v.Index(i)))
+		}
+		return nv
+	default:
+		return v
+	}
+}
+
+// printFieldMembers は keyword（"struct" / "interface"）と、既に
+// filterFieldList を通した fl から "<keyword> { <member>; <member>; ... }"
+// を組み立てる（AC-3-9-2: メンバー境界に区切り "; " を出す。Issue #93
+// reviewer 往復8 で人間が承認した設計）。
+//
+// go/printer は複数フィールドを持つ struct/interface を必ず改行区切りで
+// 出力し、normalizeWhitespace の空白畳み込みを通すと区切りの情報そのものが
+// 失われる（printNode のコメント、filterFieldList のコメント参照）。この
+// 偽 Green を避けるため、fl 全体を go/printer にまるごと渡すのをやめ、
+// 各 Field を「その Field だけを持つ struct/interface」として個別に印字し
+// （printSingleMember）、その結果を自前で "; " で連結する。
+//
+// 各 Field を個別に go/printer へ渡す（インターフェースのメソッドなら
+// "func" キーワードを省いた "A() error" の形、構造体の関数型フィールドなら
+// "Cb func(...) ..." の形にする判断を go/printer の既存の書式ロジックへ
+// そのまま委ね、再実装しない）。この判断は struct のフィールドと
+// interface のメソッドとで綴りが異なる（同じ *ast.Field{Names, *ast.FuncType}
+// という表現でも、"struct" の文脈と "interface" の文脈で go/printer の
+// 出力が変わる）ため、手書きで組み立て直すと綴りの再現漏れが起こる。
+//
+// メンバー0個は "<keyword> { }"、1個は区切りを出さず
+// "<keyword> { <member> }"（AC-3-9-2: 境界の無いところに区切りを出さない）。
+// 2個以上は "; " で連結する。
+func printFieldMembers(fset *token.FileSet, keyword string, fl *ast.FieldList) string {
+	if fl == nil || len(fl.List) == 0 {
+		return keyword + " { }"
+	}
+	var parts []string
+	for _, f := range fl.List {
+		parts = append(parts, printSingleMember(fset, keyword, f))
+	}
+	return keyword + " { " + strings.Join(parts, "; ") + " }"
+}
+
+// printSingleMember は f だけを持つ struct/interface（keyword が示す方）を
+// go/printer で印字し、"<keyword> { " / " }" の外枠を取り除いた中身
+// （1メンバー分の綴り）を返す。fl の要素数が1個のときの go/printer の
+// 書式（構造体フィールドの "名前 型"、インターフェースメソッドの
+// "名前(引数) 結果"、埋め込みの "型" のみ、型集合要素の "~T" / "T1 | T2"
+// など）をそのまま流用するための一手段（printFieldMembers のコメント
+// 参照）。f 自身・f.Type は書き換えない（新しい FieldList / StructType /
+// InterfaceType を作って渡すだけ）。
+func printSingleMember(fset *token.FileSet, keyword string, f *ast.Field) string {
+	singleFL := &ast.FieldList{List: []*ast.Field{f}}
+	var node ast.Expr
+	switch keyword {
+	case "struct":
+		node = &ast.StructType{Fields: singleFL}
+	case "interface":
+		node = &ast.InterfaceType{Methods: singleFL}
+	}
+	s := normalizeWhitespace(printNode(fset, node))
+	s = strings.TrimPrefix(s, keyword+" {")
+	s = strings.TrimSuffix(s, "}")
+	return strings.TrimSpace(s)
 }
 
 var whitespaceRunRe = regexp.MustCompile(`\s+`)
