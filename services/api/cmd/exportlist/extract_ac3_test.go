@@ -1315,3 +1315,523 @@ func TestExtractRecords_AC3_7_NestedFuncTypeFieldListSpellingIsLayoutIndependent
 		})
 	}
 }
+
+// TestExtractRecords_AC3_6_AC3_8_GroupedArgsExpandThroughNestedFuncTypePaths は
+// Issue #93 reviewer 往復7 の指摘 C-7-1 を固定する。
+//
+// 【指摘の要旨】
+//
+//	複数名をまとめた引数・結果宣言（`a, b int`）を持つ関数型が、
+//	stripFieldListNames（extract.go 574行〜）を通る位置 —— インターフェース
+//	のメソッド引数、構造体フィールドの関数型の引数・結果、関数の引数位置に
+//	現れる関数型、型パラメータ制約に現れる関数型 —— では、名前を剥がす
+//	ときに Field 自体を名前の数だけ展開しない。結果、`A(x, y int) error` の
+//	ような宣言から2番目以降の引数がまるごと消える（偽陰性）。
+//
+// 【期待値を AC から導出する根拠（実装の出力に合わせたのではない）】
+//
+//	AC-3-6 が出力しないと定めるのは「引数名・結果名・受信者変数名」で
+//	あって「引数そのもの」ではない。AC-3-8 は「引数型・結果型はカンマ +
+//	空白1つで区切る」と定め、n 個の引数は n 個の型として現れることを
+//	要求している。この2つを組み合わせると、`a, b int` という1つの
+//	フィールド宣言（名前2つ）は、<signature> 上の型の並びとしては
+//	`int, int`（2個）でなければならない。トップレベル関数の引数
+//	（fieldListTypesString 経由。extract_ac3_test.go の
+//	AC-3-8_parens_commas_variadic ケース Grouped 参照）はこの導出どおりに
+//	既に実装されており、本テストはその対照（既に正しい経路）と、
+//	stripFieldListNames を通る各経路（壊れている経路）を同居させる。
+//
+// 【固定する経路】
+//
+//	interface メソッド引数（2名・3名）、構造体フィールドの関数型の引数、
+//	同・結果、関数の引数位置に現れる関数型、型パラメータ制約に現れる
+//	関数型、トップレベル関数（対照）。
+//
+// 【依存】標準 testing + go-cmp のみ（ADR 0007）。
+func TestExtractRecords_AC3_6_AC3_8_GroupedArgsExpandThroughNestedFuncTypePaths(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  []record
+	}{
+		{
+			// 経路: interface メソッドの引数リスト（2名のまとめ宣言）。
+			name: "C-7-1_iface_method_two_names",
+			files: map[string]string{
+				"ac761ifc2/a.go": "package ac761ifc2\n\ntype Ifc interface{ A(x, y int) error }\n",
+			},
+			want: []record{
+				{Pkg: "ac761ifc2", Kind: "type", Name: "Ifc", Signature: "interface { A(int, int) error }"},
+			},
+		},
+		{
+			// 経路: 同上、3名（個数で場合分けしないことの確認）。
+			name: "C-7-1_iface_method_three_names",
+			files: map[string]string{
+				"ac761ifc3/a.go": "package ac761ifc3\n\ntype Ifc3 interface{ A(x, y, z int) error }\n",
+			},
+			want: []record{
+				{Pkg: "ac761ifc3", Kind: "type", Name: "Ifc3", Signature: "interface { A(int, int, int) error }"},
+			},
+		},
+		{
+			// 経路: 構造体フィールドの関数型の引数リスト。
+			name: "C-7-1_struct_field_functype_args",
+			files: map[string]string{
+				"ac761cbargs/a.go": "package ac761cbargs\n\ntype Cbs struct{ Cb func(a, b int) error }\n",
+			},
+			want: []record{
+				{Pkg: "ac761cbargs", Kind: "type", Name: "Cbs", Signature: "struct { Cb func(int, int) error }"},
+			},
+		},
+		{
+			// 経路: 構造体フィールドの関数型の結果リスト。
+			name: "C-7-1_struct_field_functype_results",
+			files: map[string]string{
+				"ac761cbres/a.go": "package ac761cbres\n\ntype Cbs struct{ Res func() (a, b error) }\n",
+			},
+			want: []record{
+				{Pkg: "ac761cbres", Kind: "type", Name: "Cbs", Signature: "struct { Res func() (error, error) }"},
+			},
+		},
+		{
+			// 経路: 関数の引数位置に現れる関数型。
+			name: "C-7-1_func_arg_position_functype",
+			files: map[string]string{
+				"ac761funcarg/a.go": "package ac761funcarg\n\nfunc F(g func(a, b int) error) {}\n",
+			},
+			want: []record{
+				{Pkg: "ac761funcarg", Kind: "func", Name: "F", Signature: "(func(int, int) error) ()"},
+			},
+		},
+		{
+			// 経路: 型パラメータ制約に現れる関数型。
+			name: "C-7-1_typeparam_constraint_functype",
+			files: map[string]string{
+				"ac761tparam/a.go": "package ac761tparam\n\ntype T[F func(a, b int) error] struct{}\n",
+			},
+			want: []record{
+				{Pkg: "ac761tparam", Kind: "type", Name: "T", Signature: "[F func(int, int) error] struct { }"},
+			},
+		},
+		{
+			// 対照: トップレベル関数の引数は fieldListTypesString 経由で
+			// 既に正しく展開される（stripFieldListNames を通らない）。
+			// 修正がこちらを逆方向へ壊さないことの守り。
+			name: "C-7-1_toplevel_control",
+			files: map[string]string{
+				"ac761top/a.go": "package ac761top\n\nfunc Top(a, b int) error { return nil }\n",
+			},
+			want: []record{
+				{Pkg: "ac761top", Kind: "func", Name: "Top", Signature: "(int, int) (error)"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeFixture(t, tt.files)
+
+			got, err := extractRecords(dir)
+			if err != nil {
+				t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+			}
+
+			if diff := cmp.Diff(
+				tt.want, got,
+				cmpopts.SortSlices(byRecord),
+			); diff != "" {
+				t.Errorf("extractRecords(%q) mismatch (-want +got):\n%s", dir, diff)
+			}
+		})
+	}
+}
+
+// TestExtractRecords_AC3_7_1_IndexListLayoutSpellingIsInvariant は Issue #93
+// reviewer 往復7 の指摘 C-7-2 を固定する。AC-3-7-1 の「3-7-1 が要求する
+// 期待値（テストに落とす形）」表 (i)〜(vi) をそのままテーブルへ落とす。
+//
+// 【指摘の要旨】
+//
+//	型引数2個以上の実体化（`G[int, string]`。*ast.IndexListExpr）は、
+//	typeExprSignature の IndexListExpr ケースが Lbrack/Rbrack の位置を
+//	token.NoPos へ落とさない。struct/interface/関数型の引数・結果リスト
+//	（FieldList の Opening/Closing。filterFieldList / stripFieldListNames）
+//	は既にこれを落としているのに対し、IndexListExpr だけがこの扱いから
+//	漏れている。そのため元ソースの行取り（1行 vs 複数行 + 末尾カンマ）で
+//	go/printer の出力が変わり、AC-4-3 のバイト単位比較のもとで偽の
+//	SIGNATURE_CHANGED を生む。
+//
+// 【期待値を AC から導出する根拠（実装の出力に合わせたのではない）】
+//
+//	AC-3-7-1 は「同じ宣言を1行で書いたものと、複数行に分けて末尾カンマを
+//	置いて書いたものは、<signature> がバイト一致する」ことを「型式が現れる
+//	すべての位置へ一様に掛かる」要求として定め、型引数の実体化を明示的に
+//	列挙している。要素の個数で場合分けしないため、型引数1個
+//	（*ast.IndexExpr。表(i)の対象は型引数「2個以上」の実体化であり、1個の
+//	IndexExpr は表(i)の対象外）はこの壊れ方の対象外であることを対照として
+//	同居させる。一方、複数行 + 末尾カンマ無し（型引数2個以上）は表(i)の
+//	対象そのものであり、対照ではなく壊れ方の別 layout 変種として同居させる
+//	（実測では Lbrack/Rbrack の行番号が異なるだけで go/printer の出力が
+//	変わるため、末尾カンマの有無を問わず複数行なら影響を受ける）。
+//	表(i)の直後の解説「固定するのは『行取りの違う2つの綴りがバイト一致
+//	すること』だけであり、綴りそのものは固定しない」を踏まえ、絶対値は
+//	AC-3-6/AC-3-7/AC-3-8 から導出できる形（既存テストの綴りの基準点と
+//	同じ規則）を用い、baseline と layout variant のバイト一致を別途検査
+//	する。
+//
+// 【固定する表の行】
+//
+//	(i) 型引数の実体化（type alias 経由。末尾カンマ有り・無しの両方の
+//	複数行、および実際の壊れ方が構造体フィールドの入れ子
+//	`Inner G[...]` でも再現することを別グループで固定し、型引数1個を
+//	対照として固定する）
+//	(ii) struct フィールドの分割 (iii) interface メソッドの分割
+//	(iv) 関数の引数リスト (v) struct フィールドの関数型（入れ子）
+//	(vi) 型パラメータリスト。
+//
+// 【依存】標準 testing + go-cmp のみ（ADR 0007）。
+func TestExtractRecords_AC3_7_1_IndexListLayoutSpellingIsInvariant(t *testing.T) {
+	type variant struct {
+		name string
+		src  string // package 宣言に続けてそのまま書くソース全体（改行・タブを含む）
+	}
+	groups := []struct {
+		name     string
+		kind     string
+		ident    string
+		want     string // AC-3-6/3-7/3-8 から導いた <signature> の絶対値
+		variants []variant
+	}{
+		{
+			// (i): 型引数2個の実体化（type alias 経由）。
+			name:  "i_type_alias_two_typeargs",
+			kind:  "type",
+			ident: "T",
+			want:  "= G[int, string]",
+			variants: []variant{
+				{
+					"oneline",
+					"type G[K any, V any] struct{}\n\ntype T = G[int, string]\n",
+				},
+				{
+					"multiline_trailing_comma",
+					"type G[K any, V any] struct{}\n\ntype T = G[\n\tint,\n\tstring,\n]\n",
+				},
+			},
+		},
+		{
+			// (i) の対照: 型引数1個（*ast.IndexExpr）は影響を受けない。
+			name:  "i_control_single_typearg",
+			kind:  "type",
+			ident: "T",
+			want:  "= G1[int]",
+			variants: []variant{
+				{
+					"oneline",
+					"type G1[K any] struct{}\n\ntype T = G1[int]\n",
+				},
+				{
+					"multiline_trailing_comma",
+					"type G1[K any] struct{}\n\ntype T = G1[\n\tint,\n]\n",
+				},
+			},
+		},
+		{
+			// (i) の別 layout 変種: 複数行だが末尾カンマが無い形（閉じ括弧を
+			// 最後の型引数と同じ行に置く。閉じ括弧を独立した行へ置いて
+			// 末尾カンマを省くと "missing ',' before newline in type
+			// argument list" で構文解析に失敗するため、書ける形はこれに
+			// 限られる）。AC-3-7-1 は「型引数の実体化」へ一様に掛かるため、
+			// 末尾カンマの有無に関わらずバイト一致を要求する。
+			name:  "i_no_trailing_comma_multiline",
+			kind:  "type",
+			ident: "T",
+			want:  "= G[int, string]",
+			variants: []variant{
+				{
+					"oneline",
+					"type G[K any, V any] struct{}\n\ntype T = G[int, string]\n",
+				},
+				{
+					"multiline_no_trailing_comma",
+					"type G[K any, V any] struct{}\n\ntype T = G[\n\tint,\n\tstring]\n",
+				},
+			},
+		},
+		{
+			// (i) が構造体フィールドの入れ子でも再現することの固定。
+			name:  "i_struct_field_nested_indexlist",
+			kind:  "type",
+			ident: "T",
+			want:  "struct { Inner G[int, string] }",
+			variants: []variant{
+				{
+					"oneline",
+					"type G[K any, V any] struct{}\n\ntype T struct { Inner G[int, string] }\n",
+				},
+				{
+					"multiline_trailing_comma",
+					"type G[K any, V any] struct{}\n\ntype T struct {\n\tInner G[\n\t\tint,\n\t\tstring,\n\t]\n}\n",
+				},
+			},
+		},
+		{
+			// (ii): struct フィールドの分割。
+			name:  "ii_struct_fields_split",
+			kind:  "type",
+			ident: "T",
+			want:  "struct { A int B int }",
+			variants: []variant{
+				{"oneline", "type T struct { A int; B int }\n"},
+				{"multiline", "type T struct {\n\tA int\n\tB int\n}\n"},
+			},
+		},
+		{
+			// (iii): interface メソッドの分割。
+			name:  "iii_iface_methods_split",
+			kind:  "type",
+			ident: "T",
+			want:  "interface { A() error B() error }",
+			variants: []variant{
+				{"oneline", "type T interface { A() error; B() error }\n"},
+				{"multiline", "type T interface {\n\tA() error\n\tB() error\n}\n"},
+			},
+		},
+		{
+			// (iv): 関数の引数リスト。
+			name:  "iv_func_args_split",
+			kind:  "func",
+			ident: "F",
+			want:  "(int, string) (error)",
+			variants: []variant{
+				{"oneline", "func F(a int, b string) error { return nil }\n"},
+				{
+					"multiline_trailing_comma",
+					"func F(\n\ta int,\n\tb string,\n) error {\n\treturn nil\n}\n",
+				},
+			},
+		},
+		{
+			// (v): struct フィールドの関数型（入れ子の関数型引数リスト）。
+			name:  "v_struct_field_functype_split",
+			kind:  "type",
+			ident: "T",
+			want:  "struct { F func(int, string) error }",
+			variants: []variant{
+				{"oneline", "type T struct { F func(a int, b string) error }\n"},
+				{
+					"multiline_trailing_comma",
+					"type T struct {\n\tF func(\n\t\ta int,\n\t\tb string,\n\t) error\n}\n",
+				},
+			},
+		},
+		{
+			// (vi): 型パラメータリスト。
+			name:  "vi_typeparam_list_split",
+			kind:  "func",
+			ident: "F",
+			want:  "[T any, U any] (T) (error)",
+			variants: []variant{
+				{"oneline", "func F[T any, U any](t T) error { panic(\"x\") }\n"},
+				{
+					"multiline_trailing_comma",
+					"func F[\n\tT any,\n\tU any,\n](t T) error {\n\tpanic(\"x\")\n}\n",
+				},
+			},
+		},
+	}
+
+	for _, g := range groups {
+		t.Run(g.name, func(t *testing.T) {
+			files := make(map[string]string, len(g.variants))
+			want := make([]record, 0, len(g.variants))
+			for _, v := range g.variants {
+				pkg := g.name + "_" + v.name
+				files[pkg+"/a.go"] = "package " + pkg + "\n\n" + v.src
+				want = append(want, record{
+					Pkg: pkg, Kind: g.kind, Name: g.ident, Signature: g.want,
+				})
+			}
+
+			dir := writeFixture(t, files)
+			got, err := extractRecords(dir)
+			if err != nil {
+				t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+			}
+
+			// (1) 絶対値。相対比較だけにすると、全 variant が同じ誤った
+			// 綴りを返す偽 Green を検出できない。
+			//
+			// (kind/ident でフィルタせず全レコードと比較すると、各 variant
+			// のソースが含む型 G / G1 のレコードまで比較対象へ紛れ込む。
+			// G / G1 は group ごとに固定の <signature> を持つが want には
+			// 含めていないため、比較対象は g.kind/g.ident に一致する
+			// レコードだけへ絞る。)
+			var filtered []record
+			for _, r := range got {
+				if r.Kind == g.kind && r.Name == g.ident {
+					filtered = append(filtered, r)
+				}
+			}
+			if diff := cmp.Diff(want, filtered, cmpopts.SortSlices(byRecord)); diff != "" {
+				t.Errorf("extractRecords(%q) mismatch (-want +got):\n%s", dir, diff)
+			}
+
+			// (2) 不変条件そのもの。oneline と layout variant がバイト一致
+			// すること（AC-4-3 の比較はバイト単位の完全一致であり、部分
+			// 一致・空白無視・正規表現へ緩めない）。基準は先頭の variant。
+			sigByPkg := make(map[string]string, len(filtered))
+			for _, r := range filtered {
+				sigByPkg[r.Pkg] = r.Signature
+			}
+			basePkg := g.name + "_" + g.variants[0].name
+			base, ok := sigByPkg[basePkg]
+			if !ok {
+				t.Fatalf("record not found for pkg %q (kind=%q name=%q) in %+v", basePkg, g.kind, g.ident, got)
+			}
+			for _, v := range g.variants[1:] {
+				pkg := g.name + "_" + v.name
+				sig, ok := sigByPkg[pkg]
+				if !ok {
+					t.Fatalf("record not found for pkg %q (kind=%q name=%q) in %+v", pkg, g.kind, g.ident, got)
+				}
+				if sig != base {
+					t.Errorf(
+						"pkg %q signature=%q, pkg %q signature=%q: byte-equal=false, want byte-equal=true"+
+							"（AC-3-7-1: 元ソースの行取りと末尾カンマの有無は"+
+							"公開 API の変化ではない。AC-4-3 はバイト単位で比較する）",
+						basePkg, base, pkg, sig,
+					)
+				}
+			}
+		})
+	}
+}
+
+// TestExtractRecords_AC3_9_1_GroupedFieldDeclsExpandAndPreserveNames は
+// Issue #93 reviewer 往復7 の指摘 W-7-1 を固定する。AC-3-9-1 の「3-9-1 が
+// 要求する期待値（テストに落とす形）」表 (i)〜(vi) をそのままテーブルへ
+// 落とす。
+//
+// 【指摘の要旨】
+//
+//	構造体フィールドのまとめ宣言（`A, B int`）は、filterFieldList が
+//	非公開名を除去した後もそのまま1つの Field として残す（フィールド単位
+//	への展開をしない）。分割宣言（`A int` / `B int`）は最初から2つの Field
+//	であるため、両者の <signature> はバイト一致しない —— AC-3-9-1 が要求
+//	する「n 個の名前は n 個のフィールドとして現れる」に反する。
+//
+// 【期待値を AC から導出する根拠（実装の出力に合わせたのではない）】
+//
+//	AC-3-9-1 は「1つのフィールド宣言が複数の名前を持つ場合、<signature>
+//	にはその型が名前の数だけ現れ、名前ごとに分けて宣言した形とバイト一致
+//	する」と明示し、直後の期待値表 (i)〜(vi) がテストに落とす形をそのまま
+//	定める。**フィールド名は落とさない**ことも同項が明示しており、(iii) は
+//	これを「バイト一致しないこと」で固定する。絶対値の綴り
+//	（`struct { A int B int }` の形）は
+//	TestExtractRecords_AC3_9_SpellingIsIndependentOfRemovalCountAndLayout /
+//	TestExtractRecords_AC3_10_1_PredeclaredEmbeds が固定した「メンバー2個
+//	以上では go/printer がこの形しか出せない」規則と同一のものを流用する
+//	（新しい綴りを発明しない）。
+//
+// 【依存】標準 testing + go-cmp のみ（ADR 0007）。
+func TestExtractRecords_AC3_9_1_GroupedFieldDeclsExpandAndPreserveNames(t *testing.T) {
+	files := map[string]string{
+		// (i): 2名のまとめ宣言と分割宣言はバイト一致する。
+		"w71_i_grouped/a.go": "package w71_i_grouped\n\ntype T struct { A, B int }\n",
+		"w71_i_split/a.go":   "package w71_i_split\n\ntype T struct { A int; B int }\n",
+
+		// (ii): 3名でも同じ（個数で場合分けしない）。
+		"w71_ii_grouped/a.go": "package w71_ii_grouped\n\ntype T struct { A, B, C int }\n",
+		"w71_ii_split/a.go":   "package w71_ii_split\n\ntype T struct { A int; B int; C int }\n",
+
+		// (iii): フィールド名を落とさない —— 名前が違えばバイト一致しない。
+		"w71_iii_ab/a.go": "package w71_iii_ab\n\ntype T struct { A, B int }\n",
+		"w71_iii_ac/a.go": "package w71_iii_ac\n\ntype T struct { A, C int }\n",
+
+		// (iv): 3-9 を先に適用すること —— 非公開の b は除去され、単独宣言
+		// とバイト一致する。
+		"w71_iv_grouped/a.go": "package w71_iv_grouped\n\ntype T struct { A, b int }\n",
+		"w71_iv_single/a.go":  "package w71_iv_single\n\ntype T struct { A int }\n",
+
+		// (v): まとめ宣言の名前がすべて非公開なら、そのフィールド宣言ごと
+		// 除去される。
+		"w71_v_grouped/a.go": "package w71_v_grouped\n\ntype T struct { a, b int }\n",
+		"w71_v_empty/a.go":   "package w71_v_empty\n\ntype T struct{}\n",
+
+		// (vi) 対照: 埋め込みフィールドは名前を持たないため本項の対象外。
+		// 3-10-1 のまま保持され、本項によって振る舞いが変わらないこと。
+		"w71_vi_embed/a.go": "package w71_vi_embed\n\ntype T struct { error; N int }\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+	}
+
+	want := []record{
+		{Pkg: "w71_i_grouped", Kind: "type", Name: "T", Signature: "struct { A int B int }"},
+		{Pkg: "w71_i_split", Kind: "type", Name: "T", Signature: "struct { A int B int }"},
+
+		{Pkg: "w71_ii_grouped", Kind: "type", Name: "T", Signature: "struct { A int B int C int }"},
+		{Pkg: "w71_ii_split", Kind: "type", Name: "T", Signature: "struct { A int B int C int }"},
+
+		{Pkg: "w71_iii_ab", Kind: "type", Name: "T", Signature: "struct { A int B int }"},
+		{Pkg: "w71_iii_ac", Kind: "type", Name: "T", Signature: "struct { A int C int }"},
+
+		{Pkg: "w71_iv_grouped", Kind: "type", Name: "T", Signature: "struct { A int }"},
+		{Pkg: "w71_iv_single", Kind: "type", Name: "T", Signature: "struct { A int }"},
+
+		{Pkg: "w71_v_grouped", Kind: "type", Name: "T", Signature: "struct { }"},
+		{Pkg: "w71_v_empty", Kind: "type", Name: "T", Signature: "struct { }"},
+
+		{Pkg: "w71_vi_embed", Kind: "type", Name: "T", Signature: "struct { error N int }"},
+	}
+
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(byRecord)); diff != "" {
+		t.Errorf("extractRecords(%q) mismatch (-want +got):\n%s", dir, diff)
+	}
+
+	// 絶対値の一致（上の cmp.Diff）に加えて、AC-3-9-1 の期待値表が直接
+	// 要求する「バイト一致する／しない」を record 同士の比較でも明示的に
+	// 確認する（期待値リテラルの書き損じを絶対値だけでは拾えないため。
+	// TestExtractRecords_AC3_10_1_PredeclaredEmbeds と同じ作法）。
+	sig := func(t *testing.T, pkg string) string {
+		t.Helper()
+		for _, r := range got {
+			if r.Pkg == pkg && r.Kind == "type" && r.Name == "T" {
+				return r.Signature
+			}
+		}
+		t.Fatalf("record not found for pkg %q in %+v", pkg, got)
+		return ""
+	}
+
+	equalPairs := []struct{ a, b, label string }{
+		{"w71_i_grouped", "w71_i_split", "(i) grouped == split (2 names)"},
+		{"w71_ii_grouped", "w71_ii_split", "(ii) grouped == split (3 names)"},
+		{"w71_iv_grouped", "w71_iv_single", "(iv) 非公開除去後は単独宣言と一致"},
+		{"w71_v_grouped", "w71_v_empty", "(v) 全員非公開ならフィールド宣言ごと除去"},
+	}
+	for _, p := range equalPairs {
+		a, b := sig(t, p.a), sig(t, p.b)
+		if a != b {
+			t.Errorf(
+				"%s: pkg %q signature=%q, pkg %q signature=%q: byte-equal=false, want byte-equal=true",
+				p.label, p.a, a, p.b, b,
+			)
+		}
+	}
+
+	// (iii): フィールド名を落とさないこと —— 名前が違えばバイト一致しない。
+	if ab, ac := sig(t, "w71_iii_ab"), sig(t, "w71_iii_ac"); ab == ac {
+		t.Errorf(
+			"(iii) pkg %q signature=%q, pkg %q signature=%q: byte-equal=true, want byte-equal=false"+
+				"（AC-3-9-1: フィールド名は落とさない。名前が違えば <signature> は"+
+				"バイト一致しない）",
+			"w71_iii_ab", ab, "w71_iii_ac", ac,
+		)
+	}
+}
