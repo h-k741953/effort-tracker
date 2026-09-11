@@ -95,7 +95,7 @@ func extractRecords(dir string) ([]record, error) {
 		// ParseComments フラグを付けないため、コメントは AST に一切
 		// 保持されない。printer がコメントを出力に混入させることは
 		// 構造的に無い（AC-3-7「コメントを出力に含めない」）。
-		astFile, perr := parser.ParseFile(fset, f, nil, 0)
+		astFile, perr := parser.ParseFile(fset, f, nil, parser.SkipObjectResolution)
 		if perr != nil {
 			return nil, fmt.Errorf(
 				"extractRecords: 構文解析に失敗した: %s: %w", f, perr,
@@ -400,11 +400,6 @@ var exprIfaceType = reflect.TypeOf((*ast.Expr)(nil)).Elem()
 // 列挙していない位置にも自動的に届く）。v 自身・v から辿れる既存の AST は
 // 一切書き換えない（stripPositions と同じ設計）。
 //
-// *ast.Object / *ast.Scope は stripPositions と同じ理由でコピーせず共有
-// する（Ident.Obj → Object.Decl → 元の宣言ノードという循環参照があり、
-// 潜ると無限再帰になる。go/printer は Object/Scope の中身を印字結果に
-// 使わないため、共有しても出力に影響しない）。
-//
 // reflect の使用は標準ライブラリの範囲内であり、cmd/exportlist は domain
 // ではないため AC-3-11 / AC-3-12・check-domain-deps・ADR 0007 のいずれにも
 // 抵触しない（services/api/go.mod の require は増やしていない。
@@ -431,9 +426,6 @@ func recurseExprFields(fset *token.FileSet, v reflect.Value) reflect.Value {
 	switch v.Kind() {
 	case reflect.Pointer:
 		if v.IsNil() {
-			return v
-		}
-		if elem := v.Type().Elem(); elem.PkgPath() == "go/ast" && (elem.Name() == "Object" || elem.Name() == "Scope") {
 			return v
 		}
 		nv := reflect.New(v.Type().Elem())
@@ -803,16 +795,11 @@ var posType = reflect.TypeOf(token.NoPos)
 // 渡す直前の一箇所で一様に満たすための汎用処理。printNode のコメント参照）。
 // v 自身が指す既存のノードは一切書き換えない —— 新しいコピーだけを作る。
 //
-// *ast.Object / *ast.Scope はコピーせずそのまま共有する。go/parser が
-// mode=0（ast.SkipObjectResolution を立てない）で名前解決を行うと、
-// Ident.Obj → Object.Decl → 元の宣言ノード（同じ Ident を含む）という
-// 循環参照ができるため、ここへ潜って再帰するとスタックオーバーフローする。
-// go/printer は Object / Scope の中身を印字結果に使わないため、共有しても
-// 出力に影響しない。
-//
-// ast.Object / ast.Scope の判定は、型の識別子を直接参照せず PkgPath /
-// Name で行う。ast.Object は Go 1.22 で deprecated になっており
-// （staticcheck SA1019）、deprecated な識別子への直接参照を避けるため。
+// extractRecords は parser.ParseFile を parser.SkipObjectResolution 付きで
+// 呼ぶため、Ident.Obj は常に nil で、Object.Decl 経由で元の宣言ノードへ
+// 戻る循環参照は構造的に生じない（stripPositions・recurseExprFields の
+// どちらも *ast.Object / *ast.Scope を特別扱いせず、他のポインタと同じ
+// 経路でそのまま再帰できる）。
 //
 // reflect の使用は標準ライブラリの範囲内であり、cmd/exportlist は domain
 // ではないため AC-3-11 / AC-3-12・check-domain-deps・ADR 0007 のいずれにも
@@ -827,9 +814,6 @@ func stripPositions(v reflect.Value) reflect.Value {
 	switch v.Kind() {
 	case reflect.Pointer:
 		if v.IsNil() {
-			return v
-		}
-		if elem := v.Type().Elem(); elem.PkgPath() == "go/ast" && (elem.Name() == "Object" || elem.Name() == "Scope") {
 			return v
 		}
 		nv := reflect.New(v.Type().Elem())
