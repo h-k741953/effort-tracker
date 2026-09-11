@@ -26,6 +26,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -2437,5 +2438,223 @@ func TestExtractRecords_AC3_9_2_MemberBoundarySeparator(t *testing.T) {
 				p.label, p.a, a, p.b, b,
 			)
 		}
+	}
+}
+
+// TestExtractRecords_AC3_6_1_RulesApplyInsideExpressions は
+// docs/specs/public-api-diff-check.md AC-3-6-1「3-6-1 が要求する期待値
+// （テストに落とす形）」表 (i)〜(vii) をそのままテーブルへ落とす。
+//
+// 【要求の要旨】
+//
+//	抽出規則（3-6 の引数名除去・3-9 の非公開除去・3-9-1 のまとめ宣言展開・
+//	3-9-2 のメンバー境界区切り）は、型式の内部に現れる式（配列長の式、
+//	その中の呼び出し `len(...)` / `unsafe.Sizeof(...)` の引数、複合
+//	リテラルなど）の内部に現れる構造体型・インターフェース型・関数型にも
+//	一様に掛かる。その結果、式の内部に現れる型の綴りは、同じ型を型式の
+//	直下に置いた宣言の <signature> とバイト一致する。
+//
+// 【期待値の形】
+//
+//	(i)〜(vi) は同項本文の指示どおり、「対照する宣言の <signature> が、
+//	対象の宣言の <signature> の部分文字列として現れること」で固定する
+//	（対象側は外側の型式のぶんだけ長くなるため、全体のバイト一致には
+//	ならない）。(vii) は対照を持たない行であり、`go/parser` が配列長では
+//	なく型パラメータリストとして解析する形（複合リテラルの `{}` を持た
+//	ない）について、非公開 `hidden` が現れず公開 `Pub` が現れることだけを
+//	固定する（型パラメータリストの綴り規則そのものは 3-6-1 の対象外）。
+//
+// 【依存】標準 testing + google/go-cmp のみ（ADR 0007）。
+func TestExtractRecords_AC3_6_1_RulesApplyInsideExpressions(t *testing.T) {
+	files := map[string]string{
+		// (i): 3-9 の非公開除去が配列長の式（len の複合リテラル引数）の
+		// 内部にも掛かること。
+		"ac361_i_t/a.go": "package ac361_i_t\n\n" +
+			"type T [len([...]struct{ hidden int; Pub int }{})]int\n",
+		"ac361_i_u/a.go": "package ac361_i_u\n\ntype U struct{ hidden int; Pub int }\n",
+
+		// (ii): len 以外の呼び出し（unsafe.Sizeof）の内部にも掛かること
+		// （根拠4。呼び出される関数の名前で場合分けしない）。
+		"ac361_ii_t/a.go": "package ac361_ii_t\n\nimport \"unsafe\"\n\n" +
+			"type T [unsafe.Sizeof(struct{ hidden int; Pub int }{})]int\n",
+		"ac361_ii_u/a.go": "package ac361_ii_u\n\ntype U struct{ hidden int; Pub int }\n",
+
+		// (iii): 3-9-2 のメンバー境界の区切りが式の内部にも掛かること。
+		"ac361_iii_t/a.go": "package ac361_iii_t\n\n" +
+			"type T [len([...]interface{ A() error; B() error }{})]int\n",
+		"ac361_iii_u/a.go": "package ac361_iii_u\n\ntype U interface{ A() error; B() error }\n",
+
+		// (iv): 式の中のさらに入れ子（配列長の式の内部の map のキーに
+		// 現れる構造体）。
+		"ac361_iv_t/a.go": "package ac361_iv_t\n\n" +
+			"type T [len([...]map[struct{ P int; Q int }]int{})]int\n",
+		"ac361_iv_u/a.go": "package ac361_iv_u\n\ntype U map[struct{ P int; Q int }]int\n",
+
+		// (v): 3-6 の引数名の除去が式の内部にも掛かること。
+		"ac361_v_t/a.go": "package ac361_v_t\n\n" +
+			"type T [len([...]func(a int, b string){})]int\n",
+		"ac361_v_u/a.go": "package ac361_v_u\n\ntype U func(a int, b string)\n",
+
+		// (vi): 3-9-1 のまとめ宣言の展開が式の内部にも掛かること。
+		"ac361_vi_t/a.go": "package ac361_vi_t\n\n" +
+			"type T [len([...]struct{ A, B int }{})]int\n",
+		"ac361_vi_u/a.go": "package ac361_vi_u\n\ntype U struct{ A, B int }\n",
+
+		// (vii): 対照。複合リテラルの `{}` を持たないため go/parser は
+		// 配列長ではなく型パラメータリストとして解析する
+		// （TypeSpec.TypeParams が非 nil）。これは 3-6-1 の違反ではない。
+		// 本行が固定するのは、型パラメータリストの内部に現れる構造体にも
+		// 3-9 が掛かること —— <signature> に hidden が現れず、Pub が
+		// 現れること。
+		"ac361_vii/a.go": "package ac361_vii\n\n" +
+			"type T [len([...]struct{ hidden int; Pub int })]int\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+	}
+
+	sig := func(t *testing.T, pkg, name string) string {
+		t.Helper()
+		for _, r := range got {
+			if r.Pkg == pkg && r.Kind == "type" && r.Name == name {
+				return r.Signature
+			}
+		}
+		t.Fatalf("record not found for pkg %q name %q in %+v", pkg, name, got)
+		return ""
+	}
+
+	containsCases := []struct {
+		targetPkg, counterPkg, label string
+	}{
+		{"ac361_i_t", "ac361_i_u", "(i) len の複合リテラル引数の内部への 3-9 非公開除去"},
+		{"ac361_ii_t", "ac361_ii_u", "(ii) unsafe.Sizeof の内部への 3-9 非公開除去（呼び出し名で場合分けしない）"},
+		{"ac361_iii_t", "ac361_iii_u", "(iii) 配列長の式の内部への 3-9-2 メンバー境界区切り"},
+		{"ac361_iv_t", "ac361_iv_u", "(iv) 式の中のさらに入れ子（map のキーの構造体）"},
+		{"ac361_v_t", "ac361_v_u", "(v) 式の内部への 3-6 引数名除去"},
+		{"ac361_vi_t", "ac361_vi_u", "(vi) 式の内部への 3-9-1 まとめ宣言展開"},
+	}
+	for _, c := range containsCases {
+		target, counter := sig(t, c.targetPkg, "T"), sig(t, c.counterPkg, "U")
+		if !strings.Contains(target, counter) {
+			t.Errorf(
+				"%s: target pkg %q signature=%q does not contain counter pkg %q signature=%q"+
+					"（AC-3-6-1: 式の内部に現れる型の綴りは、同じ型を型式の直下に"+
+					"置いた宣言の <signature> とバイト一致するはず）",
+				c.label, c.targetPkg, target, c.counterPkg, counter,
+			)
+		}
+	}
+
+	// (vii): 型パラメータリストとして解析される側にも 3-9 が掛かること。
+	viiSig := sig(t, "ac361_vii", "T")
+	if strings.Contains(viiSig, "hidden") {
+		t.Errorf(
+			"(vii) pkg %q signature=%q contains %q, want it removed"+
+				"（AC-3-6-1: 型パラメータリストとして解析される位置にも "+
+				"3-9 の非公開除去が掛かる）",
+			"ac361_vii", viiSig, "hidden",
+		)
+	}
+	if !strings.Contains(viiSig, "Pub") {
+		t.Errorf(
+			"(vii) pkg %q signature=%q does not contain %q, want it present"+
+				"（AC-3-6-1: 公開フィールドは残る）",
+			"ac361_vii", viiSig, "Pub",
+		)
+	}
+}
+
+// TestExtractRecords_AC3_6_1_FalseGreenCenterInsideArrayLen は Issue #93
+// レビュー往復10 の指摘（AC-3-9-2 (i) の偽 Green の中心 ——
+// 名前付きフィールド1個〔名前 Logger・型 Clock〕と埋め込みフィールド2個
+// 〔Logger と Clock〕をバイト一致させない、という要求）を、AC-3-6-1 が
+// 広げる位置（配列長の式の内部）に置いて固定する。
+//
+// 【なぜ相対比較（部分文字列）だけでは足りないか】
+//
+//	上のテーブル駆動テスト（(i)〜(vii)）は「対照の <signature> が対象の
+//	<signature> に部分文字列として現れること」で固定してよいと 3-6-1 の
+//	期待値表の前書きが定める。しかしこの相対比較は、対象・対照の両方が
+//	同時に同じ壊れ方（境界の消失）をした場合には空振りする
+//	（TestExtractRecords_AC3_9_2_MemberBoundarySeparator のコメント、
+//	および MEMORY.md mutation-test-false-green.md と同種の事故）。
+//	AC-3-9-2 (i) が「本項の中心」と呼ぶ偽 Green
+//	（名前付き1個と埋め込み2個がバイト一致してしまう）を、配列長の式の
+//	内部という 3-6-1 が新たに掛ける位置で確実に検出するには、絶対値の
+//	want と、両者のバイト不一致という明示的な主張が要る。
+//
+// 【絶対値の導出根拠（推測ではない）】
+//
+//	外側の配列長式のテンプレート `[len([...]TYPE{ELEMS})]int` は
+//	TestExtractRecords_AC3_7_1_ArrayLenCompositeLitLineBreakIsInvariant の
+//	xi_oneline ケース（`type T [len([...]int{1, 2, 3})]int` →
+//	`[len([...]int{1, 2, 3})]int`）が既に固定している go/printer の一様な
+//	綴りである。今回は複合リテラルの要素が空（ELEMS が空）である点だけが
+//	異なり、`{}` の間に何も入らない。
+//	内側の TYPE 部分（`struct { Logger Clock }` / `struct { Logger; Clock }`）
+//	は TestExtractRecords_AC3_9_2_MemberBoundarySeparator の
+//	w82_i_name / w82_i_embed ケースが AC-3-9-2 (i) そのものとして既に
+//	固定している絶対値である。
+//	両者を機械的に組み合わせたものが本テストの want であり、実装の出力に
+//	合わせたものではない。
+//
+// 【依存】標準 testing + google/go-cmp のみ（ADR 0007）。
+func TestExtractRecords_AC3_6_1_FalseGreenCenterInsideArrayLen(t *testing.T) {
+	files := map[string]string{
+		// 名前付きフィールド1個（名前 Logger・型 Clock）を配列長の式の
+		// 内部に置いたもの。
+		"ac361_fg_name/a.go": "package ac361_fg_name\n\ntype Clock struct{}\n\n" +
+			"type T [len([...]struct {\n\tLogger Clock\n}{})]int\n",
+
+		// 埋め込みフィールド2個（Logger と Clock）を配列長の式の内部に
+		// 置いたもの。両者の違いは改行だけ。
+		"ac361_fg_embed/a.go": "package ac361_fg_embed\n\ntype Logger struct{}\n\ntype Clock struct{}\n\n" +
+			"type T [len([...]struct {\n\tLogger\n\tClock\n}{})]int\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+	}
+
+	want := []record{
+		{Pkg: "ac361_fg_name", Kind: "type", Name: "T", Signature: "[len([...]struct { Logger Clock }{})]int"},
+		{Pkg: "ac361_fg_name", Kind: "type", Name: "Clock", Signature: "struct { }"},
+
+		{Pkg: "ac361_fg_embed", Kind: "type", Name: "T", Signature: "[len([...]struct { Logger; Clock }{})]int"},
+		{Pkg: "ac361_fg_embed", Kind: "type", Name: "Logger", Signature: "struct { }"},
+		{Pkg: "ac361_fg_embed", Kind: "type", Name: "Clock", Signature: "struct { }"},
+	}
+
+	// (1) 絶対値。
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(byRecord)); diff != "" {
+		t.Errorf("extractRecords(%q) mismatch (-want +got):\n%s", dir, diff)
+	}
+
+	// (2) 偽 Green の中心そのもの。両者はバイト一致してはならない。
+	sig := func(t *testing.T, pkg string) string {
+		t.Helper()
+		for _, r := range got {
+			if r.Pkg == pkg && r.Kind == "type" && r.Name == "T" {
+				return r.Signature
+			}
+		}
+		t.Fatalf("record not found for pkg %q in %+v", pkg, got)
+		return ""
+	}
+	name, embed := sig(t, "ac361_fg_name"), sig(t, "ac361_fg_embed")
+	if name == embed {
+		t.Errorf(
+			"pkg %q signature=%q, pkg %q signature=%q: byte-equal=true, want byte-equal=false"+
+				"（AC-3-6-1 が AC-3-9-2 (i) の偽 Green を配列長の式の内部へ広げる: "+
+				"名前付きフィールド1個からなる構造体と、埋め込みフィールド2個から"+
+				"なる構造体を、配列長の式の内部に置いてもバイト一致させない）",
+			"ac361_fg_name", name, "ac361_fg_embed", embed,
+		)
 	}
 }
