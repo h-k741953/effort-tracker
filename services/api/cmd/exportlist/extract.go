@@ -298,6 +298,10 @@ func typeExprSignature(fset *token.FileSet, e ast.Expr) ast.Expr {
 		return &nv
 	case *ast.ArrayType:
 		nv := *v
+		// v.Len（配列長の式。nil ならスライス型）の内部にも一様に掛ける
+		// （AC-3-6-1）。typeExprSignature(fset, nil) は case nil で nil を
+		// 返すため、スライス型でも安全。
+		nv.Len = typeExprSignature(fset, v.Len)
 		nv.Elt = typeExprSignature(fset, v.Elt)
 		return &nv
 	case *ast.Ellipsis:
@@ -356,9 +360,109 @@ func typeExprSignature(fset *token.FileSet, e ast.Expr) ast.Expr {
 		nv.X = typeExprSignature(fset, v.X)
 		return &nv
 	default:
-		// Ident・SelectorExpr など、名前を含む余地の無いノードはそのまま
-		// 返す（コピー不要。呼び出し側もこれを書き換えない）。
-		return e
+		// 上記いずれの case にも当たらないノード（*ast.CallExpr・
+		// *ast.CompositeLit・*ast.KeyValueExpr、および将来 go/ast に
+		// 増える構文）は、種類ごとに個別の case を足さない（AC-3-6-1
+		// 根拠3・根拠4: 式の種類・呼び出される関数の名前〔len /
+		// unsafe.Sizeof など〕で場合分けすると、数え上げから漏れた式に
+		// 同じ穴を残す）。代わりに e を子ノードまで取りこぼさず再帰する
+		// recurseExprFields へ委ね、子孫に struct / interface / func 型が
+		// 現れれば上の case が既存の処理（非公開除去・フィールド展開・
+		// メンバー境界の区切り・引数名剥がし）を掛ける（Issue #93
+		// reviewer 往復10 の指摘 C-9-1）。Ident・SelectorExpr のように
+		// 変換対象を持たないノードは、recurseExprFields を通しても中身は
+		// 変わらない（コピーが増えるだけで出力は同じ）。
+		nv := recurseExprFields(fset, reflect.ValueOf(e))
+		if !nv.IsValid() {
+			return e
+		}
+		result, ok := nv.Interface().(ast.Expr)
+		if !ok {
+			return e
+		}
+		return result
+	}
+}
+
+// exprIfaceType は ast.Expr インターフェースの reflect.Type
+// （recurseExprFields がフィールド・スライス要素の静的型と突き合わせる
+// ための基準。stripPositions が posType を使う形と同じ）。
+var exprIfaceType = reflect.TypeOf((*ast.Expr)(nil)).Elem()
+
+// recurseExprFields は v のディープコピーを返しつつ、子孫に現れる
+// ast.Expr 型の値（構造体フィールド・スライス要素）へ一様に
+// typeExprSignature を再帰適用する。typeExprSignature の default ケース
+// 専用の入口であり、struct / interface / func 型や配列・map・チャネル
+// などを明示的に扱う既存の case はここを経由しない（AC-3-6-1: 型式が
+// 現れるすべての位置へ一様に掛ける。ノードの「種類」で場合分けせず、
+// 「ast.Expr 型のフィールドかどうか」という構造だけで判定するため、
+// *ast.CallExpr の Args・*ast.CompositeLit の Type/Elts のように case で
+// 列挙していない位置にも自動的に届く）。v 自身・v から辿れる既存の AST は
+// 一切書き換えない（stripPositions と同じ設計）。
+//
+// *ast.Object / *ast.Scope は stripPositions と同じ理由でコピーせず共有
+// する（Ident.Obj → Object.Decl → 元の宣言ノードという循環参照があり、
+// 潜ると無限再帰になる。go/printer は Object/Scope の中身を印字結果に
+// 使わないため、共有しても出力に影響しない）。
+//
+// reflect の使用は標準ライブラリの範囲内であり、cmd/exportlist は domain
+// ではないため AC-3-11 / AC-3-12・check-domain-deps・ADR 0007 のいずれにも
+// 抵触しない（services/api/go.mod の require は増やしていない。
+// stripPositions のコメントと同じ）。
+func recurseExprFields(fset *token.FileSet, v reflect.Value) reflect.Value {
+	if !v.IsValid() {
+		return v
+	}
+	if v.Type() == exprIfaceType {
+		if v.IsNil() {
+			return v
+		}
+		expr, ok := v.Interface().(ast.Expr)
+		if !ok {
+			return v
+		}
+		newExpr := typeExprSignature(fset, expr)
+		nv := reflect.New(exprIfaceType).Elem()
+		if newExpr != nil {
+			nv.Set(reflect.ValueOf(newExpr))
+		}
+		return nv
+	}
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			return v
+		}
+		if elem := v.Type().Elem(); elem.PkgPath() == "go/ast" && (elem.Name() == "Object" || elem.Name() == "Scope") {
+			return v
+		}
+		nv := reflect.New(v.Type().Elem())
+		nv.Elem().Set(recurseExprFields(fset, v.Elem()))
+		return nv
+	case reflect.Interface:
+		if v.IsNil() {
+			return v
+		}
+		nv := reflect.New(v.Type()).Elem()
+		nv.Set(recurseExprFields(fset, v.Elem()))
+		return nv
+	case reflect.Struct:
+		nv := reflect.New(v.Type()).Elem()
+		for i := 0; i < v.NumField(); i++ {
+			nv.Field(i).Set(recurseExprFields(fset, v.Field(i)))
+		}
+		return nv
+	case reflect.Slice:
+		if v.IsNil() {
+			return v
+		}
+		nv := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		for i := 0; i < v.Len(); i++ {
+			nv.Index(i).Set(recurseExprFields(fset, v.Index(i)))
+		}
+		return nv
+	default:
+		return v
 	}
 }
 
