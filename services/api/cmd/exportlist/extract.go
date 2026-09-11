@@ -366,13 +366,20 @@ func typeExprSignature(fset *token.FileSet, e ast.Expr) ast.Expr {
 		// 根拠3・根拠4: 式の種類・呼び出される関数の名前〔len /
 		// unsafe.Sizeof など〕で場合分けすると、数え上げから漏れた式に
 		// 同じ穴を残す）。代わりに e を子ノードまで取りこぼさず再帰する
-		// recurseExprFields へ委ね、子孫に struct / interface / func 型が
+		// descendExprStructure へ委ね、子孫に struct / interface / func 型が
 		// 現れれば上の case が既存の処理（非公開除去・フィールド展開・
 		// メンバー境界の区切り・引数名剥がし）を掛ける（Issue #93
 		// reviewer 往復10 の指摘 C-9-1）。Ident・SelectorExpr のように
-		// 変換対象を持たないノードは、recurseExprFields を通しても中身は
+		// 変換対象を持たないノードは、descendExprStructure を通しても中身は
 		// 変わらない（コピーが増えるだけで出力は同じ）。
-		nv := recurseExprFields(fset, reflect.ValueOf(e))
+		//
+		// e（根）は descendExprStructure を直接呼び、recurseExprFields が
+		// 行う「動的型が ast.Expr を実装しているか」の判定は経由させない。
+		// 根 e の動的型（*ast.CallExpr 等）は当然 ast.Expr を実装しており、
+		// この判定を根に掛けると typeExprSignature(fset, e) → default →
+		// 同じ判定 → … と即座に無限再帰する（Issue #93 実装往復12。
+		// recurseExprFields のコメント参照）。
+		nv := descendExprStructure(fset, reflect.ValueOf(e))
 		if !nv.IsValid() {
 			return e
 		}
@@ -385,20 +392,60 @@ func typeExprSignature(fset *token.FileSet, e ast.Expr) ast.Expr {
 }
 
 // exprIfaceType は ast.Expr インターフェースの reflect.Type
-// （recurseExprFields がフィールド・スライス要素の静的型と突き合わせる
-// ための基準。stripPositions が posType を使う形と同じ）。
+// （recurseExprFields が子の値の**動的型**と突き合わせるための基準。
+// stripPositions が posType を使う形と同じ）。
 var exprIfaceType = reflect.TypeOf((*ast.Expr)(nil)).Elem()
 
-// recurseExprFields は v のディープコピーを返しつつ、子孫に現れる
-// ast.Expr 型の値（構造体フィールド・スライス要素）へ一様に
-// typeExprSignature を再帰適用する。typeExprSignature の default ケース
-// 専用の入口であり、struct / interface / func 型や配列・map・チャネル
-// などを明示的に扱う既存の case はここを経由しない（AC-3-6-1: 型式が
-// 現れるすべての位置へ一様に掛ける。ノードの「種類」で場合分けせず、
-// 「ast.Expr 型のフィールドかどうか」という構造だけで判定するため、
-// *ast.CallExpr の Args・*ast.CompositeLit の Type/Elts のように case で
-// 列挙していない位置にも自動的に届く）。v 自身・v から辿れる既存の AST は
-// 一切書き換えない（stripPositions と同じ設計）。
+// recurseExprFields は v（型式の子の位置にある値 —— 構造体フィールドまたは
+// スライス要素）のディープコピーを返しつつ、v 自身が ast.Expr を実装して
+// いれば typeExprSignature を適用し、実装していなければ判定を掛けずに
+// descendExprStructure へ構造走査を委ねる。typeExprSignature の default
+// ケースおよび descendExprStructure の各分岐（子を再帰する箇所すべて）から
+// 呼ばれる、子の判定の唯一の入口である。
+//
+// 【なぜ静的型ではなく動的型で判定するか（Issue #93 実装往復12・C-11-1）】
+//
+//	以前の実装は「v の静的型がちょうど ast.Expr インターフェースである
+//	こと」（v.Type() == exprIfaceType）で判定していた。しかし go/ast は
+//	フィールドの静的型を ast.Expr ではなく具体型で宣言している箇所がある
+//	（例: ast.FuncLit.Type の静的型は *ast.FuncType）。静的型で判定すると、
+//	そうしたフィールドは下の switch の reflect.Struct 分岐をただ構造的に
+//	通過するだけで、typeExprSignature の struct / interface / func 型の
+//	専用ケース（非公開除去・メンバー境界区切り・引数名剥がし）に一度も
+//	渡らない。動的型（v.Type().Implements(exprIfaceType)）で判定すれば、
+//	静的型が具体型でも動的に ast.Expr を実装している値をすべて
+//	typeExprSignature へ渡せる（AC-3-6-1 根拠3・根拠4と同じ「経路ごとに
+//	場合分けしない」方針の延長。フィールドを名指しで足すと同じ形の漏れが
+//	別のフィールドで再発する）。
+//
+// 【なぜ根（typeExprSignature の default ケースに渡される e 自身）には
+// この判定を掛けないか】
+//
+//	根の動的型（*ast.CallExpr 等）は当然 ast.Expr を実装している。根に
+//	同じ判定を掛けると typeExprSignature(fset, e) → default →
+//	recurseExprFields(fset, reflect.ValueOf(e)) → 判定が真 →
+//	typeExprSignature(fset, e) → … と即座に無限再帰する。そのため根からの
+//	最初の呼び出しは判定を経由しない descendExprStructure を直接呼び、
+//	recurseExprFields は「判定を通過した後の子」からしか呼ばれない設計に
+//	する。
+//
+// 【代入可能性のフォールバック（Issue #93 実装往復12・panic の危険）】
+//
+//	typeExprSignature は入力と異なる具体型を返すことがある
+//	（*ast.StructType / *ast.InterfaceType を渡すと *ast.Ident を返す）。
+//	v の静的型（例えば将来 go/ast に増えるかもしれない、静的型が
+//	*ast.StructType のフィールド）へ戻り値をそのまま Set すると、型が
+//	合わずに panic する。そのため戻り値が v の静的型へ代入可能かを
+//	AssignableTo で確認し、代入できない場合は結果を捨てて
+//	descendExprStructure による構造走査（非公開除去等は掛からないが
+//	panic はしない）へフォールバックする。現行の go/ast にこの分岐を
+//	踏む具体的なフィールドは無い（struct 経由でしか
+//	typeExprSignature に渡らない、かつ静的型が StructType/InterfaceType
+//	であるフィールドは無い）が、将来 go/ast に増えた場合の安全側の
+//	倒し方として残す。
+//
+// v 自身・v から辿れる既存の AST は一切書き換えない（stripPositions と
+// 同じ設計）。
 //
 // reflect の使用は標準ライブラリの範囲内であり、cmd/exportlist は domain
 // ではないため AC-3-11 / AC-3-12・check-domain-deps・ADR 0007 のいずれにも
@@ -408,20 +455,42 @@ func recurseExprFields(fset *token.FileSet, v reflect.Value) reflect.Value {
 	if !v.IsValid() {
 		return v
 	}
-	if v.Type() == exprIfaceType {
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		// ast.Expr を実装する go/ast の具体型はすべてポインタ型であり、
+		// ast.Expr 自身もインターフェース型なので、判定の対象はこの2種の
+		// Kind に限られる（Struct・Slice 等は ast.Expr を実装しない）。
 		if v.IsNil() {
 			return v
 		}
-		expr, ok := v.Interface().(ast.Expr)
-		if !ok {
-			return v
+		if v.Type().Implements(exprIfaceType) {
+			if expr, ok := v.Interface().(ast.Expr); ok {
+				newExpr := typeExprSignature(fset, expr)
+				if newExpr == nil {
+					return reflect.Zero(v.Type())
+				}
+				nv := reflect.ValueOf(newExpr)
+				if nv.Type().AssignableTo(v.Type()) {
+					return nv
+				}
+				// 代入不可能なら結果を捨てて構造走査へフォールバックする
+				// （上のコメント「代入可能性のフォールバック」参照）。
+			}
 		}
-		newExpr := typeExprSignature(fset, expr)
-		nv := reflect.New(exprIfaceType).Elem()
-		if newExpr != nil {
-			nv.Set(reflect.ValueOf(newExpr))
-		}
-		return nv
+	}
+	return descendExprStructure(fset, v)
+}
+
+// descendExprStructure は v の構造（ポインタの中身・インターフェースの
+// 中身・構造体の各フィールド・スライスの各要素）だけを辿り、ast.Expr の
+// 判定は一切行わずに、各子の再帰の入口を recurseExprFields へ戻す。
+// typeExprSignature の default ケース（構造走査の根。判定を経由しない）と、
+// recurseExprFields が判定を素通りさせた場合（子だが ast.Expr を実装して
+// いない、または代入不可能だった場合）の両方から呼ばれる。v 自身・v から
+// 辿れる既存の AST は一切書き換えない（stripPositions と同じ設計）。
+func descendExprStructure(fset *token.FileSet, v reflect.Value) reflect.Value {
+	if !v.IsValid() {
+		return v
 	}
 	switch v.Kind() {
 	case reflect.Pointer:
