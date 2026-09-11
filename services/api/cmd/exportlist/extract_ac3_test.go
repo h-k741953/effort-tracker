@@ -2443,7 +2443,7 @@ func TestExtractRecords_AC3_9_2_MemberBoundarySeparator(t *testing.T) {
 
 // TestExtractRecords_AC3_6_1_RulesApplyInsideExpressions は
 // docs/specs/public-api-diff-check.md AC-3-6-1「3-6-1 が要求する期待値
-// （テストに落とす形）」表 (i)〜(vii) をそのままテーブルへ落とす。
+// （テストに落とす形）」表 (i)〜(ix) をそのままテーブルへ落とす。
 //
 // 【要求の要旨】
 //
@@ -2452,17 +2452,21 @@ func TestExtractRecords_AC3_9_2_MemberBoundarySeparator(t *testing.T) {
 //	その中の呼び出し `len(...)` / `unsafe.Sizeof(...)` の引数、複合
 //	リテラルなど）の内部に現れる構造体型・インターフェース型・関数型にも
 //	一様に掛かる。その結果、式の内部に現れる型の綴りは、同じ型を型式の
-//	直下に置いた宣言の <signature> とバイト一致する。
+//	直下に置いた宣言の <signature> とバイト一致する。(viii)・(ix) は、
+//	この一様性を「型だけでなく本体 `{ ... }` を持つ関数リテラル
+//	（ast.FuncLit）」の内部へ広げて固定する（(v) が覆う「関数型が
+//	ast.Expr の位置に型として直接現れる形」とは別の構文である）。
 //
 // 【期待値の形】
 //
-//	(i)〜(vi) は同項本文の指示どおり、「対照する宣言の <signature> が、
-//	対象の宣言の <signature> の部分文字列として現れること」で固定する
-//	（対象側は外側の型式のぶんだけ長くなるため、全体のバイト一致には
-//	ならない）。(vii) は対照を持たない行であり、`go/parser` が配列長では
-//	なく型パラメータリストとして解析する形（複合リテラルの `{}` を持た
-//	ない）について、非公開 `hidden` が現れず公開 `Pub` が現れることだけを
-//	固定する（型パラメータリストの綴り規則そのものは 3-6-1 の対象外）。
+//	(i)〜(vi)・(viii)・(ix) は同項本文の指示どおり、「対照する宣言の
+//	<signature> が、対象の宣言の <signature> の部分文字列として現れる
+//	こと」で固定する（対象側は外側の型式のぶんだけ長くなるため、全体の
+//	バイト一致にはならない）。(vii) は対照を持たない行であり、
+//	`go/parser` が配列長ではなく型パラメータリストとして解析する形
+//	（複合リテラルの `{}` を持たない）について、非公開 `hidden` が現れず
+//	公開 `Pub` が現れることだけを固定する（型パラメータリストの綴り規則
+//	そのものは 3-6-1 の対象外）。
 //
 // 【依存】標準 testing + google/go-cmp のみ（ADR 0007）。
 func TestExtractRecords_AC3_6_1_RulesApplyInsideExpressions(t *testing.T) {
@@ -2508,6 +2512,22 @@ func TestExtractRecords_AC3_6_1_RulesApplyInsideExpressions(t *testing.T) {
 		// 現れること。
 		"ac361_vii/a.go": "package ac361_vii\n\n" +
 			"type T [len([...]struct{ hidden int; Pub int })]int\n",
+
+		// (viii): 関数リテラル（本体 `{ ... }` を持つ式）の内部にも 3-6 の
+		// 引数名除去が掛かること。(v) が覆うのは関数型が ast.Expr の位置に
+		// 型として直接現れる形（複合リテラルの要素型）であり、本体を持つ
+		// 関数リテラル（ast.FuncLit）はそこに含まれない。両者は別の構文。
+		"ac361_viii_t/a.go": "package ac361_viii_t\n\nimport \"unsafe\"\n\n" +
+			"type T [unsafe.Sizeof(func(a int, b string) {})]int\n",
+		"ac361_viii_u/a.go": "package ac361_viii_u\n\ntype U func(a int, b string)\n",
+
+		// (ix): 関数リテラルの内部で、引数名だけでなく結果名も落ちること。
+		// 3-9 の非公開除去（hidden）は既に掛かっていても、3-6 の引数名・
+		// 結果名の除去（p・res）が別に掛かっていなければ一致しない
+		// （規則の一部だけが掛かる形を許さない）。
+		"ac361_ix_t/a.go": "package ac361_ix_t\n\nimport \"unsafe\"\n\n" +
+			"type T [unsafe.Sizeof(func(p struct{ hidden int; Pub int }) (res error) { return nil })]int\n",
+		"ac361_ix_u/a.go": "package ac361_ix_u\n\ntype U func(p struct{ hidden int; Pub int }) (res error)\n",
 	}
 
 	dir := writeFixture(t, files)
@@ -2536,6 +2556,8 @@ func TestExtractRecords_AC3_6_1_RulesApplyInsideExpressions(t *testing.T) {
 		{"ac361_iv_t", "ac361_iv_u", "(iv) 式の中のさらに入れ子（map のキーの構造体）"},
 		{"ac361_v_t", "ac361_v_u", "(v) 式の内部への 3-6 引数名除去"},
 		{"ac361_vi_t", "ac361_vi_u", "(vi) 式の内部への 3-9-1 まとめ宣言展開"},
+		{"ac361_viii_t", "ac361_viii_u", "(viii) 関数リテラル（本体を持つ式）の内部への 3-6 引数名除去"},
+		{"ac361_ix_t", "ac361_ix_u", "(ix) 関数リテラルの内部で引数名だけでなく結果名も落ちること"},
 	}
 	for _, c := range containsCases {
 		target, counter := sig(t, c.targetPkg, "T"), sig(t, c.counterPkg, "U")
