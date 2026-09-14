@@ -1,11 +1,17 @@
 package main
 
 // extract.go は docs/specs/public-api-diff-check.md AC-3（抽出規則）の実装
-// である。構文解析だけで決まることしか見ない（型解決・依存解決・ビルド
-// タグの評価を行わない。同 AC-3 前文、ADR 0018 決定7-3）。
+// である。構文解析だけで決まることしか見ない（依存解決・ネットワーク
+// アクセス・ビルドタグの評価を行わない。同 AC-3 前文、ADR 0018 決定7-3）。
+// **型解決は例外**であり、AC-3-9-3（複合リテラルのキーの弁別）のためだけに、
+// 解析対象パッケージ内へ閉じた範囲で行う（AC-3-11 / AC-3-11-1。
+// ADR 0019 決定2・3・5・6 が ADR 0018 決定7-3 の「型解決を採らない」を
+// 置換する）。
 //
-// 依存は標準ライブラリの go/parser・go/ast・go/printer・go/token のみ
-// （AC-3-11）。services/api/go.mod の require は1件も増やさない（AC-3-12）。
+// 依存は標準ライブラリの go/parser・go/ast・go/printer・go/token に加え、
+// 型解決のための go/types・go/importer のみ（AC-3-11 / ADR 0019 決定6）。
+// services/api/go.mod の require は1件も増やさない（AC-3-12。上記はすべて
+// 標準ライブラリである）。
 //
 // トップレベルの識別子はすべて非公開にする（AC-3-15。抽出器自身が抽出対象
 // に入る自己言及の帰結。詳細は main_test.go）。
@@ -14,9 +20,11 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
+	"go/importer"
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"go/types"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -35,6 +43,87 @@ type record struct {
 	Kind      string
 	Name      string
 	Signature string
+}
+
+// typeInfo は AC-3-11 / AC-3-11-1（ADR 0019 決定2・3・5）が許す範囲の、
+// 1つの Go パッケージ（1ディレクトリ）分の型解決結果を運ぶ。用途は
+// AC-3-9-3（複合リテラルのキーの弁別）に限る —— <signature> の綴りは
+// 引き続き書かれた型式から作り、型解決の結果で置き換えない（決定5）。
+//
+// パッケージ単位でスコープが変わる値であるため、グローバル変数には置かず、
+// fset と並ぶ明示的な引数として呼び出しの連鎖全体（typeExprSignature とその
+// 再帰の入口すべて）へ渡す。
+type typeInfo struct {
+	// info は nil になりうる（対象ディレクトリの型検査が致命的に失敗し、
+	// Uses が一切埋まらなかった場合を含む）。nil は「その識別子について
+	// 型情報が得られない」（AC-3-9-3 (c)）と同じに扱う。
+	info *types.Info
+}
+
+// removeCompositeKey は AC-3-9-3 の判定フローそのものを実装する
+// （docs/specs/public-api-diff-check.md「複合リテラルのキーを型解決で弁別
+// する理由と、判定のフロー」の mermaid 図。ADR 0019 決定4）。真を返すのは
+// (b) の非公開フィールド名の枝に限る —— それ以外（裸の識別子でない、型
+// 情報が得られない、構造体フィールドと判らない、公開名）はすべて false
+// （＝書かれたまま出力する）。
+//
+// key は、この typeInfo を作った型検査に使ったのと同じ *ast.File 上に現れる
+// コピー前の元のノードでなければならない。types.Info.Uses はノードの
+// ポインタ同一性で引かれるため、typeExprSignature の *ast.KeyValueExpr
+// ケースは、子を再帰コピーする前にこの判定を呼ぶ。
+func (ti typeInfo) removeCompositeKey(key ast.Expr) bool {
+	ident, ok := key.(*ast.Ident)
+	if !ok {
+		// (a) 裸の識別子でなければ書かれたまま出力する。
+		return false
+	}
+	if ti.info == nil {
+		// (c) パッケージの型検査が致命的に失敗し、型情報が一切無い。
+		return false
+	}
+	obj, ok := ti.info.Uses[ident]
+	if !ok || obj == nil {
+		// (c) このキーについて型情報が得られない
+		// （複合リテラルの型自体を解決できなかった場合を含む）。
+		return false
+	}
+	v, ok := obj.(*types.Var)
+	if !ok || !v.IsField() {
+		// 構造体フィールドと判らない（配列・スライスの複合リテラルの
+		// インデックスに現れる定数・変数への参照など）。AC-3-9 の対象
+		// ではないため除去しない。
+		return false
+	}
+	// (b) 構造体フィールドと判った。公開名は書かれたまま、非公開名は
+	// AC-3-9 により除去する。
+	return !v.Exported()
+}
+
+// buildPackageTypeInfo は files（すべて同一ディレクトリ＝同一 Go パッケージ
+// に属し、AC-3-1 の除外を通過済みの構文木）に対し、AC-3-11 が許す範囲
+// （パッケージ内へ閉じた型解決。ADR 0019 決定2・3）で型検査を行う。
+//
+// import 先の解決に失敗しても型検査は継続し、パッケージ内で完結する情報
+// （複合リテラルのキーの Uses など）は得られる（ADR 0019 決定3 実測A）。
+// Config.Error にはエラーを集めて捨てるだけのコールバックを渡し、Check の
+// 戻り値のエラーで抽出全体を中断しない（AC-3-14-1。型検査のエラーを抽出器の
+// 非ゼロ終了の理由にしない。決定6）。
+//
+// 型検査そのものが致命的に失敗して Uses が一切埋まらなくても、呼び出し側
+// （removeCompositeKey）は「型情報が得られない」既定（AC-3-9-3 (c)）へ
+// 安全側に倒れる。
+func buildPackageTypeInfo(fset *token.FileSet, pkgPath string, files []*ast.File) *types.Info {
+	info := &types.Info{
+		Uses: make(map[*ast.Ident]types.Object),
+	}
+	conf := types.Config{
+		Importer: importer.Default(),
+		Error:    func(error) {},
+	}
+	// Check の戻り値のエラーは AC-3-14-1 により致命にしない。エラーが
+	// あっても info.Uses は部分的に埋まる（決定3 実測A）。
+	_, _ = conf.Check(pkgPath, fset, files, info)
+	return info
 }
 
 // extractRecords は dir 配下（再帰的）の *.go を AC-3 の規則で走査し、公開
@@ -86,7 +175,19 @@ func extractRecords(dir string) ([]record, error) {
 	sort.Strings(allGoFiles)
 
 	fset := token.NewFileSet()
-	var records []record
+
+	// parsedFile は1ファイル分のパース結果と、それが属する Go パッケージ
+	// （＝ディレクトリ）を保持する。型解決（buildPackageTypeInfo）は
+	// パッケージ単位でしか行えない一方、抽出結果の記録順は既存どおり
+	// ファイル単位で積み上げるため、パースを1パス目、型解決を2パス目、
+	// 抽出を3パス目に分ける。
+	type parsedFile struct {
+		file    *ast.File
+		pkgPath string
+	}
+	var parsedFiles []parsedFile
+	filesByPkg := make(map[string][]*ast.File)
+
 	for _, f := range allGoFiles {
 		if isExcludedPath(absDir, f) {
 			continue
@@ -110,7 +211,21 @@ func extractRecords(dir string) ([]record, error) {
 		}
 		pkgPath := filepath.ToSlash(relDir)
 
-		records = append(records, extractFromFile(fset, astFile, pkgPath)...)
+		parsedFiles = append(parsedFiles, parsedFile{file: astFile, pkgPath: pkgPath})
+		filesByPkg[pkgPath] = append(filesByPkg[pkgPath], astFile)
+	}
+
+	// AC-3-11 / AC-3-11-1: パッケージ（ディレクトリ）単位に閉じた型解決を
+	// 1回だけ行う。用途は AC-3-9-3 の複合リテラルのキー弁別に限る。
+	typeInfoByPkg := make(map[string]*types.Info, len(filesByPkg))
+	for pkgPath, files := range filesByPkg {
+		typeInfoByPkg[pkgPath] = buildPackageTypeInfo(fset, pkgPath, files)
+	}
+
+	var records []record
+	for _, pf := range parsedFiles {
+		ti := typeInfo{info: typeInfoByPkg[pf.pkgPath]}
+		records = append(records, extractFromFile(fset, ti, pf.file, pf.pkgPath)...)
 	}
 
 	return records, nil
@@ -136,15 +251,16 @@ func isExcludedPath(root, path string) bool {
 
 // extractFromFile はファイル1つ分のトップレベル宣言から、公開シンボルの
 // レコードを取り出す（AC-3-4: トップレベルのみ。関数内ローカル宣言・
-// 非公開の宣言は対象外）。
-func extractFromFile(fset *token.FileSet, file *ast.File, pkgPath string) []record {
+// 非公開の宣言は対象外）。ti は file が属するパッケージの型解決結果
+// （AC-3-9-3 の弁別にのみ使う。用途を広げない — AC-3-11-1）。
+func extractFromFile(fset *token.FileSet, ti typeInfo, file *ast.File, pkgPath string) []record {
 	var out []record
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
-			out = append(out, extractFuncDecl(fset, d, pkgPath)...)
+			out = append(out, extractFuncDecl(fset, ti, d, pkgPath)...)
 		case *ast.GenDecl:
-			out = append(out, extractGenDecl(fset, d, pkgPath)...)
+			out = append(out, extractGenDecl(fset, ti, d, pkgPath)...)
 		}
 	}
 	return out
@@ -154,12 +270,12 @@ func extractFromFile(fset *token.FileSet, file *ast.File, pkgPath string) []reco
 //
 // AC-3-5: メソッドは受信者の基底型名とメソッド名の両方が公開のときのみ
 // 対象とする。
-func extractFuncDecl(fset *token.FileSet, d *ast.FuncDecl, pkgPath string) []record {
+func extractFuncDecl(fset *token.FileSet, ti typeInfo, d *ast.FuncDecl, pkgPath string) []record {
 	if d.Recv == nil {
 		if !isExported(d.Name.Name) {
 			return nil
 		}
-		sig := funcTypeSignature(fset, d.Type, true)
+		sig := funcTypeSignature(fset, ti, d.Type, true)
 		return []record{{Pkg: pkgPath, Kind: "func", Name: d.Name.Name, Signature: sig}}
 	}
 
@@ -172,8 +288,8 @@ func extractFuncDecl(fset *token.FileSet, d *ast.FuncDecl, pkgPath string) []rec
 		return nil
 	}
 
-	recvStr := normalizeWhitespace(printNode(fset, typeExprSignature(fset, recvExpr)))
-	argsRes := funcTypeSignature(fset, d.Type, false)
+	recvStr := normalizeWhitespace(printNode(fset, typeExprSignature(fset, ti, recvExpr)))
+	argsRes := funcTypeSignature(fset, ti, d.Type, false)
 	sig := "(" + recvStr + ") " + argsRes
 	return []record{{
 		Pkg:       pkgPath,
@@ -184,7 +300,7 @@ func extractFuncDecl(fset *token.FileSet, d *ast.FuncDecl, pkgPath string) []rec
 }
 
 // extractGenDecl は type / var / const 宣言を扱う。
-func extractGenDecl(fset *token.FileSet, d *ast.GenDecl, pkgPath string) []record {
+func extractGenDecl(fset *token.FileSet, ti typeInfo, d *ast.GenDecl, pkgPath string) []record {
 	var out []record
 	switch d.Tok {
 	case token.TYPE:
@@ -197,7 +313,7 @@ func extractGenDecl(fset *token.FileSet, d *ast.GenDecl, pkgPath string) []recor
 				Pkg:       pkgPath,
 				Kind:      "type",
 				Name:      ts.Name.Name,
-				Signature: typeSpecSignature(fset, ts),
+				Signature: typeSpecSignature(fset, ti, ts),
 			})
 		}
 	case token.VAR, token.CONST:
@@ -216,7 +332,7 @@ func extractGenDecl(fset *token.FileSet, d *ast.GenDecl, pkgPath string) []recor
 				}
 				sig := "-"
 				if vs.Type != nil {
-					sig = normalizeWhitespace(printNode(fset, typeExprSignature(fset, vs.Type)))
+					sig = normalizeWhitespace(printNode(fset, typeExprSignature(fset, ti, vs.Type)))
 				}
 				out = append(out, record{
 					Pkg:       pkgPath,
@@ -235,12 +351,12 @@ func extractGenDecl(fset *token.FileSet, d *ast.GenDecl, pkgPath string) []recor
 // は右辺の前に "= " を付ける（AC-3-9 / AC-3-10 の非公開メンバー除去を含む）。
 //
 // typeExprSignature は ts.Type そのものを書き換えず、印字用のコピーを返す。
-func typeSpecSignature(fset *token.FileSet, ts *ast.TypeSpec) string {
-	body := normalizeWhitespace(printNode(fset, typeExprSignature(fset, ts.Type)))
+func typeSpecSignature(fset *token.FileSet, ti typeInfo, ts *ast.TypeSpec) string {
+	body := normalizeWhitespace(printNode(fset, typeExprSignature(fset, ti, ts.Type)))
 
 	var sb strings.Builder
 	if ts.TypeParams != nil && len(ts.TypeParams.List) > 0 {
-		sb.WriteString(typeParamsString(fset, ts.TypeParams))
+		sb.WriteString(typeParamsString(fset, ti, ts.TypeParams))
 		sb.WriteString(" ")
 	}
 	if ts.Assign != token.NoPos {
@@ -251,7 +367,7 @@ func typeSpecSignature(fset *token.FileSet, ts *ast.TypeSpec) string {
 }
 
 // typeExprSignature は e のコピーを返し、<signature> に現れるあらゆる
-// 入れ子位置へ一様に次の2つを適用する（Issue #93 reviewer 往復2の
+// 入れ子位置へ一様に次の4つを適用する（Issue #93 reviewer 往復2の
 // 指摘 W-2r: 経路ごとに個別対応すると適用漏れが再発するため、型式を
 // 1回のコピー再帰で走査する単一の入口をここに設ける）。
 //
@@ -259,6 +375,10 @@ func typeSpecSignature(fset *token.FileSet, ts *ast.TypeSpec) string {
 //     の除去
 //   - AC-3-10: 埋め込みフィールドは、埋め込まれた型名の公開性で除去を判定
 //   - AC-3-6: 関数の引数名・結果名の除去
+//   - AC-3-6-2: 関数リテラルの本体を固定綴りへ畳む
+//   - AC-3-9-3: 複合リテラルのキーが非公開フィールド名と判ったときに限り
+//     除去する（ti が運ぶ、パッケージ内へ閉じた型解決結果を使う。
+//     AC-3-11-1 により用途はこれに限る）
 //
 // e 自身、および e から go/parser が返した既存の AST を辿って届く一切の
 // ノードは書き換えない。変更が要る場所でだけ新しいノードを作って返し、
@@ -268,7 +388,7 @@ func typeSpecSignature(fset *token.FileSet, ts *ast.TypeSpec) string {
 // 引数型／結果型（fieldListTypesString）・型パラメータの制約
 // （typeParamsString）のすべてから呼ばれる。printNode へ渡す直前は必ず
 // ここを通す。
-func typeExprSignature(fset *token.FileSet, e ast.Expr) ast.Expr {
+func typeExprSignature(fset *token.FileSet, ti typeInfo, e ast.Expr) ast.Expr {
 	switch v := e.(type) {
 	case nil:
 		return nil
@@ -284,54 +404,77 @@ func typeExprSignature(fset *token.FileSet, e ast.Expr) ast.Expr {
 		// 検証なしにそのまま出力するため、上位のどの入れ子位置
 		// （*、[]、map の key/value、他の struct のフィールド型など）に
 		// 置かれても正しく出力される（printFieldMembers のコメント参照）。
-		return &ast.Ident{Name: printFieldMembers(fset, "struct", filterFieldList(fset, v.Fields))}
+		return &ast.Ident{Name: printFieldMembers(fset, "struct", filterFieldList(fset, ti, v.Fields))}
 	case *ast.InterfaceType:
-		return &ast.Ident{Name: printFieldMembers(fset, "interface", filterFieldList(fset, v.Methods))}
+		return &ast.Ident{Name: printFieldMembers(fset, "interface", filterFieldList(fset, ti, v.Methods))}
 	case *ast.FuncType:
 		nv := *v
-		nv.Params = stripFieldListNames(fset, v.Params)
-		nv.Results = stripFieldListNames(fset, v.Results)
+		nv.Params = stripFieldListNames(fset, ti, v.Params)
+		nv.Results = stripFieldListNames(fset, ti, v.Results)
+		return &nv
+	case *ast.FuncLit:
+		// AC-3-6-2（ADR 0019 決定1）: 関数リテラルの本体を固定綴りへ畳む。
+		// 関数型の部分（引数名・結果名の除去を含む）は *ast.FuncType と
+		// 同じ経路にそのまま委ね、本体だけを固定文字列に置き換える。
+		// 本体を落として式ごと消すのではなく固定綴りで畳むのは、関数
+		// リテラルであることと関数型であることの区別を綴りに残すため
+		// （AC-3-6-1 の期待値表 (viii)/(ix) を緩めない）。
+		ftStr := normalizeWhitespace(printNode(fset, typeExprSignature(fset, ti, v.Type)))
+		return &ast.Ident{Name: ftStr + " " + foldedFuncLitBody}
+	case *ast.KeyValueExpr:
+		// AC-3-9-3: 複合リテラルのキー。ti.removeCompositeKey は v.Key
+		// （コピー前の元のノード）で判定する必要があるため、コピーを
+		// 作る前にここで判定する。
+		if ti.removeCompositeKey(v.Key) {
+			// (b) 非公開フィールド名: キーの綴りを落とし、値だけを残す
+			// （除去するのはキーであり、値は落とさない。値の位置にも
+			// 3-6-1 の一様性を掛けるため typeExprSignature へ委ねる）。
+			return typeExprSignature(fset, ti, v.Value)
+		}
+		nv := *v
+		nv.Key = typeExprSignature(fset, ti, v.Key)
+		nv.Value = typeExprSignature(fset, ti, v.Value)
 		return &nv
 	case *ast.StarExpr:
 		nv := *v
-		nv.X = typeExprSignature(fset, v.X)
+		nv.X = typeExprSignature(fset, ti, v.X)
 		return &nv
 	case *ast.ArrayType:
 		nv := *v
 		// v.Len（配列長の式。nil ならスライス型）の内部にも一様に掛ける
-		// （AC-3-6-1）。typeExprSignature(fset, nil) は case nil で nil を
-		// 返すため、スライス型でも安全。
-		nv.Len = typeExprSignature(fset, v.Len)
-		nv.Elt = typeExprSignature(fset, v.Elt)
+		// （AC-3-6-1）。typeExprSignature(fset, ti, nil) は case nil で nil
+		// を返すため、スライス型でも安全。
+		nv.Len = typeExprSignature(fset, ti, v.Len)
+		nv.Elt = typeExprSignature(fset, ti, v.Elt)
 		return &nv
 	case *ast.Ellipsis:
 		nv := *v
-		nv.Elt = typeExprSignature(fset, v.Elt)
+		nv.Elt = typeExprSignature(fset, ti, v.Elt)
 		return &nv
 	case *ast.MapType:
 		nv := *v
-		nv.Key = typeExprSignature(fset, v.Key)
-		nv.Value = typeExprSignature(fset, v.Value)
+		nv.Key = typeExprSignature(fset, ti, v.Key)
+		nv.Value = typeExprSignature(fset, ti, v.Value)
 		return &nv
 	case *ast.ChanType:
 		nv := *v
-		nv.Value = typeExprSignature(fset, v.Value)
+		nv.Value = typeExprSignature(fset, ti, v.Value)
 		return &nv
 	case *ast.ParenExpr:
 		nv := *v
-		nv.X = typeExprSignature(fset, v.X)
+		nv.X = typeExprSignature(fset, ti, v.X)
 		return &nv
 	case *ast.IndexExpr:
 		nv := *v
-		nv.X = typeExprSignature(fset, v.X)
-		nv.Index = typeExprSignature(fset, v.Index)
+		nv.X = typeExprSignature(fset, ti, v.X)
+		nv.Index = typeExprSignature(fset, ti, v.Index)
 		return &nv
 	case *ast.IndexListExpr:
 		nv := *v
-		nv.X = typeExprSignature(fset, v.X)
+		nv.X = typeExprSignature(fset, ti, v.X)
 		newIndices := make([]ast.Expr, len(v.Indices))
 		for i, idx := range v.Indices {
-			newIndices[i] = typeExprSignature(fset, idx)
+			newIndices[i] = typeExprSignature(fset, ti, idx)
 		}
 		nv.Indices = newIndices
 		// 括弧（ここでは大かっこ）の位置は、ここでは落とさない。位置の
@@ -351,35 +494,36 @@ func typeExprSignature(fset *token.FileSet, e ast.Expr) ast.Expr {
 		// 丸ごと消していた偽 Green の再発防止）。内部に関数型が現れうる
 		// ため、名前剥がしだけは再帰する。
 		nv := *v
-		nv.X = typeExprSignature(fset, v.X)
-		nv.Y = typeExprSignature(fset, v.Y)
+		nv.X = typeExprSignature(fset, ti, v.X)
+		nv.Y = typeExprSignature(fset, ti, v.Y)
 		return &nv
 	case *ast.UnaryExpr:
 		// 型集合の `~T`。BinaryExpr と同じ理由で除去しない。
 		nv := *v
-		nv.X = typeExprSignature(fset, v.X)
+		nv.X = typeExprSignature(fset, ti, v.X)
 		return &nv
 	default:
 		// 上記いずれの case にも当たらないノード（*ast.CallExpr・
-		// *ast.CompositeLit・*ast.KeyValueExpr、および将来 go/ast に
-		// 増える構文）は、種類ごとに個別の case を足さない（AC-3-6-1
-		// 根拠3・根拠4: 式の種類・呼び出される関数の名前〔len /
-		// unsafe.Sizeof など〕で場合分けすると、数え上げから漏れた式に
-		// 同じ穴を残す）。代わりに e を子ノードまで取りこぼさず再帰する
-		// descendExprStructure へ委ね、子孫に struct / interface / func 型が
+		// *ast.CompositeLit、および将来 go/ast に増える構文）は、種類ごとに
+		// 個別の case を足さない（AC-3-6-1 根拠3・根拠4: 式の種類・呼び出
+		// される関数の名前〔len / unsafe.Sizeof など〕で場合分けすると、
+		// 数え上げから漏れた式に同じ穴を残す）。代わりに e を子ノードまで
+		// 取りこぼさず再帰する descendExprStructure へ委ね、子孫に
+		// struct / interface / func 型・関数リテラル・複合リテラルのキーが
 		// 現れれば上の case が既存の処理（非公開除去・フィールド展開・
-		// メンバー境界の区切り・引数名剥がし）を掛ける（Issue #93
-		// reviewer 往復10 の指摘 C-9-1）。Ident・SelectorExpr のように
-		// 変換対象を持たないノードは、descendExprStructure を通しても中身は
-		// 変わらない（コピーが増えるだけで出力は同じ）。
+		// メンバー境界の区切り・引数名剥がし・本体の畳み込み・キーの弁別）
+		// を掛ける（Issue #93 reviewer 往復10 の指摘 C-9-1）。Ident・
+		// SelectorExpr のように変換対象を持たないノードは、
+		// descendExprStructure を通しても中身は変わらない（コピーが増える
+		// だけで出力は同じ）。
 		//
 		// e（根）は descendExprStructure を直接呼び、recurseExprFields が
 		// 行う「動的型が ast.Expr を実装しているか」の判定は経由させない。
 		// 根 e の動的型（*ast.CallExpr 等）は当然 ast.Expr を実装しており、
-		// この判定を根に掛けると typeExprSignature(fset, e) → default →
+		// この判定を根に掛けると typeExprSignature(fset, ti, e) → default →
 		// 同じ判定 → … と即座に無限再帰する（Issue #93 実装往復12。
 		// recurseExprFields のコメント参照）。
-		nv := descendExprStructure(fset, reflect.ValueOf(e))
+		nv := descendExprStructure(fset, ti, reflect.ValueOf(e))
 		if !nv.IsValid() {
 			return e
 		}
@@ -390,6 +534,12 @@ func typeExprSignature(fset *token.FileSet, e ast.Expr) ast.Expr {
 		return result
 	}
 }
+
+// foldedFuncLitBody は AC-3-6-2 が要求する、関数リテラルの本体を畳んだ
+// 固定綴り。綴りそのものは仕様が固定しない（3-6-2 前文。3-7-1 / 3-9-2 /
+// 3-10-1 の期待値表と同じ扱い）。関数型の綴りと連結したときに関数リテラル
+// であることが読み取れるよう、波括弧を含む形にする。
+const foldedFuncLitBody = "{ ... }"
 
 // exprIfaceType は ast.Expr インターフェースの reflect.Type
 // （recurseExprFields が子の値の**動的型**と突き合わせるための基準。
@@ -451,7 +601,7 @@ var exprIfaceType = reflect.TypeOf((*ast.Expr)(nil)).Elem()
 // ではないため AC-3-11 / AC-3-12・check-domain-deps・ADR 0007 のいずれにも
 // 抵触しない（services/api/go.mod の require は増やしていない。
 // stripPositions のコメントと同じ）。
-func recurseExprFields(fset *token.FileSet, v reflect.Value) reflect.Value {
+func recurseExprFields(fset *token.FileSet, ti typeInfo, v reflect.Value) reflect.Value {
 	if !v.IsValid() {
 		return v
 	}
@@ -465,7 +615,7 @@ func recurseExprFields(fset *token.FileSet, v reflect.Value) reflect.Value {
 		}
 		if v.Type().Implements(exprIfaceType) {
 			if expr, ok := v.Interface().(ast.Expr); ok {
-				newExpr := typeExprSignature(fset, expr)
+				newExpr := typeExprSignature(fset, ti, expr)
 				if newExpr == nil {
 					return reflect.Zero(v.Type())
 				}
@@ -478,7 +628,7 @@ func recurseExprFields(fset *token.FileSet, v reflect.Value) reflect.Value {
 			}
 		}
 	}
-	return descendExprStructure(fset, v)
+	return descendExprStructure(fset, ti, v)
 }
 
 // descendExprStructure は v の構造（ポインタの中身・インターフェースの
@@ -488,7 +638,7 @@ func recurseExprFields(fset *token.FileSet, v reflect.Value) reflect.Value {
 // recurseExprFields が判定を素通りさせた場合（子だが ast.Expr を実装して
 // いない、または代入不可能だった場合）の両方から呼ばれる。v 自身・v から
 // 辿れる既存の AST は一切書き換えない（stripPositions と同じ設計）。
-func descendExprStructure(fset *token.FileSet, v reflect.Value) reflect.Value {
+func descendExprStructure(fset *token.FileSet, ti typeInfo, v reflect.Value) reflect.Value {
 	if !v.IsValid() {
 		return v
 	}
@@ -498,19 +648,19 @@ func descendExprStructure(fset *token.FileSet, v reflect.Value) reflect.Value {
 			return v
 		}
 		nv := reflect.New(v.Type().Elem())
-		nv.Elem().Set(recurseExprFields(fset, v.Elem()))
+		nv.Elem().Set(recurseExprFields(fset, ti, v.Elem()))
 		return nv
 	case reflect.Interface:
 		if v.IsNil() {
 			return v
 		}
 		nv := reflect.New(v.Type()).Elem()
-		nv.Set(recurseExprFields(fset, v.Elem()))
+		nv.Set(recurseExprFields(fset, ti, v.Elem()))
 		return nv
 	case reflect.Struct:
 		nv := reflect.New(v.Type()).Elem()
 		for i := 0; i < v.NumField(); i++ {
-			nv.Field(i).Set(recurseExprFields(fset, v.Field(i)))
+			nv.Field(i).Set(recurseExprFields(fset, ti, v.Field(i)))
 		}
 		return nv
 	case reflect.Slice:
@@ -519,7 +669,7 @@ func descendExprStructure(fset *token.FileSet, v reflect.Value) reflect.Value {
 		}
 		nv := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
 		for i := 0; i < v.Len(); i++ {
-			nv.Index(i).Set(recurseExprFields(fset, v.Index(i)))
+			nv.Index(i).Set(recurseExprFields(fset, ti, v.Index(i)))
 		}
 		return nv
 	default:
@@ -574,7 +724,7 @@ func descendExprStructure(fset *token.FileSet, v reflect.Value) reflect.Value {
 // が各 Field を個別に印字してから "; " で連結する。区切りは行取り
 // （元ソースが1行か複数行か）に依存せず、除去後に残ったメンバーの並びだけで
 // 決まる。
-func filterFieldList(fset *token.FileSet, fl *ast.FieldList) *ast.FieldList {
+func filterFieldList(fset *token.FileSet, ti typeInfo, fl *ast.FieldList) *ast.FieldList {
 	if fl == nil {
 		return nil
 	}
@@ -588,7 +738,7 @@ func filterFieldList(fset *token.FileSet, fl *ast.FieldList) *ast.FieldList {
 				}
 			}
 			nf := *f
-			nf.Type = typeExprSignature(fset, f.Type)
+			nf.Type = typeExprSignature(fset, ti, f.Type)
 			newList = append(newList, &nf)
 			continue
 		}
@@ -606,7 +756,7 @@ func filterFieldList(fset *token.FileSet, fl *ast.FieldList) *ast.FieldList {
 		// 1回だけ呼び、生成したコピーを各 Field で共有する（printer は
 		// 読み取り専用に辿るだけなので、同じ部分木を複数の Field から
 		// 参照しても安全）。
-		typ := typeExprSignature(fset, f.Type)
+		typ := typeExprSignature(fset, ti, f.Type)
 		for _, n := range keep {
 			nf := *f
 			nf.Names = []*ast.Ident{n}
@@ -713,15 +863,15 @@ func receiverBaseName(e ast.Expr) string {
 // （AC-3-6・AC-3-8）。includeTypeParams が真のとき、型パラメータがあれば
 // 先頭に "[T any, U comparable]" の形で付ける（func のみ。method の型
 // パラメータは受信者側にあり funcTypeSignature の対象外）。
-func funcTypeSignature(fset *token.FileSet, ft *ast.FuncType, includeTypeParams bool) string {
+func funcTypeSignature(fset *token.FileSet, ti typeInfo, ft *ast.FuncType, includeTypeParams bool) string {
 	var sb strings.Builder
 	if includeTypeParams && ft.TypeParams != nil && len(ft.TypeParams.List) > 0 {
-		sb.WriteString(typeParamsString(fset, ft.TypeParams))
+		sb.WriteString(typeParamsString(fset, ti, ft.TypeParams))
 		sb.WriteString(" ")
 	}
-	sb.WriteString(fieldListTypesString(fset, ft.Params))
+	sb.WriteString(fieldListTypesString(fset, ti, ft.Params))
 	sb.WriteString(" ")
-	sb.WriteString(fieldListTypesString(fset, ft.Results))
+	sb.WriteString(fieldListTypesString(fset, ti, ft.Results))
 	return sb.String()
 }
 
@@ -730,13 +880,13 @@ func funcTypeSignature(fset *token.FileSet, ft *ast.FuncType, includeTypeParams 
 // 複数名をまとめた宣言（`x, y int`）は名前の数だけ型を繰り返す。
 // 可変長引数はフィールドの型（*ast.Ellipsis）をそのまま印字すると
 // "...T" になる（AC-3-8）。0個は "()"（AC-3-8）。
-func fieldListTypesString(fset *token.FileSet, fl *ast.FieldList) string {
+func fieldListTypesString(fset *token.FileSet, ti typeInfo, fl *ast.FieldList) string {
 	if fl == nil {
 		return "()"
 	}
 	var parts []string
 	for _, field := range fl.List {
-		typeStr := normalizeWhitespace(printNode(fset, typeExprSignature(fset, field.Type)))
+		typeStr := normalizeWhitespace(printNode(fset, typeExprSignature(fset, ti, field.Type)))
 		n := len(field.Names)
 		if n == 0 {
 			n = 1
@@ -775,14 +925,14 @@ func fieldListTypesString(fset *token.FileSet, fl *ast.FieldList) string {
 // filterFieldList と違い、AC-3-8 の "カンマ + 空白1つ" の区切りをそのまま
 // go/printer に出させる（本項の対象外。区切りは 3-8 が既に持つ）ため、
 // FieldList は go/printer にまるごと渡す設計を維持する。
-func stripFieldListNames(fset *token.FileSet, fl *ast.FieldList) *ast.FieldList {
+func stripFieldListNames(fset *token.FileSet, ti typeInfo, fl *ast.FieldList) *ast.FieldList {
 	if fl == nil {
 		return nil
 	}
 	nfl := *fl
 	var newList []*ast.Field
 	for _, f := range fl.List {
-		typ := typeExprSignature(fset, f.Type)
+		typ := typeExprSignature(fset, ti, f.Type)
 		n := len(f.Names)
 		if n == 0 {
 			n = 1
@@ -809,10 +959,10 @@ func stripFieldListNames(fset *token.FileSet, fl *ast.FieldList) *ast.FieldList 
 // filterFieldList / fieldListTypesString / stripFieldListNames が既に
 // 採っている「名前の数だけ Field 相当の要素を作る」ループと同じ形へ揃え、
 // 個数で場合分けしない（Issue #93 reviewer 往復8 で人間が承認した設計）。
-func typeParamsString(fset *token.FileSet, fl *ast.FieldList) string {
+func typeParamsString(fset *token.FileSet, ti typeInfo, fl *ast.FieldList) string {
 	var parts []string
 	for _, field := range fl.List {
-		typeStr := normalizeWhitespace(printNode(fset, typeExprSignature(fset, field.Type)))
+		typeStr := normalizeWhitespace(printNode(fset, typeExprSignature(fset, ti, field.Type)))
 		if len(field.Names) == 0 {
 			parts = append(parts, typeStr)
 			continue
