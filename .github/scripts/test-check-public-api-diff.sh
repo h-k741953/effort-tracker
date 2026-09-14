@@ -134,6 +134,100 @@ assert_file_contains() {
   grep -qF -- "$2" "$1" 2> /dev/null
 }
 
+# --- AC-7-15 / AC-7-16 の観測の足場 ---------------------------------------------
+#
+# どちらも「ベース側ツリーを実際に展開した後」の振る舞いを見る必要があり、
+# SKIP 判定のスタブ（上の STUB_BIN）では git 呼び出しそのものを止めてしまう
+# ため使えない。ここでは git は本物を使い（使い捨ての一時リポジトリを自前で
+# 用意するため、リポジトリ本体の .git/worktrees/ は汚さない）、go だけを
+# 横取りする（AC-1-3 / AC-6-9: 本 fixture は go を要求しない）。
+#
+# go build -o <out> ./cmd/exportlist を横取りし、<out> へ「偽 exportlist」
+# （実際の抽出は一切行わず、引数が絶対パスか相対パスかで固定 TSV を吐くだけ）
+# をコピーする。ステップは旧側を絶対パス（$BASE_DIR/services/api）、
+# 新側を相対パス（"services/api"）で呼ぶため、これで旧側・新側を出し分けられる。
+FAKE_EXPORTLIST_TEMPLATE="$(mktemp -p "$WORK")"
+cat > "$FAKE_EXPORTLIST_TEMPLATE" <<'FAKE_EOF'
+#!/usr/bin/env bash
+# AC-7-15 / AC-7-16 fixture 用の偽 exportlist。実際の抽出は行わない。
+case "$1" in
+  /*) cat "${PAD_FAKE_OLD_TSV:?}" ;;
+  *) cat "${PAD_FAKE_NEW_TSV:?}" ;;
+esac
+FAKE_EOF
+chmod +x "$FAKE_EXPORTLIST_TEMPLATE"
+
+FAKE_GO_STUB_DIR="$WORK/fake-go-stub"
+mkdir -p "$FAKE_GO_STUB_DIR"
+cat > "$FAKE_GO_STUB_DIR/go" <<'FAKE_EOF'
+#!/usr/bin/env bash
+# AC-7-15 / AC-7-16 fixture 用の go スタブ。実際の Go ツールチェインは
+# 一切使わない（AC-1-3 / AC-6-9）。`go build -o <out> ...` だけを横取りし、
+# <out> へテンプレート（偽 exportlist）をコピーする。
+out=""
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+  if [ "${args[$i]}" = "-o" ]; then
+    out="${args[$((i + 1))]}"
+  fi
+done
+if [ -z "$out" ]; then
+  echo "fake go stub: -o が無い引数列: $*" >&2
+  exit 1
+fi
+cp "${PAD_FAKE_EXPORTLIST_TEMPLATE:?}" "$out"
+chmod +x "$out"
+exit 0
+FAKE_EOF
+chmod +x "$FAKE_GO_STUB_DIR/go"
+
+# setup_pad_scratch_repo <path>: go を要求しない使い捨て git リポジトリを
+# path へ組む。services/api（exportlist のビルド先 cwd。中身は偽 go が
+# 見ないので空でよい）と .github/scripts/check-public-api-diff.sh
+# （本物。ステップが相対パスで呼ぶため必要）を置いて1コミットする。
+setup_pad_scratch_repo() {
+  local repo="$1"
+  mkdir -p "$repo/services/api" "$repo/.github/scripts"
+  : > "$repo/services/api/.keep"
+  cp "$TARGET" "$repo/.github/scripts/check-public-api-diff.sh"
+  chmod +x "$repo/.github/scripts/check-public-api-diff.sh"
+  (
+    cd "$repo" \
+      && git init -q \
+      && git add -A \
+      && GIT_AUTHOR_NAME=pad-fixture GIT_AUTHOR_EMAIL=pad-fixture@example.invalid \
+        GIT_COMMITTER_NAME=pad-fixture GIT_COMMITTER_EMAIL=pad-fixture@example.invalid \
+        git commit -q -m base
+  )
+}
+
+# run_step_fake_extract <repo> <base_sha> <old_tsv> <new_tsv>: 偽 exportlist
+# （go を呼ばない）で警告 step を repo をカレントディレクトリとして実行し、
+# RC/OUT/ERR/SUMMARY_FILE を埋める。git は本物を使う（AC-7-15 の観測に
+# 実物の worktree 登録が要るため）。
+run_step_fake_extract() {
+  local repo="$1" base_sha="$2" old_tsv="$3" new_tsv="$4"
+  local outf errf
+  outf="$(mktemp -p "$WORK")"
+  errf="$(mktemp -p "$WORK")"
+  SUMMARY_FILE="$(mktemp -p "$WORK")"
+  (
+    cd "$repo" \
+      && PATH="$FAKE_GO_STUB_DIR:$PATH" \
+        PAD_FAKE_EXPORTLIST_TEMPLATE="$FAKE_EXPORTLIST_TEMPLATE" \
+        PAD_FAKE_OLD_TSV="$old_tsv" \
+        PAD_FAKE_NEW_TSV="$new_tsv" \
+        PAD_EVENT_NAME="pull_request" \
+        PAD_BASE_SHA="$base_sha" \
+        GITHUB_STEP_SUMMARY="$SUMMARY_FILE" \
+        bash "$STEP_TARGET" > "$outf" 2> "$errf"
+  )
+  RC=$?
+  OUT="$(cat "$outf")"
+  ERR="$(cat "$errf")"
+  rm -f "$outf" "$errf"
+}
+
 # --- 警告 step（AC-7）の SKIP 判定を回すための足回り（AC-9-10） ------------------
 #
 # STUB_BIN は git / go のスタブを置くディレクトリ。PATH の先頭に差し込んで
@@ -595,6 +689,74 @@ assert_file_contains "$SUMMARY_FILE" "ベースラインが無い" || ok=0
 [ ! -e "$STUB_MARKER" ] || ok=0
 [ "$SKIP_REASON_NO_BASE" != "$SKIP_REASON_NO_PR" ] || ok=0
 report "7-7 / 7-2 / 7-4 / 7-8 / 9-10: ベース側 ref を取得できない → SKIP（その1とは別の理由を1行添える）" "$ok" "0"
+
+# --- AC-7-7-1: 2分岐の理由行が「どちらの理由か」を弁別できること ---------------
+# (a) バイト不一致だけでは足りない（一方を無関係な文言へ差し替えても不一致の
+# ままになりうる）。(b) 各分岐の理由行が、その分岐の条件を一意に指す語を含み、
+# (c) 他方の分岐の条件を指す語を含まないことまで見る。
+#
+# 語の綴りそのものは本仕様が固定せず、ここで書き下す（AC-3-6-1 の期待値表
+# (xix) と同型。綴りを変えるときはテストと実装を同時に直す）。
+#   分岐1（PR 文脈での実行ではないこと）を一意に指す語:      "PR"
+#   分岐2（ベース側の ref を取得できないこと）を一意に指す語: "ref"
+# 7-8 が要求する共通文言「ベースラインが無い」は両分岐に共通のため、
+# ここでの弁別には使わない（使うと (b) の代替になってしまう）。
+ok=1
+grep -qF "PR" <<< "$SKIP_REASON_NO_PR" || ok=0
+! grep -qF "ref" <<< "$SKIP_REASON_NO_PR" || ok=0
+report "7-7-1 (b)/(c) 分岐1: 理由行が『PR 文脈での実行ではないこと』を指す語を含み、分岐2の語を含まない" "$ok" "0"
+
+ok=1
+grep -qF "ref" <<< "$SKIP_REASON_NO_BASE" || ok=0
+! grep -qF "PR" <<< "$SKIP_REASON_NO_BASE" || ok=0
+report "7-7-1 (b)/(c) 分岐2: 理由行が『ベース側の ref を取得できないこと』を指す語を含み、分岐1の語を含まない" "$ok" "0"
+
+# ==============================================================================
+# AC-7-15 / AC-7-16: ベース側ツリーを実際に展開したうえでの警告 step の振る舞い。
+# 偽 exportlist（go を呼ばない。上の run_step_fake_extract 参照）を使い、
+# 本物の check-public-api-diff.sh・本物の git worktree に対して観測する。
+# ==============================================================================
+
+PAD_REPO="$WORK/pad-scratch-repo"
+mkdir -p "$PAD_REPO"
+setup_pad_scratch_repo "$PAD_REPO"
+PAD_BASE_SHA="$(cd "$PAD_REPO" && git rev-parse HEAD)"
+
+PAD_OLD_TSV="$(mktemp -p "$WORK")"
+PAD_NEW_TSV_SAME="$(mktemp -p "$WORK")"
+PAD_NEW_TSV_WARN="$(mktemp -p "$WORK")"
+printf 'fixturepkg\tfunc\tSame\tfunc() int\n' > "$PAD_OLD_TSV"
+printf 'fixturepkg\tfunc\tSame\tfunc() int\n' > "$PAD_NEW_TSV_SAME"
+printf 'fixturepkg\tfunc\tSame\tfunc() int\n' > "$PAD_NEW_TSV_WARN"
+printf 'fixturepkg\tfunc\tNewThing\tfunc() int\n' >> "$PAD_NEW_TSV_WARN"
+
+# --- AC-7-15: 差分なし（OK）で終わっても、ベース側ツリー展開の登録を
+#     step 終了後にリポジトリへ残さない -----------------------------------------
+PAD_WORKTREES_BEFORE="$(cd "$PAD_REPO" && git worktree list --porcelain)"
+run_step_fake_extract "$PAD_REPO" "$PAD_BASE_SHA" "$PAD_OLD_TSV" "$PAD_NEW_TSV_SAME"
+PAD_WORKTREES_AFTER="$(cd "$PAD_REPO" && git worktree list --porcelain)"
+ok=1
+[ "$RC" = "0" ] || ok=0
+assert_verdict "OK" || ok=0
+[ "$PAD_WORKTREES_BEFORE" = "$PAD_WORKTREES_AFTER" ] || ok=0
+report "7-15: ベース側ツリー展開後、git worktree list --porcelain に登録が残らない（OK でも）" "$ok" "0"
+
+# --- AC-7-16: 比較器が非ゼロ（WARN）で終わったとき、その stderr（比較器
+#     自身の人間向け説明）がジョブログと $GITHUB_STEP_SUMMARY の双方に残る。
+#     stdout 側の詳細行（ADDED）も同時に失わないことも見る。 --------------------
+run_step_fake_extract "$PAD_REPO" "$PAD_BASE_SHA" "$PAD_OLD_TSV" "$PAD_NEW_TSV_WARN"
+ok=1
+[ "$RC" = "0" ] || ok=0
+assert_verdict "WARN" || ok=0
+assert_detail_key "ADDED: fixturepkg" || ok=0
+assert_file_contains "$SUMMARY_FILE" "ADDED: fixturepkg" || ok=0
+# check-public-api-diff.sh が WARN 時に stderr へ出す固定文言
+# （docs/specs/public-api-diff-check.md AC-9-1 を引用する）が、ジョブログにも
+# summary にも現れること。比較器の stdout（COMPARE_OUT）で上書きされて
+# 消えていないかを見る。
+grep -qF "AC-9-1" <<< "$OUT" || ok=0
+assert_file_contains "$SUMMARY_FILE" "AC-9-1" || ok=0
+report "7-16: 比較器が非ゼロで終わったとき、その stderr がジョブログと summary の双方に残る（stdout も残る）" "$ok" "0"
 
 echo ""
 if [ "$fail" -ne 0 ]; then
