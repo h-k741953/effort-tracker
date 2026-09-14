@@ -2680,3 +2680,187 @@ func TestExtractRecords_AC3_6_1_FalseGreenCenterInsideArrayLen(t *testing.T) {
 		)
 	}
 }
+
+// TestExtractRecords_AC3_9_3_CompositeLiteralKeyDisambiguation は
+// AC-3-9-3（複合リテラルのキーの弁別）を、3-6-1 の期待値表 (x)〜(xii) が
+// 固定する「2つの宣言どうしの <signature> のバイト一致／不一致」の形で
+// 固定する。
+//
+// 部分文字列の判定では検出できない（3-6-1 の期待値表の前書き）:
+// 複合リテラルのキーに残った非公開フィールド名・配列インデックスは、
+// 対照の綴りの外側に現れるため、部分文字列の関係を崩さずに残ってしまう。
+// そのため本テストは相対比較（strings.Contains）ではなく、バイト単位の
+// 一致／不一致を直接主張する。
+//
+// (x)/(xi) は、対象と対照が同じ型 t を同じ綴りで参照する必要があるため
+// （t を改名すると <signature> の綴り自体が変わり検査にならない —— 期待値表
+// 直後の「対照の置き方について」）、別パッケージへ分けて2回抽出する。
+// (x) の対象は ac393_x_target（t.hidden / t.Pub）であり、(xi) もこれを
+// 対象として共有する（期待値表 (xi) が「同上の t ＋ D」と定めるとおり）。
+// (xii) は定数名が対象・対照で異なるため、同一パッケージ
+// （ac393_xii）へ両方を置く。
+//
+// 【依存】標準 testing + google/go-cmp のみ（ADR 0007）。本テストは
+// go-cmp を使わず文字列の一致判定のみで足りるため import しない。
+func TestExtractRecords_AC3_9_3_CompositeLiteralKeyDisambiguation(t *testing.T) {
+	files := map[string]string{
+		// (x)/(xi) 共通の対象: 非公開フィールド hidden と公開フィールド Pub
+		// を持つ t、および t{...} を配列長に埋め込んだ D。
+		"ac393_x_target/a.go": "package ac393_x_target\n\nimport \"unsafe\"\n\n" +
+			"type t struct {\n\thidden int\n\tPub    int\n}\n\n" +
+			"type D [unsafe.Sizeof(t{hidden: 1, Pub: 2})]int\n",
+
+		// (x) の対照: 非公開フィールドだけを改名したもの（hidden → secret）。
+		"ac393_x_counter/a.go": "package ac393_x_counter\n\nimport \"unsafe\"\n\n" +
+			"type t struct {\n\tsecret int\n\tPub    int\n}\n\n" +
+			"type D [unsafe.Sizeof(t{secret: 1, Pub: 2})]int\n",
+
+		// (xi) の対照: 公開フィールドだけを改名したもの（Pub → Exported）。
+		"ac393_xi_counter/a.go": "package ac393_xi_counter\n\nimport \"unsafe\"\n\n" +
+			"type t struct {\n\thidden   int\n\tExported int\n}\n\n" +
+			"type D [unsafe.Sizeof(t{hidden: 1, Exported: 2})]int\n",
+
+		// (xii): 配列インデックスのキー。定数名の綴りが違う
+		// （hidden / wide）別の定数を使い、キーを落とす実装だと両者が
+		// 同じ綴りへ潰れることを検出する。値だけを変えた対照では
+		// <signature> の綴りが変わらないため検査にならない（期待値表
+		// (xii) の注記）。
+		"ac393_xii/a.go": "package ac393_xii\n\nimport \"unsafe\"\n\n" +
+			"const hidden = 2\nconst wide = 5\n\n" +
+			"type C [unsafe.Sizeof([...]int{hidden: 1})]int\n" +
+			"type C2 [unsafe.Sizeof([...]int{wide: 1})]int\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+	}
+
+	sig := func(t *testing.T, pkg, name string) string {
+		t.Helper()
+		for _, r := range got {
+			if r.Pkg == pkg && r.Kind == "type" && r.Name == name {
+				return r.Signature
+			}
+		}
+		t.Fatalf("record not found for pkg %q name %q in %+v", pkg, name, got)
+		return ""
+	}
+
+	byteEqualityCases := []struct {
+		label                   string
+		targetPkg, targetName   string
+		counterPkg, counterName string
+		wantEqual               bool
+	}{
+		{
+			label:       "(x) 非公開フィールドのキーが除去される",
+			targetPkg:   "ac393_x_target",
+			targetName:  "D",
+			counterPkg:  "ac393_x_counter",
+			counterName: "D",
+			wantEqual:   true,
+		},
+		{
+			label:       "(xi) 公開フィールドのキーが保たれる",
+			targetPkg:   "ac393_x_target",
+			targetName:  "D",
+			counterPkg:  "ac393_xi_counter",
+			counterName: "D",
+			wantEqual:   false,
+		},
+		{
+			label:       "(xii) 配列インデックスのキーが保たれる",
+			targetPkg:   "ac393_xii",
+			targetName:  "C",
+			counterPkg:  "ac393_xii",
+			counterName: "C2",
+			wantEqual:   false,
+		},
+	}
+	for _, c := range byteEqualityCases {
+		target := sig(t, c.targetPkg, c.targetName)
+		counter := sig(t, c.counterPkg, c.counterName)
+		gotEqual := target == counter
+		if gotEqual != c.wantEqual {
+			t.Errorf(
+				"%s: target %s.%s signature=%q, counter %s.%s signature=%q: "+
+					"byte-equal=%v, want byte-equal=%v（AC-3-9-3）",
+				c.label,
+				c.targetPkg, c.targetName, target,
+				c.counterPkg, c.counterName, counter,
+				gotEqual, c.wantEqual,
+			)
+		}
+	}
+}
+
+// TestExtractRecords_AC3_6_2_FuncLitBodyFolded は AC-3-6-2（関数リテラルの
+// 本体を固定綴りへ畳む）を、3-6-1 の期待値表 (xiii)〜(xv) が固定する
+// バイト一致で固定する。
+//
+// (xiii) は本体の内容そのものを変えても <signature> が変わらないこと、
+// (xiv)/(xv) は本体の参照位置に残る引数名・結果名の改名が吸収されること
+// を固定する。(viii)/(ix)（TestExtractRecords_AC3_6_1_RulesApplyInsideExpressions）
+// の部分文字列の形では、対照の綴りの外側に残る本体の残骸を検出できない
+// ため、ここでもバイト一致を直接主張する（期待値表 (xiii)〜(xv) 直前の
+// 前書き）。
+//
+// 宣言名は <signature> に現れないため、(xiii)〜(xv) は同一パッケージへ
+// 別名で置く（期待値表直後の「対照の置き方について」）。
+//
+// 【依存】標準 testing + google/go-cmp のみ（ADR 0007）。文字列比較のみで
+// 足りるため go-cmp は import しない。
+func TestExtractRecords_AC3_6_2_FuncLitBodyFolded(t *testing.T) {
+	files := map[string]string{
+		"ac362_funclit/a.go": "package ac362_funclit\n\nimport \"unsafe\"\n\n" +
+			// (xiii) の対象。
+			"type A [unsafe.Sizeof(func(a int) int { return a })]int\n" +
+			// (xiii) の対照: 本体だけを変えたもの。
+			"type A2 [unsafe.Sizeof(func(a int) int { x := a * 99; return x + 1 })]int\n" +
+			// (xiv) の対照: 引数名だけを改名したもの（a → z）。
+			"type A3 [unsafe.Sizeof(func(z int) int { return z })]int\n\n" +
+			// (xv) の対象。
+			"type B [unsafe.Sizeof(func() (res int) { res = 1; return })]int\n" +
+			// (xv) の対照: 結果名だけを改名したもの（res → out）。
+			"type B2 [unsafe.Sizeof(func() (out int) { out = 1; return })]int\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+	}
+
+	sig := func(t *testing.T, name string) string {
+		t.Helper()
+		for _, r := range got {
+			if r.Pkg == "ac362_funclit" && r.Kind == "type" && r.Name == name {
+				return r.Signature
+			}
+		}
+		t.Fatalf("record not found for pkg %q name %q in %+v", "ac362_funclit", name, got)
+		return ""
+	}
+
+	byteEqualCases := []struct {
+		label                   string
+		targetName, counterName string
+	}{
+		{"(xiii) 関数リテラルの本体が畳まれる", "A", "A2"},
+		{"(xiv) 引数名の改名が吸収される", "A", "A3"},
+		{"(xv) 結果名の改名が吸収される", "B", "B2"},
+	}
+	for _, c := range byteEqualCases {
+		target := sig(t, c.targetName)
+		counter := sig(t, c.counterName)
+		if target != counter {
+			t.Errorf(
+				"%s: %s signature=%q, %s signature=%q: byte-equal=false, want byte-equal=true"+
+					"（AC-3-6-2）",
+				c.label, c.targetName, target, c.counterName, counter,
+			)
+		}
+	}
+}
