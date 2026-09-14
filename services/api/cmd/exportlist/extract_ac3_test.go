@@ -2864,3 +2864,217 @@ func TestExtractRecords_AC3_6_2_FuncLitBodyFolded(t *testing.T) {
 		}
 	}
 }
+
+// TestExtractRecords_AC3_9_3_NestedValuePreserved は AC-3-6-1 の期待値表
+// (xvi)/(xvii) を固定する。(xvi)/(xvii) は 3-9-3「除去するのはキーの綴りで
+// あり、要素の値は落とさない」を両側から固定するものであり、(x)〜(xii)
+// （TestExtractRecords_AC3_9_3_CompositeLiteralKeyDisambiguation）は代替しない
+// —— (x)/(xi) の非公開キーの要素の値は型式を含まない定数であり、値を落とし
+// ても双方が同じ綴りへ潰れるだけで一致／不一致の関係が変わらない。値の位置
+// に型式（入れ子の構造体）を置いた (xvi)/(xvii) でしか、この退化は見えない
+// （期待値表 (xvi)/(xvii) 直後の段落）。
+//
+// (xvi) は非公開キー hidden の要素の値（入れ子の構造体）に残る公開フィール
+// ド A の改名が吸収されないこと（値ごと落とせば偽 Green になる）、(xvii) は
+// その値の内部にも 3-9/3-9-3 が一様に掛かり、非公開フィールド inner の改名
+// が吸収されること（9-8 がこの入れ子の位置でも真であること）を持つ。
+//
+// 対象と対照は、型 t とその入れ子の構造体の綴りを対象・対照で同じに保つた
+// め別々のパッケージへ置く（期待値表直後の「対照の置き方について」）。
+//
+// 【依存】標準 testing + google/go-cmp のみ（ADR 0007）。文字列比較のみで
+// 足りるため go-cmp は import しない。
+func TestExtractRecords_AC3_9_3_NestedValuePreserved(t *testing.T) {
+	files := map[string]string{
+		// (xvi)/(xvii) 共通の対象: 非公開フィールド hidden（入れ子の構造体。
+		// 内部に非公開フィールド inner と公開フィールド A を持つ）と公開
+		// フィールド Pub を持つ t、および t{...} を配列長に埋め込んだ D。
+		"ac393_xvi_base/a.go": "package ac393_xvi_base\n\nimport \"unsafe\"\n\n" +
+			"type t struct {\n\thidden struct {\n\t\tinner int\n\t\tA     int\n\t}\n\tPub int\n}\n\n" +
+			"type D [unsafe.Sizeof(t{hidden: struct {\n\t\tinner int\n\t\tA     int\n\t}{inner: 1, A: 2}, Pub: 3})]int\n",
+
+		// (xvi) の対照: 入れ子の構造体の公開フィールドだけを改名したもの
+		// （A → B。型の綴りと複合リテラルのキーの両方）。
+		"ac393_xvi_counter/a.go": "package ac393_xvi_counter\n\nimport \"unsafe\"\n\n" +
+			"type t struct {\n\thidden struct {\n\t\tinner int\n\t\tB     int\n\t}\n\tPub int\n}\n\n" +
+			"type D [unsafe.Sizeof(t{hidden: struct {\n\t\tinner int\n\t\tB     int\n\t}{inner: 1, B: 2}, Pub: 3})]int\n",
+
+		// (xvii) の対照: 入れ子の構造体の非公開フィールドだけを改名したもの
+		// （inner → secret。型の綴りと複合リテラルのキーの両方）。
+		"ac393_xvii_counter/a.go": "package ac393_xvii_counter\n\nimport \"unsafe\"\n\n" +
+			"type t struct {\n\thidden struct {\n\t\tsecret int\n\t\tA     int\n\t}\n\tPub int\n}\n\n" +
+			"type D [unsafe.Sizeof(t{hidden: struct {\n\t\tsecret int\n\t\tA     int\n\t}{secret: 1, A: 2}, Pub: 3})]int\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+	}
+
+	sig := func(t *testing.T, pkg, name string) string {
+		t.Helper()
+		for _, r := range got {
+			if r.Pkg == pkg && r.Kind == "type" && r.Name == name {
+				return r.Signature
+			}
+		}
+		t.Fatalf("record not found for pkg %q name %q in %+v", pkg, name, got)
+		return ""
+	}
+
+	byteEqualityCases := []struct {
+		label      string
+		counterPkg string
+		wantEqual  bool
+	}{
+		{
+			label:      "(xvi) 入れ子の値に残る公開フィールドの改名が吸収されない",
+			counterPkg: "ac393_xvi_counter",
+			wantEqual:  false,
+		},
+		{
+			label:      "(xvii) 入れ子の値に残る非公開フィールドの改名が吸収される",
+			counterPkg: "ac393_xvii_counter",
+			wantEqual:  true,
+		},
+	}
+	base := sig(t, "ac393_xvi_base", "D")
+	for _, c := range byteEqualityCases {
+		counter := sig(t, c.counterPkg, "D")
+		gotEqual := base == counter
+		if gotEqual != c.wantEqual {
+			t.Errorf(
+				"%s: base ac393_xvi_base.D signature=%q, counter %s.D signature=%q: "+
+					"byte-equal=%v, want byte-equal=%v（AC-3-9-3）",
+				c.label, base, c.counterPkg, counter, gotEqual, c.wantEqual,
+			)
+		}
+	}
+}
+
+// TestExtractRecords_AC3_11_AC3_14_1_UnresolvedImportSignatureInvariant は
+// AC-3-6-1 の期待値表 (xviii) を固定する。3-11「抽出結果は import 先の解決
+// の成否によって変わらない」と 3-14-1「型検査のエラーは非ゼロ終了の理由に
+// しない」を、複合リテラルのキー（3-9-3）の既定が観測できる形として固定す
+// る（3-9-3 の既定〔型情報が得られない位置は書かれたまま出力する〕を通して
+// だけ現れる。表の直後の段落）。
+//
+// (x)〜(xii) はこれを代替しない —— それらはすべて型検査が通るパッケージで
+// あり、通らない側の枝を一度も踏まない。
+//
+// 比較するのは D の <signature> だけであり、解決できない import を持つ
+// パッケージは修飾識別子を右辺に持つ型 Uses を余分に持つ（表の要求どおり）。
+//
+// 【依存】標準 testing + google/go-cmp のみ（ADR 0007）。文字列比較のみで
+// 足りるため go-cmp は import しない。
+func TestExtractRecords_AC3_11_AC3_14_1_UnresolvedImportSignatureInvariant(t *testing.T) {
+	files := map[string]string{
+		// 解決できない import を持つ側。
+		"ac3118_with_import/a.go": "package ac3118_with_import\n\n" +
+			"import (\n\t\"unsafe\"\n\n\t\"github.com/does/not/exist/nowhere\"\n)\n\n" +
+			"type t struct {\n\thidden int\n\tPub    int\n}\n\n" +
+			"type D [unsafe.Sizeof(t{hidden: 1, Pub: 2})]int\n\n" +
+			"type Uses nowhere.Thing\n",
+
+		// import を持たない側（他は同一）。
+		"ac3118_without_import/a.go": "package ac3118_without_import\n\nimport \"unsafe\"\n\n" +
+			"type t struct {\n\thidden int\n\tPub    int\n}\n\n" +
+			"type D [unsafe.Sizeof(t{hidden: 1, Pub: 2})]int\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf(
+			"extractRecords(%q) returned unexpected error: %v"+
+				"（AC-3-14-1: 型検査のエラーは非ゼロ終了の理由にしない）",
+			dir, err,
+		)
+	}
+
+	sig := func(t *testing.T, pkg, name string) string {
+		t.Helper()
+		for _, r := range got {
+			if r.Pkg == pkg && r.Kind == "type" && r.Name == name {
+				return r.Signature
+			}
+		}
+		t.Fatalf("record not found for pkg %q name %q in %+v", pkg, name, got)
+		return ""
+	}
+
+	withImport := sig(t, "ac3118_with_import", "D")
+	withoutImport := sig(t, "ac3118_without_import", "D")
+	if withImport != withoutImport {
+		t.Errorf(
+			"(xviii) with-import D signature=%q, without-import D signature=%q: "+
+				"byte-equal=false, want byte-equal=true"+
+				"（AC-3-11/AC-3-14-1: 抽出結果は import 先の解決の成否によって"+
+				"変わらない）",
+			withImport, withoutImport,
+		)
+	}
+}
+
+// TestExtractRecords_AC3_6_2_FuncLitBodySpelling は AC-3-6-1 の期待値表
+// (xix) を固定する。(xix) だけは対象と対照のバイト比較ではなく <signature>
+// の綴りそのものを表明する（対照フィクスチャを書けない理由は表の直後の段落
+// (a)/(b)）。
+//
+// 期待文字列は実装の定数（foldedFuncLitBody = "{ ... }"、extract.go の
+// *ast.FuncLit ケース）から組み立てる。連結は「関数型の綴り + 半角スペース1
+// つ + foldedFuncLitBody」であり、期待値をここで発明しない。
+//
+// 【依存】標準 testing + google/go-cmp のみ（ADR 0007）。文字列比較のみで
+// 足りるため go-cmp は import しない。
+func TestExtractRecords_AC3_6_2_FuncLitBodySpelling(t *testing.T) {
+	files := map[string]string{
+		"ac362_xix/a.go": "package ac362_xix\n\nimport \"unsafe\"\n\n" +
+			"type A [unsafe.Sizeof(func(a int) int { return a })]int\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+	}
+
+	var sig string
+	found := false
+	for _, r := range got {
+		if r.Pkg == "ac362_xix" && r.Kind == "type" && r.Name == "A" {
+			sig = r.Signature
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("record not found for pkg %q name %q in %+v", "ac362_xix", "A", got)
+	}
+
+	// foldedFuncLitBody 自体が空、または空白のみだと、定数を参照するだけの
+	// 突き合わせ（下記の want 比較）は実装側の変化に追随してしまい、
+	// 「本体を畳んだ固定綴り（非空）」という (xix) の要求を検査できない。
+	// 空白だけの綴りも実質的な畳み込み標識を持たないため、非空の表明として
+	// 認めない（strings.TrimSpace で判定する）。
+	if strings.TrimSpace(foldedFuncLitBody) == "" {
+		t.Fatalf(
+			"foldedFuncLitBody=%q: TrimSpace=empty, want=non-empty"+
+				"（AC-3-6-1 期待値表 (xix): 本体を畳んだ固定綴りは非空でなければ"+
+				"ならない。関数リテラルであることと関数型であることの区別が"+
+				"綴りに残らなくなる）",
+			foldedFuncLitBody,
+		)
+	}
+
+	const want = "[unsafe.Sizeof(func(int) int " + foldedFuncLitBody + ")]int"
+	if sig != want {
+		t.Errorf(
+			"(xix) A signature=%q, want=%q"+
+				"（AC-3-6-2: 関数型の綴りに続けて、本体を畳んだ固定綴り "+
+				"foldedFuncLitBody を含むこと）",
+			sig, want,
+		)
+	}
+}
