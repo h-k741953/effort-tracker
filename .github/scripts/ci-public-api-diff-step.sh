@@ -5,13 +5,17 @@
 # から呼ばれる。仕様の単一情報源: docs/specs/public-api-diff-check.md AC-7。
 #
 # 【ローカル再現の範囲 — スクリプト全体が CI 専用なのではない】
-#   このスクリプトのうち `SKIP` 判定の2分岐（AC-7-7）は fixture の対象で
-#   あり、`make test-public-api-diff` がローカルで踏む（AC-9-10）。
-#   $GITHUB_STEP_SUMMARY も fixture が一時ファイルを渡して読む。
-#   ローカル再現の対象外なのは base 側の git ツリーを取得する経路だけで
-#   ある（AC-8-6）。抽出器（services/api/cmd/exportlist）と比較器
-#   （check-public-api-diff.sh）自体は `make test-api` /
-#   `make test-public-api-diff` で完全にローカル再現できる。
+#   このスクリプトのうち `SKIP` 判定の2分岐（AC-7-7）に加え、ベース側
+#   ツリーの展開（AC-7-9 / 7-10）を踏む経路も fixture の対象であり、
+#   `make test-public-api-diff` がローカルで踏む（AC-9-10）。後者は
+#   fixture が使い捨ての git リポジトリを自前で組んで base を用意し、
+#   抽出器は fixture 側で差し替えて観測する。$GITHUB_STEP_SUMMARY も
+#   fixture が一時ファイルを渡して読む。抽出器
+#   （services/api/cmd/exportlist）と比較器（check-public-api-diff.sh）
+#   自体は `make test-api` / `make test-public-api-diff` で完全にローカル
+#   再現できる。ローカル再現の外に残るのは、実リポジトリの PR の base
+#   そのものに依存する部分だけである（AC-8-6 / AC-9-10。「検査不能地帯は
+#   無い」とは読まない）。
 #
 # 【常に exit 0 で終わる（AC-7-2）】
 #   このジョブは ruleset protect-main の必須チェックである（P-2）。
