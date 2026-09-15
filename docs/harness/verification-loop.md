@@ -22,7 +22,7 @@ AIは自分の書いたコードが正しいかを、**自分では判断でき�
 | `make test-hooks` | `.claude/hooks` のチェッカを fixture で検査（`make test` に含む） |
 | `make test-commands` | `.claude/scripts`（スラッシュコマンドの機械判定部）のチェッカを fixture で検査（`make test` に含む） |
 | `make test-go-module-pins` | `.github/scripts/check-go-module-pins.sh`（Dockerfile ⇔ go.mod の pin 整合検査）のロジックを fixture で検査（`make test` に含む） |
-| `make test-public-api-diff` | 公開 API 差分の比較器（`.github/scripts/check-public-api-diff.sh`）のロジックと、警告 step（`.github/scripts/ci-public-api-diff-step.sh`）の `SKIP` 判定を fixture で検査（`make test` に含む） |
+| `make test-public-api-diff` | 公開 API 差分の比較器（`.github/scripts/check-public-api-diff.sh`）のロジックと、警告 step（`.github/scripts/ci-public-api-diff-step.sh`）の振る舞い（`SKIP` 判定と、ベース側ツリー展開を踏む経路）を fixture で検査（`make test` に含む） |
 | `make lint` | 全レイヤーの Lint / 型チェック |
 | `make verify` | `lint` + `test` + `check-domain-deps` + `check-skills` + `check-go-module-pins` + `scan-secrets` |
 | `make check-domain-deps` | ドメイン層の依存検査 |
@@ -319,9 +319,9 @@ gh api repos/h-k741953/effort-tracker/rulesets/19056534 \
 | コード検査 | ソース・設定 | **可能（必須）** | `ci.yml`（`make` 経由） |
 | プロセス検査 | PR 本文・コメント・ラベル | 不可能 | `spec-link.yml` / `review-trail.yml` |
 | チェッカのロジック | fixture（入力を差し替えた検査本体） | **可能（必須）** | `ci.yml`（`scripts` ジョブの `make test-scripts` / `make test-hooks`） |
-| 公開 API 差分の警告（Issue #93） | 比較器のロジックと警告 step の `SKIP` 判定は fixture で**可能（必須）**（`make test-public-api-diff`）。抽出規則は抽出器の Go テストが持ち、こちらも**可能（必須）**（抽出器の単体ロジックは `go test ./cmd/exportlist/...`。`make test-api` が回す。本 fixture へは持ち込まない —— `docs/specs/public-api-diff-check.md` AC-6-9）。ベースライン取得（ベース側 ref の取得と、作業ツリーとは別ディレクトリへの展開）を要する経路だけが base 側の git ツリーを要し**不可能**（CI 専用。同 AC-9-10） | 部分的 | `ci.yml`（`go` ジョブの `make test-public-api-diff` step + `Public API diff (Issue #93)` step） |
+| 公開 API 差分の警告（Issue #93） | 比較器のロジックと警告 step の振る舞いは fixture で**可能（必須）**（`make test-public-api-diff`）—— `SKIP` 判定に加え、**ベース側ツリーの展開を踏む経路も、fixture が自前で組んだ使い捨てリポジトリの base に対して実際に踏む**。抽出規則は抽出器の Go テストが持ち、こちらも**可能（必須）**（抽出器の単体ロジックは `go test ./cmd/exportlist/...`。`make test-api` が回す。本 fixture へは持ち込まない —— `docs/specs/public-api-diff-check.md` AC-6-9）。**実リポジトリの PR の base そのものに依存する部分**（base ref / merge-base が実際に取得できるか、その実 base ツリーへ本物の抽出器を適用した結果）だけが**不可能**（CI 専用。同 AC-9-10） | 部分的 | `ci.yml`（`go` ジョブの `make test-public-api-diff` step + `Public API diff (Issue #93)` step） |
 
-> **`Public API diff (Issue #93)` step は `make` 経由ではなく `.github/scripts/ci-public-api-diff-step.sh` を直接呼ぶ。** この step は PR のベース SHA が指すツリーを `git worktree add` で取得し、抽出器（`services/api/cmd/exportlist`）を base 側・head 側の両方へ実行してから比較器（`check-public-api-diff.sh`）へ渡す。ベース側ツリーの取得はローカルの `make` ターゲットには無い（対応する `make` ターゲットを作ると、比較対象の既定値を持たない比較器の設計〈AC-1-1〉と矛盾する）。**比較器の単体ロジックとこの step の `SKIP` 判定は `make test-public-api-diff` が、抽出器の単体ロジックは `go test ./cmd/exportlist/...`（`make test-api` が回す）が、それぞれ完全にローカル再現する**（`docs/specs/public-api-diff-check.md` AC-6-9 / AC-9-10）。**CI にしか無いのはベースライン取得の1か所だけである。**この step が返す4種の verdict（OK / WARN / SKIP / INDETERMINATE）は**常に exit 0**で終わる（`docs/specs/public-api-diff-check.md` AC-7-2）ため、`go` ジョブ（ruleset `protect-main` の必須チェック）を赤くすることはない。人間が見るべき差分の候補は job log と `$GITHUB_STEP_SUMMARY` の両方へ出す。
+> **`Public API diff (Issue #93)` step は `make` 経由ではなく `.github/scripts/ci-public-api-diff-step.sh` を直接呼ぶ。** この step は PR のベース SHA が指すツリーを `git worktree add` で取得し、抽出器（`services/api/cmd/exportlist`）を base 側・head 側の両方へ実行してから比較器（`check-public-api-diff.sh`）へ渡す。ベース側ツリーの取得はローカルの `make` ターゲットには無い（対応する `make` ターゲットを作ると、比較対象の既定値を持たない比較器の設計〈AC-1-1〉と矛盾する）。**比較器の単体ロジックと、この step の `SKIP` 判定およびベース側ツリー展開を踏む経路は `make test-public-api-diff` が（後者は fixture が自前で組んだ使い捨てリポジトリの base に対して）、抽出器の単体ロジックは `go test ./cmd/exportlist/...`（`make test-api` が回す）が、それぞれローカル再現する**（`docs/specs/public-api-diff-check.md` AC-6-9 / AC-9-10）。**CI にしか無いのは実リポジトリの PR の base そのもの（その取得可否と、それに対する本物の抽出器の実行）である。そこにはチェッカのバグが残りうる**（同 AC-9-10。上の「チェッカのバグだけが検査不能地帯に残る」）。この step が返す4種の verdict（OK / WARN / SKIP / INDETERMINATE）は**常に exit 0**で終わる（`docs/specs/public-api-diff-check.md` AC-7-2）ため、`go` ジョブ（ruleset `protect-main` の必須チェック）を赤くすることはない。人間が見るべき差分の候補は job log と `$GITHUB_STEP_SUMMARY` の両方へ出す。
 
 ## ハーネスの限界
 

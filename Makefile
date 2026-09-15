@@ -383,11 +383,14 @@ test-go-module-pins: ## check-go-module-pins.sh のロジックを fixture で�
 # AC-4）。比較器自身は go を呼ばない純粋なフィルタである（AC-1-3）。
 #
 # test-public-api-diff の fixture は、比較器に加えて警告 step
-# （.github/scripts/ci-public-api-diff-step.sh）の SKIP 判定も対象とする
-# （AC-9-10）。SKIP 判定は git もネットワークも $GITHUB_STEP_SUMMARY も
-# 要さずローカルで再現できるため、go を要さない（AC-1-3）という本ターゲットの
-# 前提を崩さない。抽出規則（AC-3）の検査は本 fixture へ持ち込まず、抽出器の
-# Go テストが持つ（AC-6-9。make test-api が回す）。
+# （.github/scripts/ci-public-api-diff-step.sh）も対象とする（AC-9-10）。
+# SKIP 判定（AC-7-7 / 7-8）だけでなく、ベース側ツリーの展開（AC-7-9 / 7-10）を
+# 踏む経路も、fixture が使い捨ての git リポジトリを自前で組んで観測する。
+# 抽出器は fixture 側で差し替えるため go は呼ばれず、go を要さない（AC-1-3）
+# という本ターゲットの前提を崩さない。抽出規則（AC-3）の検査は本 fixture へ
+# 持ち込まず、抽出器の Go テストが持つ（AC-6-9。make test-api が回す）。
+# ローカル再現の外に残るのは実リポジトリの PR の base そのものに依存する
+# 部分だけである（AC-9-10。「検査不能地帯は無い」とは読まない）。
 #
 # test-scripts へ合流させないのは、対象種別が違うため（AC-8-2）。
 # test-scripts が対象とするのは CI から呼ばれる *プロセス検査のチェッカ*
@@ -408,7 +411,7 @@ test-go-module-pins: ## check-go-module-pins.sh のロジックを fixture で�
 # =============================================================================
 
 .PHONY: test-public-api-diff
-test-public-api-diff: ## 公開 API 差分の比較器と警告 step の SKIP 判定を fixture で検査
+test-public-api-diff: ## 公開 API 差分の比較器と警告 step（SKIP 判定・ベース側展開経路）を fixture で検査
 	@echo "==> test-public-api-diff"
 	@bash .github/scripts/test-check-public-api-diff.sh
 
