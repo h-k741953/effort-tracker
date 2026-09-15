@@ -3078,3 +3078,112 @@ func TestExtractRecords_AC3_6_2_FuncLitBodySpelling(t *testing.T) {
 		)
 	}
 }
+
+// TestExtractRecords_AC3_9_4_StructTagSpelling は AC-3-6-1 の期待値表
+// (xx)〜(xxii)〜(xxiii) を固定する。(xx)〜(xxiii) は 3-9-4（構造体フィールド
+// のタグ）を固定するものであり、(xx) が「タグが書かれたまま出力されること」
+// （落としすぎていないこと）、(xxi) が「3-9 の非公開除去がタグごと掛かる
+// こと」（残骸が無いこと）、(xxii) が「式の内部でも同じに掛かること」
+// （3-6-1 の一様性）、(xxiii) が「3-9-1 の展開と両立すること」を持つ
+// （期待値表 (xx)〜(xxiii) 直後の解説段落）。
+//
+// 本表の前書きのとおり、バイト一致を要求する行とバイト不一致を要求する行の
+// どちらか片方だけを持たない —— (xx)/(xxii) だけなら「タグをフィールドとは
+// 別に集めて常に並べる」実装が通り（非公開フィールドのタグが残る＝偽陽性。
+// 3-9/9-8 に反する）、(xxi)/(xxiii) だけなら「タグを常に落とす」実装が通る
+// （外部表現の変更がバイト一致に吸収される＝偽 Green）。
+//
+// (xxii) は 3-6-1 の一様性が 3-9-4 にも掛かることを固定する。(xx) はこれを
+// 代替しない —— 型式の直下でだけタグを残し、式の内部では落とす実装は (xx)
+// を通る（構文位置で場合分けしない —— 根拠3・根拠4）。
+//
+// 宣言名は <signature> に現れないため、(xx)〜(xxiii) は (xiii)〜(xv) と同じ
+// く同一パッケージへ別名で置く（期待値表直後の「対照の置き方について」）。
+// (xx)/(xxi)/(xxiii) は unsafe を要さない（型式の直下の構造体宣言だけで
+// 足りる）。式の内部を扱う (xxii) のみ unsafe.Sizeof を使う
+// （「コンパイル可能性について」）。
+//
+// 【依存】標準 testing + google/go-cmp のみ（ADR 0007）。文字列比較のみで
+// 足りるため go-cmp は import しない。
+func TestExtractRecords_AC3_9_4_StructTagSpelling(t *testing.T) {
+	files := map[string]string{
+		"ac394_tag/a.go": "package ac394_tag\n\nimport \"unsafe\"\n\n" +
+			// (xx) の対象。
+			"type T20A struct {\n\tA int `json:\"a\"`\n}\n\n" +
+			// (xx) の対照: タグだけを変えたもの。
+			"type T20B struct {\n\tA int `json:\"b\"`\n}\n\n" +
+			// (xxi) の対象: 非公開フィールドがタグ付きで残る場合。
+			"type T21A struct {\n\thidden int `json:\"h\"`\n\tPub    int\n}\n\n" +
+			// (xxi) の対照: 非公開フィールドを持たない同型。
+			"type T21B struct {\n\tPub int\n}\n\n" +
+			// (xxii) の対象: 式の内部（unsafe.Sizeof の内部）の構造体タグ。
+			"type D22A [unsafe.Sizeof(struct {\n\tPub int `json:\"a\"`\n}{})]int\n\n" +
+			// (xxii) の対照: 式の内部のタグだけを変えたもの。
+			"type D22B [unsafe.Sizeof(struct {\n\tPub int `json:\"b\"`\n}{})]int\n\n" +
+			// (xxiii) の対象: まとめ宣言にタグを付けた形。
+			"type T23A struct {\n\tA, B int `json:\"x\"`\n}\n\n" +
+			// (xxiii) の対照: 名前ごとに分けて同じタグを付けた形。
+			"type T23B struct {\n\tA int `json:\"x\"`\n\tB int `json:\"x\"`\n}\n",
+	}
+
+	dir := writeFixture(t, files)
+	got, err := extractRecords(dir)
+	if err != nil {
+		t.Fatalf("extractRecords(%q) returned unexpected error: %v", dir, err)
+	}
+
+	sig := func(t *testing.T, name string) string {
+		t.Helper()
+		for _, r := range got {
+			if r.Pkg == "ac394_tag" && r.Kind == "type" && r.Name == name {
+				return r.Signature
+			}
+		}
+		t.Fatalf("record not found for pkg %q name %q in %+v", "ac394_tag", name, got)
+		return ""
+	}
+
+	byteEqualityCases := []struct {
+		label                   string
+		targetName, counterName string
+		wantEqual               bool
+	}{
+		{
+			label:       "(xx) タグだけの変更がバイト一致に吸収されない",
+			targetName:  "T20A",
+			counterName: "T20B",
+			wantEqual:   false,
+		},
+		{
+			label:       "(xxi) 非公開フィールドはタグごと除去される",
+			targetName:  "T21A",
+			counterName: "T21B",
+			wantEqual:   true,
+		},
+		{
+			label:       "(xxii) 式の内部のタグの変更もバイト一致に吸収されない",
+			targetName:  "D22A",
+			counterName: "D22B",
+			wantEqual:   false,
+		},
+		{
+			label:       "(xxiii) 展開後の各フィールドへタグが同じに付く",
+			targetName:  "T23A",
+			counterName: "T23B",
+			wantEqual:   true,
+		},
+	}
+	for _, c := range byteEqualityCases {
+		target := sig(t, c.targetName)
+		counter := sig(t, c.counterName)
+		gotEqual := target == counter
+		if gotEqual != c.wantEqual {
+			t.Errorf(
+				"%s: %s signature=%q, %s signature=%q: "+
+					"byte-equal=%v, want byte-equal=%v（AC-3-9-4）",
+				c.label, c.targetName, target, c.counterName, counter,
+				gotEqual, c.wantEqual,
+			)
+		}
+	}
+}
