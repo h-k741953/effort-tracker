@@ -3080,7 +3080,7 @@ func TestExtractRecords_AC3_6_2_FuncLitBodySpelling(t *testing.T) {
 }
 
 // TestExtractRecords_AC3_9_4_StructTagSpelling は AC-3-6-1 の期待値表
-// (xx)〜(xxii)〜(xxiii) を固定する。(xx)〜(xxiii) は 3-9-4（構造体フィールド
+// (xx)〜(xxiii) を固定する。(xx)〜(xxiii) は 3-9-4（構造体フィールド
 // のタグ）を固定するものであり、(xx) が「タグが書かれたまま出力されること」
 // （落としすぎていないこと）、(xxi) が「3-9 の非公開除去がタグごと掛かる
 // こと」（残骸が無いこと）、(xxii) が「式の内部でも同じに掛かること」
