@@ -30,14 +30,19 @@
 #   本 fixture は go を一切呼ばない。AC-3（抽出規則）・AC-3-15 / 3-16（自己言及）
 #   の検査は services/api/cmd/exportlist の Go テストが持つ。
 #
-# 【警告 step の SKIP 判定も本 fixture が持つ（AC-9-10）】
+# 【警告 step の振る舞いも本 fixture が持つ（AC-9-10）】
 #   AC-9-10 のとおり、警告 step（ci-public-api-diff-step.sh）のうち
-#   **SKIP 判定だけ**は git もネットワークも $GITHUB_STEP_SUMMARY も要さず
-#   ローカルで再現できるため、本 fixture の対象とする。検査不能地帯として
-#   残るのはベースライン取得（AC-7-9 / 7-10）を要する経路だけである。
-#   SKIP の2分岐（PR 文脈でない実行／ベース側の ref が取れない）は
-#   ファイル末尾のケースが固定する。**go も git も呼ばないこと自体を
-#   スタブで固定する**ため、AC-1-3 の必須要件も AC-6-9 の禁止も崩さない。
+#   本 fixture が対象とするのは次の2つである。
+#   (1) SKIP の2分岐（PR 文脈でない実行／ベース側の ref が取れない）。
+#       git もネットワークも $GITHUB_STEP_SUMMARY も要さないため、
+#       **go も git も呼ばないこと自体をスタブで固定する**。
+#   (2) ベース側ツリーの展開（AC-7-9 / 7-10）を踏む経路。使い捨ての git
+#       リポジトリをここで組んで base を用意し、本物の git で展開したうえで
+#       verdict の写像・後片付け（AC-7-15）・出力の保全（AC-7-16）まで通す。
+#       抽出器は偽物に差し替えるため go は呼ばない。
+#   いずれも go を呼ばないため、AC-1-3 の必須要件も AC-6-9 の禁止も崩さない。
+#   ローカル再現の外に残るのは、実リポジトリの PR の base そのものに依存する
+#   部分だけである（AC-9-10。「検査不能地帯は無い」とは読まない）。
 #
 # 【終了コードは 0/1/3 のみ（AC-5 前文）】
 #   `2` は UserPromptSubmit hook のブロックに予約されているため、このテストで
@@ -46,7 +51,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="${SCRIPT_DIR}/check-public-api-diff.sh"
-# 警告 step 本体（AC-7）。SKIP 判定だけを本 fixture が検査する（AC-9-10）。
+# 警告 step 本体（AC-7）。SKIP 判定に加え、ベース側ツリー展開を踏む経路も
+# 本 fixture が検査する（AC-9-10）。
 STEP_TARGET="${SCRIPT_DIR}/ci-public-api-diff-step.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
