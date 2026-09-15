@@ -3080,7 +3080,7 @@ func TestExtractRecords_AC3_6_2_FuncLitBodySpelling(t *testing.T) {
 }
 
 // TestExtractRecords_AC3_9_4_StructTagSpelling は AC-3-6-1 の期待値表
-// (xx)〜(xxiii) を固定する。(xx)〜(xxiii) は 3-9-4（構造体フィールド
+// (xx)〜(xxiv) を固定する。(xx)〜(xxiii) は 3-9-4（構造体フィールド
 // のタグ）を固定するものであり、(xx) が「タグが書かれたまま出力されること」
 // （落としすぎていないこと）、(xxi) が「3-9 の非公開除去がタグごと掛かる
 // こと」（残骸が無いこと）、(xxii) が「式の内部でも同じに掛かること」
@@ -3097,11 +3097,23 @@ func TestExtractRecords_AC3_6_2_FuncLitBodySpelling(t *testing.T) {
 // 代替しない —— 型式の直下でだけタグを残し、式の内部では落とす実装は (xx)
 // を通る（構文位置で場合分けしない —— 根拠3・根拠4）。
 //
-// 宣言名は <signature> に現れないため、(xx)〜(xxiii) は (xiii)〜(xv) と同じ
+// (xxiv) は (xx)〜(xxiii) と意味づけが違う —— 3-9-4 の要求を固定するもの
+// ではなく、9-18 の限界（タグ内部の空白・改行の違いは 3-7 の畳み込みに
+// 吸収されて <signature> のバイト一致に出ない一方、reflect.StructTag の
+// 解釈では外部表現が変わりうること）を観測する行である（期待値表 (xxiv)・
+// 直後の注記）。バイト一致を要求する点は他の行と同じだが、固定するのは
+// 「残骸が無いこと」ではなく「9-18の限界がそのとおり成立していること」
+// である。本行を「タグ内部の書き方の違いは無害」と読まない ―― 無害で
+// ないことは 9-18 が述べる。
+//
+// 宣言名は <signature> に現れないため、(xx)〜(xxiv) は (xiii)〜(xv) と同じ
 // く同一パッケージへ別名で置く（期待値表直後の「対照の置き方について」）。
-// (xx)/(xxi)/(xxiii) は unsafe を要さない（型式の直下の構造体宣言だけで
-// 足りる）。式の内部を扱う (xxii) のみ unsafe.Sizeof を使う
-// （「コンパイル可能性について」）。
+// (xx)/(xxi)/(xxiii)/(xxiv) は unsafe を要さない（型式の直下の構造体宣言
+// だけで足りる）。式の内部を扱う (xxii) のみ unsafe.Sizeof を使う
+// （「コンパイル可能性について」）。(xxiv) のタグが改行を含んでも Go と
+// しては正しい ―― raw string リテラルは改行を含んでよく、タグの中身の
+// 構文を Go のコンパイラは検査しない（検査しないことが 9-18 の限界の
+// 出所そのものである。「コンパイル可能性について」）。
 //
 // 【依存】標準 testing + google/go-cmp のみ（ADR 0007）。文字列比較のみで
 // 足りるため go-cmp は import しない。
@@ -3123,7 +3135,14 @@ func TestExtractRecords_AC3_9_4_StructTagSpelling(t *testing.T) {
 			// (xxiii) の対象: まとめ宣言にタグを付けた形。
 			"type T23A struct {\n\tA, B int `json:\"x\"`\n}\n\n" +
 			// (xxiii) の対照: 名前ごとに分けて同じタグを付けた形。
-			"type T23B struct {\n\tA int `json:\"x\"`\n\tB int `json:\"x\"`\n}\n",
+			"type T23B struct {\n\tA int `json:\"x\"`\n\tB int `json:\"x\"`\n}\n\n" +
+			// (xxiv) の対象: タグに2キー（json, xml）を書き、区切りを
+			// 改行1つにしたもの（raw string リテラルは改行を含んでよい）。
+			// これは 9-18 の限界の対象側 —— reflect.StructTag の解釈では
+			// 改行区切りの後続キー（xml）は Lookup できず外部表現が違う。
+			"type T24A struct {\n\tX int `json:\"a\"\nxml:\"b\"`\n}\n\n" +
+			// (xxiv) の対照: 同じ2キーを空白1つで区切ったもの。
+			"type T24B struct {\n\tX int `json:\"a\" xml:\"b\"`\n}\n",
 	}
 
 	dir := writeFixture(t, files)
@@ -3170,6 +3189,16 @@ func TestExtractRecords_AC3_9_4_StructTagSpelling(t *testing.T) {
 			label:       "(xxiii) 展開後の各フィールドへタグが同じに付く",
 			targetName:  "T23A",
 			counterName: "T23B",
+			wantEqual:   true,
+		},
+		{
+			// (xxiv) は 3-9-4 の要求（残骸が無いこと・落としすぎていない
+			// こと）を固定するものではなく、9-18 の限界（タグ内部の空白・
+			// 改行の違いは 3-7 の畳み込みに吸収され、外部表現が変わって
+			// いても <signature> のバイト一致に出ないこと）を観測する。
+			label:       "(xxiv) タグ内部の改行と空白の違いは畳み込みでバイト一致する（9-18 の限界）",
+			targetName:  "T24A",
+			counterName: "T24B",
 			wantEqual:   true,
 		},
 	}
