@@ -29,7 +29,15 @@ set -uo pipefail
 
 DETAIL_FILE="$(mktemp)"
 CLEANUP_DIRS=()
+# CLEANUP_WORKTREES: `git worktree add` で登録したディレクトリ。ただの
+# rm -rf では .git/worktrees/ 側の登録が残る（AC-7-15）ため、
+# `git worktree remove` で登録の解除ごと消す。
+CLEANUP_WORKTREES=()
 cleanup() {
+  local d
+  for d in "${CLEANUP_WORKTREES[@]:-}"; do
+    [ -n "$d" ] && git worktree remove --force "$d" > /dev/null 2>&1
+  done
   for d in "${CLEANUP_DIRS[@]:-}"; do
     [ -n "$d" ] && rm -rf "$d"
   done
@@ -89,6 +97,7 @@ CLEANUP_DIRS+=("$BASE_DIR")
 if ! git worktree add --detach "$BASE_DIR" "$PAD_BASE_SHA" > "$DETAIL_FILE" 2>&1; then
   finish "SKIP" "ベース側 ref（${PAD_BASE_SHA}）を取得できない（ベースラインが無い）。"
 fi
+CLEANUP_WORKTREES+=("$BASE_DIR")
 : > "$DETAIL_FILE"
 
 # --- AC-7-11: head 側の抽出器を1つビルドし、両側の抽出に使う -------------------
@@ -126,9 +135,16 @@ if [ "$OLD_RC" -ne 0 ] || [ "$NEW_RC" -ne 0 ] || [ "$OLD_LINES" -eq 0 ] || [ "$N
 fi
 
 # --- 比較（AC-4 / AC-5）。旧側=ベース、新側=head。 -----------------------------
+# 比較器の出力は stdout（VERDICT と詳細行 — AC-7-13）と stderr（人間・AI
+# 向けの説明 — AC-9-1 等）の2系統。DETAIL_FILE は片方で上書きせず、両方を
+# 保持する（AC-7-16）。
+COMPARE_ERR_FILE="$(mktemp)"
 COMPARE_RC=0
-COMPARE_OUT="$(.github/scripts/check-public-api-diff.sh "$OLD_TSV" "$NEW_TSV" 2>"$DETAIL_FILE")" || COMPARE_RC=$?
-printf '%s\n' "$COMPARE_OUT" > "$DETAIL_FILE"
+COMPARE_OUT="$(.github/scripts/check-public-api-diff.sh "$OLD_TSV" "$NEW_TSV" 2>"$COMPARE_ERR_FILE")" || COMPARE_RC=$?
+{
+  printf '%s\n' "$COMPARE_OUT"
+  cat "$COMPARE_ERR_FILE"
+} > "$DETAIL_FILE"
 
 # --- AC-7-12 / AC-7-13: 比較器の verdict を step の verdict へ写像する ---------
 case "$COMPARE_RC" in
