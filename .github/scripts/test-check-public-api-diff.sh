@@ -150,8 +150,18 @@ FAKE_EXPORTLIST_TEMPLATE="$(mktemp -p "$WORK")"
 cat > "$FAKE_EXPORTLIST_TEMPLATE" <<'FAKE_EOF'
 #!/usr/bin/env bash
 # AC-7-15 / AC-7-16 fixture 用の偽 exportlist。実際の抽出は行わない。
+# 旧側（絶対パス）だけ、PAD_FAKE_OLD_RC が空でも 0 でもなければ
+# 「抽出器が非ゼロで終わった」経路（AC-7-12 前半）を模して stderr を書いて
+# 終了する。既存呼び出しは PAD_FAKE_OLD_RC を渡さないため、この分岐には
+# 入らず従来どおり cat するだけになる（後方互換）。
 case "$1" in
-  /*) cat "${PAD_FAKE_OLD_TSV:?}" ;;
+  /*)
+    if [ -n "${PAD_FAKE_OLD_RC:-}" ] && [ "${PAD_FAKE_OLD_RC}" != "0" ]; then
+      printf '%s\n' "${PAD_FAKE_OLD_STDERR:-}" >&2
+      exit "${PAD_FAKE_OLD_RC}"
+    fi
+    cat "${PAD_FAKE_OLD_TSV:?}"
+    ;;
   *) cat "${PAD_FAKE_NEW_TSV:?}" ;;
 esac
 FAKE_EOF
@@ -201,12 +211,15 @@ setup_pad_scratch_repo() {
   )
 }
 
-# run_step_fake_extract <repo> <base_sha> <old_tsv> <new_tsv>: 偽 exportlist
-# （go を呼ばない）で警告 step を repo をカレントディレクトリとして実行し、
-# RC/OUT/ERR/SUMMARY_FILE を埋める。git は本物を使う（AC-7-15 の観測に
-# 実物の worktree 登録が要るため）。
+# run_step_fake_extract <repo> <base_sha> <old_tsv> <new_tsv> [old_rc] [old_stderr]:
+# 偽 exportlist（go を呼ばない）で警告 step を repo をカレントディレクトリ
+# として実行し、RC/OUT/ERR/SUMMARY_FILE を埋める。git は本物を使う
+# （AC-7-15 の観測に実物の worktree 登録が要るため）。
+# old_rc / old_stderr は「抽出器が非ゼロで終わった」経路（AC-7-12 前半）を
+# 観測するための追加引数（省略時は従来どおり旧側を正常に cat する）。
 run_step_fake_extract() {
   local repo="$1" base_sha="$2" old_tsv="$3" new_tsv="$4"
+  local old_rc="${5:-}" old_stderr="${6:-}"
   local outf errf
   outf="$(mktemp -p "$WORK")"
   errf="$(mktemp -p "$WORK")"
@@ -217,6 +230,8 @@ run_step_fake_extract() {
         PAD_FAKE_EXPORTLIST_TEMPLATE="$FAKE_EXPORTLIST_TEMPLATE" \
         PAD_FAKE_OLD_TSV="$old_tsv" \
         PAD_FAKE_NEW_TSV="$new_tsv" \
+        PAD_FAKE_OLD_RC="$old_rc" \
+        PAD_FAKE_OLD_STDERR="$old_stderr" \
         PAD_EVENT_NAME="pull_request" \
         PAD_BASE_SHA="$base_sha" \
         GITHUB_STEP_SUMMARY="$SUMMARY_FILE" \
@@ -730,6 +745,13 @@ printf 'fixturepkg\tfunc\tSame\tfunc() int\n' > "$PAD_NEW_TSV_SAME"
 printf 'fixturepkg\tfunc\tSame\tfunc() int\n' > "$PAD_NEW_TSV_WARN"
 printf 'fixturepkg\tfunc\tNewThing\tfunc() int\n' >> "$PAD_NEW_TSV_WARN"
 
+# PAD_NEW_TSV_INDETERMINATE: 0 行ではない（wc -l = 1 なので AC-7-12 前半の
+# 「抽出結果が0行」には当たらない）が、タブ区切り4フィールドでない行を
+# 1行含むため、比較器（check-public-api-diff.sh）自身が AC-5-9 の
+# MALFORMED 経路で VERDICT: INDETERMINATE（rc=1）を返す。
+PAD_NEW_TSV_INDETERMINATE="$(mktemp -p "$WORK")"
+printf 'malformed-line-without-tabs\n' > "$PAD_NEW_TSV_INDETERMINATE"
+
 # --- AC-7-15: 差分なし（OK）で終わっても、ベース側ツリー展開の登録を
 #     step 終了後にリポジトリへ残さない -----------------------------------------
 PAD_WORKTREES_BEFORE="$(cd "$PAD_REPO" && git worktree list --porcelain)"
@@ -743,8 +765,12 @@ report "7-15: ベース側ツリー展開後、git worktree list --porcelain に
 
 # --- AC-7-16: 比較器が非ゼロ（WARN）で終わったとき、その stderr（比較器
 #     自身の人間向け説明）がジョブログと $GITHUB_STEP_SUMMARY の双方に残る。
-#     stdout 側の詳細行（ADDED）も同時に失わないことも見る。 --------------------
+#     stdout 側の詳細行（ADDED）も同時に失わないことも見る。
+#     AC-7-15 は「verdict によらず」worktree 登録を残さないと要求するため、
+#     ここでも（OK に加えて）前後の git worktree list --porcelain を突き合わせる。
+PAD_WORKTREES_BEFORE="$(cd "$PAD_REPO" && git worktree list --porcelain)"
 run_step_fake_extract "$PAD_REPO" "$PAD_BASE_SHA" "$PAD_OLD_TSV" "$PAD_NEW_TSV_WARN"
+PAD_WORKTREES_AFTER="$(cd "$PAD_REPO" && git worktree list --porcelain)"
 ok=1
 [ "$RC" = "0" ] || ok=0
 assert_verdict "WARN" || ok=0
@@ -756,7 +782,43 @@ assert_file_contains "$SUMMARY_FILE" "ADDED: fixturepkg" || ok=0
 # 消えていないかを見る。
 grep -qF "AC-9-1" <<< "$OUT" || ok=0
 assert_file_contains "$SUMMARY_FILE" "AC-9-1" || ok=0
-report "7-16: 比較器が非ゼロで終わったとき、その stderr がジョブログと summary の双方に残る（stdout も残る）" "$ok" "0"
+[ "$PAD_WORKTREES_BEFORE" = "$PAD_WORKTREES_AFTER" ] || ok=0
+report "7-16 / 7-15: 比較器が非ゼロ（WARN）で終わったとき stderr がジョブログと summary の双方に残り、worktree 登録も残らない" "$ok" "0"
+
+# --- AC-7-16: 比較器自身が INDETERMINATE（rc=1、AC-5-9 の MALFORMED 経路）
+#     で終わったとき、その stderr（どの入力が読めなかったか等の理由）が
+#     ジョブログと $GITHUB_STEP_SUMMARY の双方に残る。
+#     AC-7-15 の「verdict によらず」を INDETERMINATE 側でも観測する。 --------
+PAD_WORKTREES_BEFORE="$(cd "$PAD_REPO" && git worktree list --porcelain)"
+run_step_fake_extract "$PAD_REPO" "$PAD_BASE_SHA" "$PAD_OLD_TSV" "$PAD_NEW_TSV_INDETERMINATE"
+PAD_WORKTREES_AFTER="$(cd "$PAD_REPO" && git worktree list --porcelain)"
+ok=1
+[ "$RC" = "0" ] || ok=0
+assert_verdict "INDETERMINATE" || ok=0
+# check-public-api-diff.sh が MALFORMED 時に stderr へ出す固定文言
+# （AC-5-9）が、ジョブログにも summary にも現れること。
+grep -qF "タブ区切り4フィールドでない行がある" <<< "$OUT" || ok=0
+assert_file_contains "$SUMMARY_FILE" "タブ区切り4フィールドでない行がある" || ok=0
+[ "$PAD_WORKTREES_BEFORE" = "$PAD_WORKTREES_AFTER" ] || ok=0
+report "7-16 / 7-15: 比較器が INDETERMINATE（rc=1）で終わったとき stderr がジョブログと summary の双方に残り、worktree 登録も残らない" "$ok" "0"
+
+# --- AC-7-16: 抽出器（旧側）が非ゼロで終わったとき（AC-7-12 前半）、その
+#     stderr がジョブログと $GITHUB_STEP_SUMMARY の双方に残る。
+#     AC-7-15 の「verdict によらず」を INDETERMINATE 側で重ねて観測する
+#     （比較器の INDETERMINATE とは別経路 — ci-public-api-diff-step.sh の
+#     行127 の分岐）。 -----------------------------------------------------
+PAD_FAKE_OLD_EXTRACT_STDERR="pad-fake-old-extractor-error-9c3a1"
+PAD_WORKTREES_BEFORE="$(cd "$PAD_REPO" && git worktree list --porcelain)"
+run_step_fake_extract "$PAD_REPO" "$PAD_BASE_SHA" "$PAD_OLD_TSV" "$PAD_NEW_TSV_SAME" \
+  "7" "$PAD_FAKE_OLD_EXTRACT_STDERR"
+PAD_WORKTREES_AFTER="$(cd "$PAD_REPO" && git worktree list --porcelain)"
+ok=1
+[ "$RC" = "0" ] || ok=0
+assert_verdict "INDETERMINATE" || ok=0
+grep -qF "$PAD_FAKE_OLD_EXTRACT_STDERR" <<< "$OUT" || ok=0
+assert_file_contains "$SUMMARY_FILE" "$PAD_FAKE_OLD_EXTRACT_STDERR" || ok=0
+[ "$PAD_WORKTREES_BEFORE" = "$PAD_WORKTREES_AFTER" ] || ok=0
+report "7-16 / 7-15: 抽出器が非ゼロで終わったとき stderr がジョブログと summary の双方に残り、worktree 登録も残らない" "$ok" "0"
 
 echo ""
 if [ "$fail" -ne 0 ]; then
