@@ -15,6 +15,7 @@ Issue #53 の仕様。**ADR 0015 が「`docs/specs/` に落とす」と定めた
 | コンポーネントの配置先 `apps/web/src/components/` | **人間**（`web-app-scaffold.md` AC-1-5） | 本仕様は参照のみ。再提案しない |
 | 画面・操作可否・到達手段・カレンダー・時分入力・並び順等 | **人間**（各 UI 仕様の「確定事項」） | 本仕様は導出のみ。新たな画面・操作を足さない |
 | コンポーネントのレンダリング検証手段（DOM 検証ライブラリの追加可否） | **人間**（ADR 0020。2026-09-16） | **決定の本文・理由・代替案は ADR 0020 が持つ。** 本仕様は参照し、Issue #53 に効く受け入れ条件（D-1）だけを持つ。本仕様は再決定しない |
+| **散文で書かれた出力・a11y の要求をテスト対象にすること**（AC-6 の DOM 契約 6-3-i〜6-11-i） | **人間**（2026-09-16） | 人間が「散文だけの要求を検査対象にする」と決定した。**AI が行ったのは、既にある要求を観測可能な形へ言い換えることだけ**であり、要求そのもの・props・表示文言を足していない。文字列を新たに定めたのは `AppHeader` のアプリ名のみで、これは `apps/web/src/app/layout.tsx` の `metadata.title` に既にある値の参照である（6-11-i） |
 | **採用トークンの名称と値・共通コンポーネントの一覧と props**（AC-2 / AC-5 / AC-6） | **AI が起案し、人間が承認**（2026-09-16） | 起案は ADR 0015 がデザイン工程へ委譲した範囲として **AI（本仕様）** が行った。**人間が 2026-09-16 に AC-2 / AC-5 / AC-6 を承認した**ため、色トークン17点・共通コンポーネント11点・props は**そのままテストの期待値として使ってよい**。差し替えるときは人間の判断で表の値を置き換える（AC の構造は変えない） |
 
 **この表は「AI が決めてよい」範囲を広げるための表ではなく、どこまでが人間の決定かを取り違えないための表である。** 最終行は「AI の起案に人間の承認が付いた」状態を表しており、**起案者が AI であった事実は承認によって消えない** —— 値の妥当性を疑う場面では、それが AI の起案であることを前提に人間へ差し替えを諮る。業務ルール・ドメイン用語・画面の増減は、承認の有無にかかわらず本仕様では決めない（AC-7）。
@@ -202,15 +203,31 @@ Issue #53 の仕様。**ADR 0015 が「`docs/specs/` に落とす」と定めた
 |---|---|---|---|
 | 6-1 | `StatusBadge` | `state: "Draft" \| "PendingApproval" \| "Approved"` の**1つのみ** | 日本語ラベルを**文字として**出す（`Draft`→`下書き`／`PendingApproval`→`締め済`／`Approved`→`承認済`。P-4）。地色・文字色は `--state-*` を使う。**色だけで区別させない**（`work-month-screen-ui.md` AC-2-1）。**操作者の種別を受け取らないことにより、誰が見ても同一の表示になる**（同 AC-2-2 の構造的な担保） |
 | 6-2 | `Button` | `variant?: "primary" \| "secondary" \| "danger"`（既定 `secondary`）、`children`、および `button` の標準属性 | `<button>` を出力し、`type` の既定を `"button"` にする（フォーム内での意図しない送信を防ぐ）。`disabled` は**多重送信の抑止にのみ**使う（AC-7-2）。`variant` ごとに使うトークンは `primary`→`--primary`/`--primary-foreground`、`danger`→`--danger`/`--danger-foreground`、`secondary`→`--surface`/`--surface-foreground`+`--border` |
-| 6-3 | `RoleSwitcher` | `role: Role`、`onChange: (role: Role) => void` | 型 `Role` は **`apps/web/src/lib/role-cookie.ts` の既存の型を輸入して使う**（リテラル union を再定義しない）。選択肢は**ちょうど2つ**（`Engineer`→`技術者`／`Approver`→`承認者`。P-4）。グループにアクセシブル名を与える（`aria-label` 等）。**現在のロールが表示から判別できること**。ゲストへ出すか否かは呼び出し側が決める（`login-ui.md` AC-6-5。本コンポーネントは「ゲスト」を表す値を持たない） |
+| 6-3 | `RoleSwitcher` | `role: Role`、`onChange: (role: Role) => void` | 型 `Role` は **`apps/web/src/lib/role-cookie.ts` の既存の型を輸入して使う**（リテラル union を再定義しない）。選択肢は**ちょうど2つ**（`Engineer`→`技術者`／`Approver`→`承認者`。P-4）。グループにアクセシブル名を与える（6-3-i）。**現在のロールが表示から判別できること**（6-3-ii）。ゲストへ出すか否かは呼び出し側が決める（`login-ui.md` AC-6-5。本コンポーネントは「ゲスト」を表す値を持たない） |
 | 6-4 | `Card` | `children`、`title?: ReactNode` | 地色 `--surface`、文字色 `--surface-foreground`、境界線 `--border`。`title` があるときは見出し要素として出す |
 | 6-5 | `NumberField` | `id`、`label: string`、`value: number \| ""`、`onChange`、`min?: number`、`max?: number`、`step?: number`、`errorId?: string`、`invalid?: boolean` | `<input type="number">` を出力し、`label` を `<label for>` で結びつける。`min` / `max` / `step` を**既定値として内蔵しない**（値域は `daily-record-entry.md` AC-3 が持つ。AC-7-1）。`invalid` のとき `aria-invalid="true"` を付け、`errorId` があれば `aria-describedby` で結ぶ |
 | 6-6 | `FieldError` | `id`、`children` | `id` を持つ要素として出力し、`role="alert"` を付ける。文字色は `--danger`。**文言を内蔵しない**（理由の文言は呼び出し側が渡す。AC-7-1） |
 | 6-7 | `ErrorBanner` | `children`、`onRetry?: () => void` | `role="alert"` を付ける。`--danger` を用い、**色以外にも文字で「エラーである」ことが分かる**こと。`onRetry` があるとき再試行の `Button` を出す（`login-ui.md` AC-7-1「再試行できる」） |
 | 6-8 | `EmptyState` | `title: string`、`description?: string`、`action?: ReactNode` | 文字で空であることを示す。`action` は導線（`work-month-listing-ui.md` AC-7-1「初回入力の導線」）を呼び出し側から受け取る |
-| 6-9 | `ConfirmDialog` | `open: boolean`、`title: string`、`description: ReactNode`、`confirmLabel: string`、`confirmVariant?: "primary" \| "danger"`、`onConfirm: () => void`、`onCancel: () => void` | `open` が偽のとき**何も出力しない**。真のとき `role="dialog"` と `aria-modal="true"` を持ち、`title` を `aria-labelledby` で結ぶ。**Esc キーと取消操作は `onCancel` を呼び、`onConfirm` を呼ばない**（`monthly-closing-ui.md` AC-2-3「状態を変えない」の UI 側の担保）。**取り消せない旨の文言を内蔵しない**（`description` として呼び出し側が渡す。AC-7-1） |
+| 6-9 | `ConfirmDialog` | `open: boolean`、`title: string`、`description: ReactNode`、`confirmLabel: string`、`confirmVariant?: "primary" \| "danger"`、`onConfirm: () => void`、`onCancel: () => void` | `open` が偽のとき**何も出力しない**。真のとき `role="dialog"` と `aria-modal="true"` を持ち、`title` を `aria-labelledby` で結ぶ。**Esc キーと取消操作は `onCancel` を呼び、`onConfirm` を呼ばない**（`monthly-closing-ui.md` AC-2-3「状態を変えない」の UI 側の担保。取消操作の観測可能な形は 6-9-i、確定操作は 6-9-ii）。**取り消せない旨の文言を内蔵しない**（`description` として呼び出し側が渡す。AC-7-1） |
 | 6-10 | `Pagination` | `page: number`（1 始まり）、`pageCount: number`、`onPageChange: (page: number) => void` | `<nav>` にアクセシブル名を与える。先頭ページで「前へ」、末尾ページで「次へ」を**押せない形にする**（この非活性は操作可否ではなく範囲外の入力の抑止であり、AC-7-2 の対象外）。**1ページあたりの件数を props に持たず、既定値も持たない**（P-7。仕様で固定しないという人間決定を部品側で破らない） |
-| 6-11 | `AppHeader` | `right?: ReactNode` | `<header>` を出力し、アプリ名を見出しとして含む。`right` に `RoleSwitcher` 等を差し込めること。**`RoleSwitcher` を内蔵しない**（ログイン状態・ロール保持の判定を部品が持たないため。AC-7-2／`login-ui.md` AC-6-5） |
+| 6-11 | `AppHeader` | `right?: ReactNode` | `<header>` を出力し、アプリ名（**`effort-tracker`**）を見出しとして含む（6-11-i）。`right` に `RoleSwitcher` 等を差し込めること。**`RoleSwitcher` を内蔵しない**（ログイン状態・ロール保持の判定を部品が持たないため。AC-7-2／`login-ui.md` AC-6-5） |
+
+#### AC-6 の DOM 契約 — 散文の要求を観測可能な形にする
+
+**本節は上表の「出力・a11y の要求」列に散文で書かれていた要求を、DOM から観測できる形へ言い換えたものである。新しい要求・新しい props を足さない。** 上表の公開 props は人間が 2026-09-16 に承認した内容のままであり（「決定の所在」表）、本節は props を1つも増減しない。
+
+**固定するのは ARIA 上の意味であって、要素の種類ではない。** ネイティブ要素で満たしても `role` 属性を付けた自作要素で満たしてもよい（タグ名・入れ子・クラス名は AC-11-7 のとおり検査対象外）。
+
+| # | 対象 | 観測可能な契約 |
+|---|---|---|
+| 6-3-i | `RoleSwitcher` のグループ | 2つの選択肢を包む**単一の要素**が `radiogroup` のロールで問い合わせられ、かつ**空でないアクセシブル名**を持つこと。**名の文字列は本仕様で固定しない**（`aria-label` / `aria-labelledby` のいずれで与えてもよい。AC-11-12）。単一選択のグループとして公開する形を採るのは、AC-6-3 が求める「グループである」「グループが名を持つ」「現在値が判別できる」の3つを、ARIA の標準的な組み合わせで同時に満たせるためである |
+| 6-3-ii | `RoleSwitcher` の現在値 | 選択肢が `radio` のロールで**ちょうど2つ**問い合わせられ、そのアクセシブル名が `技術者` / `承認者` であること（P-4）。**`role` props に対応する側だけが「選択済み」として公開され**（`checked` / `aria-checked` が真）、他方は選択済みでないこと。`role="Engineer"` のとき選択済みは `技術者`、`role="Approver"` のとき `承認者` |
+| 6-9-i | `ConfirmDialog` の取消操作 | `open` が真のとき、**コンポーネント自身が出すボタンはちょうど2つ**。うち1つはアクセシブル名が `confirmLabel` と一致する**確定の操作**であり、**残る1つが取消の操作**である。取消の操作を押すと `onCancel` がちょうど1回呼ばれ、`onConfirm` は呼ばれないこと。**取消の操作のラベル文字列を本仕様で固定しない** —— 上表に対応する props（`cancelLabel` に当たるもの）が無く、`AppHeader` のアプリ名における `metadata.title` のような既存の参照先も無いため、文字列を仕様へ書けば `docs/` と実装に別々の正解ができる（AC-11-11）。呼び出し側が `description` にボタンを含めた場合は「ちょうど2つ」の対象外であり、検査は含めない入力で行う |
+| 6-9-ii | `ConfirmDialog` の確定操作 | 確定の操作（アクセシブル名が `confirmLabel` と一致するボタン）を押すと `onConfirm` がちょうど1回呼ばれ、`onCancel` は呼ばれないこと |
+| 6-11-i | `AppHeader` のアプリ名 | `<header>` の内側の見出し要素のテキストが **`effort-tracker`** と一致すること。**この文字列は `apps/web/src/app/layout.tsx` の `metadata.title` と同一である** —— アプリ名の正解を2箇所に作らないため、片方だけを変えることを許さず、変えるときは両方を同時に変える（検査は AC-10-6、限界は AC-11-13）。**見出しのレベル（`h1`〜`h6`）は固定しない**（AC-11-7） |
+
+**6-3-i / 6-3-ii / 6-9-i の識別は、テストライブラリの `ByRole` クエリの `name` / `checked` オプションで行う。** アクセシブル名を算出するために `dom-accessibility-api` 等を直接輸入しない（D-1-1 の3点を超える依存を足さない）。
 
 ### AC-7. 業務判断をコンポーネントへ持ち込まない
 
@@ -279,8 +296,15 @@ flowchart LR
 | 10-3 | AC-2-4 / AC-4-4〜4-6 / AC-5-5 | `apps/web/src/components/` 配下の実装ファイル（`*.test.tsx` を除く）を読み、禁じた表現（生の色・`rounded-md` 以外の角丸・代替なしの `outline-none`・`fetch`）の不在を検査する | する |
 | 10-4 | AC-5-1 / AC-5-2 | `apps/web/src/components/` 直下の **`*.tsx`（`*.test.tsx` を除く）の集合**が表と**過不足なく**一致することを検査する（表に無い `*.tsx` の存在も違反。テストファイルと `.gitkeep` 等の非 `*.tsx` は対象外）。あわせて **`index.ts` / `index.tsx`（バレル）が存在しないこと**を検査する | する |
 | 10-5 | AC-6 の props 契約（型） | `npx tsc --noEmit`（`make lint-web` が呼ぶ）。禁じた props を渡すコードが型エラーになることを、`@ts-expect-error` を用いた型テストで示す | する（型検査） |
-| 10-6 | AC-6 の出力・a11y 属性 | **`@testing-library/react` でレンダリングし、DOM を検証する**（D-1）。テストファイルの先頭に `@vitest-environment jsdom` のドックブロックを置き、そのファイルにのみ DOM 環境を与える（D-1-2）。AC-6 の表が名指しした属性（`role` / `aria-modal` / `aria-invalid` / `aria-describedby` / `aria-labelledby` / `type` / `label` と入力欄の結び付き）とラベル文字列を DOM から読み、表と突き合わせる。`ConfirmDialog` の Esc（AC-6-9）は `keydown` イベントを発火させ、`onCancel` が呼ばれ `onConfirm` が呼ばれないことを検証する | する |
+| 10-6 | AC-6 の出力・a11y 属性 | **`@testing-library/react` でレンダリングし、DOM を検証する**（D-1）。テストファイルの先頭に `@vitest-environment jsdom` のドックブロックを置き、そのファイルにのみ DOM 環境を与える（D-1-2）。AC-6 の表が名指しした属性（`role` / `aria-modal` / `aria-invalid` / `aria-describedby` / `aria-labelledby` / `type` / `label` と入力欄の結び付き）とラベル文字列を DOM から読み、表と突き合わせる。`ConfirmDialog` の Esc（AC-6-9）は `keydown` イベントを発火させ、`onCancel` が呼ばれ `onConfirm` が呼ばれないことを検証する。**あわせて「AC-6 の DOM 契約」の 6-3-i・6-3-ii・6-9-i・6-9-ii・6-11-i を検査する**（下記 10-6-a〜c） | する |
+
 | 10-7 | AC-7 / AC-8 / AC-9 | レビューでの突き合わせ | **しない**（AC-11） |
+
+**10-6-a（`RoleSwitcher`）**: `radiogroup` のロールと**空でないアクセシブル名**で問い合わせられること（名の文字列は突き合わせない）。`radio` がちょうど2つで、そのアクセシブル名が `技術者` / `承認者` であること。`role` props を `Engineer` / `Approver` の**両方**で描画し、それぞれ対応する側だけが選択済みであることを読む。
+
+**10-6-b（`ConfirmDialog`）**: `description` にボタンを含めない入力で描画し、ダイアログ内のボタンがちょうど2つであることを読む。アクセシブル名が `confirmLabel` と一致しない側を `click` で発火させ、`onCancel` が1回・`onConfirm` が0回であることを検証する。一致する側では逆（`onConfirm` が1回・`onCancel` が0回）。**取消側のラベル文字列は期待値に持たない**（6-9-i）。
+
+**10-6-c（`AppHeader`）**: `<header>` 内の見出しのテキストと、`apps/web/src/app/layout.tsx` の `metadata.title` の**双方**を、**同一の期待値 `effort-tracker`** に対して突き合わせる（輸入・ファイル読み取りのいずれの手段でもよい）。**どちらか片方だけが変わったときに落ちる形にする**（6-11-i。両方を同時に変えた場合は緑のまま通る。AC-11-13）。
 
 **10-8**: テストは `apps/web` 配下に置き、watch せず終了する（`web-app-scaffold.md` AC-2-2・AC-3-6）。**現在時刻・ロケール・ネットワークに依存させない**（同 AC-6-3・6-4）。
 
@@ -296,7 +320,10 @@ flowchart LR
 | 11-4 | **AC-2-4 の色リテラル禁止の検査対象は `src/components/` 配下に限る。** `src/app/` 配下の画面がトークンを使うかは本 Issue では検査しない（画面は後続 Issue。非スコープ表） |
 | 11-5 | **本 Issue の完了は「部品とトークンが揃った」ことであり、MVP の画面が動くことを意味しない。** 画面の実装は後続 Issue が持つ |
 | 11-6 | **アクセシビリティの担保は AC-6 が名指しした属性と AC-3 のコントラストに限る。** 支援技術での実利用・キーボード操作の網羅・WCAG 全体への適合を主張しない |
-| 11-7 | **AC-6 の出力側（a11y 属性・ラベル文字列）は D-1 により機械検査の対象になった**（AC-10-6）。**ただし検査されるのは AC-6 の表が名指しした属性・文字列・挙動だけである。** 表に書かれていない出力（DOM 構造の妥当性、見出しレベルの階層、フォーカス順序、クラス名の付き方）は検査されない。**緑は「AC-6 の表を満たした」ことのみを意味し、コンポーネントがアクセシブルであることを意味しない**（11-6・11-8・11-9） |
+| 11-7 | **AC-6 の出力側（a11y 属性・ラベル文字列）は D-1 により機械検査の対象になった**（AC-10-6）。**ただし検査されるのは AC-6 の表と「AC-6 の DOM 契約」（6-3-i・6-3-ii・6-9-i・6-9-ii・6-11-i）が名指しした属性・文字列・挙動だけである。** 表に書かれていない出力（DOM 構造の妥当性、見出しレベルの階層、フォーカス順序、クラス名の付き方）は検査されない。**緑は「AC-6 の表を満たした」ことのみを意味し、コンポーネントがアクセシブルであることを意味しない**（11-6・11-8・11-9） |
 | 11-8 | **`jsdom` はブラウザではない。** レンダリング検証が緑でも、実ブラウザでの表示・レイアウト・CSS の適用結果（コントラストやフォーカスリングの実際の見え方）・支援技術の実際の読み上げは検証されない。AC-3 のコントラストは AC-2 の16進値からの計算であって（AC-10-2）、画面上の実測ではない |
-| 11-9 | **キーボード操作の検証は、テストから発火した合成イベントに留まる。** `@testing-library/user-event` を入れない（D-1-1）ため、実ブラウザのイベント順序・フォーカス移動・IME の挙動は再現されない。検証するのは AC-6 が名指しした挙動（`ConfirmDialog` の Esc 等）に限り、**キーボード操作の網羅は主張しない**（11-6） |
+| 11-9 | **キーボード操作・ポインタ操作の検証は、テストから発火した合成イベントに留まる。** `@testing-library/user-event` を入れない（D-1-1）ため、実ブラウザのイベント順序・フォーカス移動・IME の挙動は再現されない。`ConfirmDialog` の取消／確定（6-9-i・6-9-ii）は合成の `click` であり、**実際に押下できること**（重なり・不可視・`pointer-events` 等で押せない状態でないこと）は検証されない。検証するのは AC-6 と DOM 契約が名指しした挙動に限り、**キーボード操作・ポインタ操作の網羅は主張しない**（11-6） |
 | 11-10 | **「既存テストの環境を変えない」（D-1-2）はファイル単位の規律である。** Vitest のグローバル設定を `jsdom` へ変える変更を機械的に禁じる検査は無く、Web には `check-domain-deps` に相当する依存検査も無い（`web-app-scaffold.md` AC-10-2）。追加する依存を3点に限ること（D-1-1）も同様に機械検査されない |
+| 11-11 | **`ConfirmDialog` の取消操作は「確定でない方のボタン」としてのみ識別される**（6-9-i）。ラベル文字列は仕様で固定せず検査もしないため、**取消であると利用者に伝わる文言かどうかは機械検査されない。** 文言を仕様で固定するには `cancelLabel` に当たる props の追加が要り、それは AC-6 の props 表の変更（人間の承認事項）である |
+| 11-12 | **`RoleSwitcher` のグループのアクセシブル名は「空でないこと」しか検査されない**（6-3-i）。名の文言が適切か・支援技術の利用者に何のグループか伝わるかは検査されない |
+| 11-13 | **`AppHeader` のアプリ名と `metadata.title` の同一性は、テストが両者を同じ期待値へ突き合わせることでのみ担保される**（6-11-i・10-6-c）。片方だけを変えれば落ちるが、**両方を同時に変えればテストは緑のまま通る。** アプリ名そのものの妥当性・表示位置は検査されない |
