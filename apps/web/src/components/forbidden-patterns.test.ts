@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-// docs/specs/design-system.md AC-2-4 / AC-4-4〜4-6 / AC-5-5（検証手段は AC-10-3）。
+// docs/specs/design-system.md AC-2-4 / AC-4-4 / AC-4-6 / AC-5-5（検証手段は AC-10-3）。
 //
 // 「apps/web/src/components/ 配下の実装ファイル（*.test.tsx を除く）を読み、
 // 禁じた表現（生の色・rounded-md 以外の角丸・代替なしの outline-none・fetch）
@@ -64,7 +64,7 @@ const rgbOrHslFunctionPattern = /\b(?:rgb|rgba|hsl|hsla)\(/;
 const nonMdRoundedPattern = /\brounded(?!-md\b)(?:-[\w-]+)?\b/;
 const fetchCallPattern = /\bfetch\s*\(/;
 
-describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4〜4-6 / AC-5-5）", () => {
+describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 / AC-5-5）", () => {
   it.each(EXPECTED_FILES)("%s が存在し、禁止表現を含まない", (fileName) => {
     const filePath = path.join(componentsDir, fileName);
     expect(existsSync(filePath)).toBe(true);

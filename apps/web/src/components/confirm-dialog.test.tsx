@@ -9,7 +9,8 @@ import { ConfirmDialog } from "./confirm-dialog";
 // 仕様から一意に定まらない（AC-11-11）。したがって取消操作は「アクセシブル
 // 名が confirmLabel と一致しない、残る1つのボタン」として識別する
 // （6-9-i）。表が明言する Esc キーの挙動（6-9-i の一部）に加え、クリックに
-// よる確定・取消（6-9-i・6-9-ii）を検証する（AC-10-6-b）。
+// よる確定・取消（6-9-i・6-9-ii）、open が真になったときの初期フォーカス
+// （6-9-iii）を検証する（AC-10-6-b・AC-10-6-e）。
 
 afterEach(() => {
   cleanup();
@@ -126,6 +127,50 @@ describe("ConfirmDialog - AC-6-9", () => {
     fireEvent.click(screen.getByRole("button", { name: "締める" }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("6-9-iii: open が真で描画された時点でフォーカスがダイアログの内側にある（初期描画）", () => {
+    render(
+      <ConfirmDialog
+        open={true}
+        title="締めますか"
+        description="この操作は取り消せません"
+        confirmLabel="締める"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(
+      dialog === document.activeElement || dialog.contains(document.activeElement),
+    ).toBe(true);
+  });
+
+  it("6-9-iii: open を偽で描画したのち真へ更新した場合もフォーカスがダイアログの内側にある（再描画）", () => {
+    const { rerender } = render(
+      <ConfirmDialog
+        open={false}
+        title="締めますか"
+        description="この操作は取り消せません"
+        confirmLabel="締める"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    rerender(
+      <ConfirmDialog
+        open={true}
+        title="締めますか"
+        description="この操作は取り消せません"
+        confirmLabel="締める"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(
+      dialog === document.activeElement || dialog.contains(document.activeElement),
+    ).toBe(true);
   });
 
   // AC-10-5: confirmVariant は primary / danger の2値のみ（secondary を含まない）。
