@@ -1,14 +1,15 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 import { ConfirmDialog } from "./confirm-dialog";
 
 // docs/specs/design-system.md AC-6-9（検証手段は AC-10-5・AC-10-6）。
 //
 // 「取消操作」自体のラベル文字列は props 表に cancelLabel 等の対応が無く
-// 仕様から一意に定まらないため、ここでは表が明言する Esc キーの挙動のみを
-// 検証する（AC-10-6「ConfirmDialog の Esc は keydown イベントを発火させ、
-// onCancel が呼ばれ onConfirm が呼ばれないことを検証する」）。
+// 仕様から一意に定まらない（AC-11-11）。したがって取消操作は「アクセシブル
+// 名が confirmLabel と一致しない、残る1つのボタン」として識別する
+// （6-9-i）。表が明言する Esc キーの挙動（6-9-i の一部）に加え、クリックに
+// よる確定・取消（6-9-i・6-9-ii）を検証する（AC-10-6-b）。
 
 afterEach(() => {
   cleanup();
@@ -79,6 +80,52 @@ describe("ConfirmDialog - AC-6-9", () => {
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("6-9-i: コンポーネント自身が出すボタンはちょうど2つで、確定でない方を押すと onCancel のみが呼ばれる", () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <ConfirmDialog
+        open={true}
+        title="締めますか"
+        description="この操作は取り消せません"
+        confirmLabel="締める"
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />,
+    );
+    const dialog = screen.getByRole("dialog");
+    const buttons = within(dialog).getAllByRole("button");
+    expect(buttons).toHaveLength(2);
+
+    // 確定の操作はアクセシブル名が confirmLabel と一致するボタンとして識別する。
+    const confirmButton = within(dialog).getByRole("button", { name: "締める" });
+    // 取消の操作はラベル文字列を固定せず、「残る1つ」として識別する（AC-11-11）。
+    const cancelButton = buttons.find((button) => button !== confirmButton);
+    expect(cancelButton).toBeTruthy();
+
+    fireEvent.click(cancelButton as HTMLElement);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("6-9-ii: 確定の操作（アクセシブル名が confirmLabel と一致するボタン）を押すと onConfirm のみが呼ばれる", () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <ConfirmDialog
+        open={true}
+        title="締めますか"
+        description="この操作は取り消せません"
+        confirmLabel="締める"
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "締める" }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onCancel).not.toHaveBeenCalled();
   });
 
   // AC-10-5: confirmVariant は primary / danger の2値のみ（secondary を含まない）。

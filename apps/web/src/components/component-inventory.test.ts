@@ -1,6 +1,5 @@
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 // docs/specs/design-system.md AC-5-1 / AC-5-2（検証手段は AC-10-4）。
