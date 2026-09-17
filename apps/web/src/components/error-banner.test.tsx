@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, cleanup, within } from "@testing-library/react";
+import { render, screen, cleanup, within, fireEvent } from "@testing-library/react";
 import { ErrorBanner } from "./error-banner";
 
 // docs/specs/design-system.md AC-6-7（検証手段は AC-10-6）。
@@ -36,5 +36,15 @@ describe("ErrorBanner - AC-6-7", () => {
     render(<ErrorBanner>ネットワークに接続できませんでした</ErrorBanner>);
     const alert = screen.getByRole("alert");
     expect(within(alert).getByText("エラー")).toBeTruthy();
+  });
+
+  it("6-7-ii: onRetry を与えたとき、alert の内側のボタンを押すと onRetry がちょうど1回呼ばれる", () => {
+    // ボタンは名を指定せずに問い合わせる（ラベル文字列を期待値に持たない。11-17）。
+    const onRetry = vi.fn();
+    render(<ErrorBanner onRetry={onRetry}>接続できませんでした</ErrorBanner>);
+    const alert = screen.getByRole("alert");
+    const button = within(alert).getByRole("button");
+    fireEvent.click(button);
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });

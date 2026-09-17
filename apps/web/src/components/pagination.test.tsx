@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { Pagination } from "./pagination";
 
 // docs/specs/design-system.md AC-6-10（検証手段は AC-10-6・10-6-f）。
@@ -39,5 +39,23 @@ describe("Pagination - AC-6-10", () => {
     const next = screen.getByRole("button", { name: "次へ" });
     expect((prev as HTMLButtonElement).disabled).toBe(false);
     expect((next as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("6-10-i: 「前へ」「次へ」は onPageChange をちょうど1回、page との大小関係を満たす引数で呼ぶ", () => {
+    // 先頭でも末尾でもない page で描画する（10-6-j）。具体的なページ番号を
+    // 期待値に持たず、描画に与えた page との大小関係だけを読む。
+    const page = 3;
+    const onPageChange = vi.fn();
+    render(<Pagination page={page} pageCount={5} onPageChange={onPageChange} />);
+    const prev = screen.getByRole("button", { name: "前へ" });
+    const next = screen.getByRole("button", { name: "次へ" });
+
+    fireEvent.click(prev);
+    expect(onPageChange).toHaveBeenCalledTimes(1);
+    expect(onPageChange.mock.calls[0][0]).toBeLessThan(page);
+
+    fireEvent.click(next);
+    expect(onPageChange).toHaveBeenCalledTimes(2);
+    expect(onPageChange.mock.calls[1][0]).toBeGreaterThan(page);
   });
 });

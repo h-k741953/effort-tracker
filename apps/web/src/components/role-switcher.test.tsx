@@ -165,6 +165,25 @@ describe("RoleSwitcher - AC-6-3", () => {
     expect(new Set(namesInSecondGroup).size).toBe(1);
   });
 
+  it("6-3-iv: 選択済みでない側を発火させると onChange がちょうど1回、対応する Role を引数に呼ばれる（両向き）", () => {
+    // 片方の向きだけを満たす実装（引数として常に同じ値を渡す実装）が
+    // 契約を満たしたことにならないよう、role="Engineer" / "Approver" の
+    // 両方で読む（10-6-g）。
+    const onChangeFromEngineer = vi.fn();
+    render(<RoleSwitcher role="Engineer" onChange={onChangeFromEngineer} />);
+    fireEvent.click(screen.getByRole("radio", { name: "承認者" }));
+    expect(onChangeFromEngineer).toHaveBeenCalledTimes(1);
+    expect(onChangeFromEngineer.mock.calls[0][0]).toBe("Approver");
+
+    cleanup();
+
+    const onChangeFromApprover = vi.fn();
+    render(<RoleSwitcher role="Approver" onChange={onChangeFromApprover} />);
+    fireEvent.click(screen.getByRole("radio", { name: "技術者" }));
+    expect(onChangeFromApprover).toHaveBeenCalledTimes(1);
+    expect(onChangeFromApprover.mock.calls[0][0]).toBe("Engineer");
+  });
+
   // AC-10-5: role は Role 型（Engineer / Approver）のみ。「ゲスト」を表す値を持たない。
   it("型: role は Engineer / Approver のみで、Guest を受け付けない（AC-6-3・AC-10-5）", () => {
     // @ts-expect-error role は Role 型（Engineer | Approver）のみ許可される
