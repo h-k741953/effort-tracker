@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { NumberField } from "./number-field";
 
 // docs/specs/design-system.md AC-6-5（検証手段は AC-10-6）。
@@ -47,5 +47,22 @@ describe("NumberField - AC-6-5", () => {
     );
     const input = screen.getByLabelText("時間2");
     expect(input.getAttribute("aria-invalid")).not.toBe("true");
+  });
+
+  it("6-5-i: 値が変わる操作で onChange がちょうど1回、空でない文字列は数値・空文字は空文字を引数に呼ばれる", () => {
+    // min / max を与えない描画で行う（AC-7-1。値域を期待値に持ち込まない）。
+    const onChange = vi.fn();
+    render(
+      <NumberField id="hours3" label="時間3" value={5} onChange={onChange} />,
+    );
+    const input = screen.getByLabelText("時間3");
+
+    fireEvent.change(input, { target: { value: "7" } });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0]).toBe(7);
+
+    fireEvent.change(input, { target: { value: "" } });
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange.mock.calls[1][0]).toBe("");
   });
 });

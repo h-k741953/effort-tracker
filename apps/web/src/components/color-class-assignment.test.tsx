@@ -5,6 +5,7 @@ import { Button, type ButtonVariant } from "./button";
 import { StatusBadge, type StatusBadgeState } from "./status-badge";
 import { Card } from "./card";
 import { FieldError } from "./field-error";
+import { ErrorBanner } from "./error-banner";
 
 // docs/specs/design-system.md AC-6 の表が名指しする色トークンの割当
 // （6-1 / 6-2 / 6-4 / 6-6。検証手段は AC-10-3-b）。
@@ -100,5 +101,15 @@ describe("色トークンの割当 - AC-6（AC-10-3-b）", () => {
     render(<FieldError id="hours-error">必須です</FieldError>);
     const classes = classesOf(screen.getByRole("alert"));
     expect(classes).toContain("text-danger");
+  });
+
+  it("ErrorBanner（6-7）は role='alert' の要素に --danger を指すユーティリティが少なくとも1つ現れる（10-3-b・AC-11-21）", () => {
+    // AC-6 の表の 6-7 は「--danger を用い」としか書かず、どの CSS
+    // プロパティ（地色・文字色・境界線）へ当てるかを名指ししていない
+    // ため、いずれか1つが現れることだけを読む（プロパティを名指ししない）。
+    render(<ErrorBanner>失敗しました</ErrorBanner>);
+    const classes = classesOf(screen.getByRole("alert"));
+    const dangerClasses = ["bg-danger", "text-danger", "border-danger"];
+    expect(classes.some((c) => dangerClasses.includes(c))).toBe(true);
   });
 });
