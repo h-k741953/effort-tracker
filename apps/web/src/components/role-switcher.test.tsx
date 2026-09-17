@@ -22,6 +22,13 @@ afterEach(() => {
 });
 
 describe("RoleSwitcher - AC-6-3", () => {
+  // 6-3-iii の name 検査（下記2件）で共有するヘルパ。radiogroup 内の
+  // radio が持つ name 属性を配列で読む。
+  const namesOf = (group: HTMLElement) =>
+    within(group)
+      .getAllByRole("radio")
+      .map((radio) => radio.getAttribute("name"));
+
   it("選択肢はちょうど2つ（技術者・承認者）が文字として表示される", () => {
     render(<RoleSwitcher role="Engineer" onChange={vi.fn()} />);
     expect(screen.getByText("技術者")).toBeTruthy();
@@ -115,9 +122,9 @@ describe("RoleSwitcher - AC-6-3", () => {
     // 判別できるのはこの検査だけである。
     //
     // 6-3-iii は name の文字列を本仕様で固定しない（一意であることだけを
-    // 求める）ため、期待値に具体的な name 文字列を持たせず、「一方の
+    // 求める）ため、期待値に具体的な name 文字列を持たせず、一方の
     // radiogroup の radio の name が、他方の radiogroup のいずれの radio の
-    // name とも一致しない」ことだけを読む。
+    // name とも一致しないこと（グループ間で共有しない）を読む。
     // なお、この検査はネイティブの <input type="radio"> を前提とする
     // （AC-11-15）。
     render(
@@ -129,16 +136,33 @@ describe("RoleSwitcher - AC-6-3", () => {
     const groups = screen.getAllByRole("radiogroup");
     expect(groups).toHaveLength(2);
 
-    const namesOf = (group: HTMLElement) =>
-      within(group)
-        .getAllByRole("radio")
-        .map((radio) => radio.getAttribute("name"));
-
     const [namesInFirstGroup, namesInSecondGroup] = groups.map(namesOf);
     const sharedNames = namesInFirstGroup.filter((name) =>
       namesInSecondGroup.includes(name),
     );
     expect(sharedNames).toEqual([]);
+  });
+
+  it("6-3-iii: 各 radiogroup の内側では、2つの radio が同じ name を共有する", () => {
+    // AC-10-6-a が課す「name を直接読む検査」のうち、グループ内で name が
+    // 単一であることを読む側。これを読まないと、radio ごとに別の name を
+    // 与える実装（ネイティブ radio の排他グループが実ブラウザで成立しない
+    // 形）が素通りする（10-6-a）。期待値に具体的な name 文字列は持たせない
+    // （6-3-iii は name の文字列を本仕様で固定しない）。
+    // なお、この検査はネイティブの <input type="radio"> を前提とする
+    // （AC-11-15）。
+    render(
+      <>
+        <RoleSwitcher role="Engineer" onChange={vi.fn()} />
+        <RoleSwitcher role="Approver" onChange={vi.fn()} />
+      </>,
+    );
+    const groups = screen.getAllByRole("radiogroup");
+    expect(groups).toHaveLength(2);
+
+    const [namesInFirstGroup, namesInSecondGroup] = groups.map(namesOf);
+    expect(new Set(namesInFirstGroup).size).toBe(1);
+    expect(new Set(namesInSecondGroup).size).toBe(1);
   });
 
   // AC-10-5: role は Role 型（Engineer / Approver）のみ。「ゲスト」を表す値を持たない。
