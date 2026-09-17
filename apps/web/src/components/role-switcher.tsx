@@ -10,8 +10,12 @@
 // 構造だけで満たし、カスタム ARIA の管理（キーボード操作の再実装等）が要ら
 // ない。select 要素も候補だったが、2択の排他選択は radiogroup がより素直に
 // 表現でき、将来 A/B の表示切り替え（アイコン等）を追加する余地も広い。
+//
+// 6-3-iii: 同一文書に複数配置しても各インスタンスが独立したグループとして
+// 振る舞うこと。ネイティブ radio の name はインスタンスごとに useId() で
+// 一意化する（独立性はコンポーネントの内側で得る。props は増やさない）。
 
-import type { ChangeEvent } from "react";
+import { useId, type ChangeEvent } from "react";
 import type { Role } from "@/lib/role-cookie";
 
 export interface RoleSwitcherProps {
@@ -25,6 +29,8 @@ const OPTIONS: ReadonlyArray<{ value: Role; label: string }> = [
 ];
 
 export function RoleSwitcher({ role, onChange }: RoleSwitcherProps) {
+  const name = useId();
+
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     onChange(event.target.value as Role);
   };
@@ -35,7 +41,7 @@ export function RoleSwitcher({ role, onChange }: RoleSwitcherProps) {
         <label key={option.value} className="flex items-center gap-1 text-sm text-foreground">
           <input
             type="radio"
-            name="role"
+            name={name}
             value={option.value}
             checked={role === option.value}
             onChange={handleChange}
