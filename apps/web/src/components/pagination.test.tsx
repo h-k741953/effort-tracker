@@ -3,21 +3,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { Pagination } from "./pagination";
 
-// docs/specs/design-system.md AC-6-10（検証手段は AC-10-6）。
+// docs/specs/design-system.md AC-6-10（検証手段は AC-10-6・10-6-f）。
 //
 // 「押せない形にする」は AC-7-3 が disabled の使用を明示的に許す唯一の
 // 業務外の抑止（入力範囲外の抑止）であるため、disabled 属性で検証する。
-// nav のアクセシブル名の具体的な文字列は仕様が指定しないため検証しない
-// （AC-11-7）。
+// 10-6-f・AC-11-16 により、<nav> は空でないアクセシブル名を持つことを
+// 読む。仕様が固定しないのは名の具体的な文字列であって、名を与えること
+// 自体ではないため、name オプションで空でないことを検証する。
 
 afterEach(() => {
   cleanup();
 });
 
 describe("Pagination - AC-6-10", () => {
-  it("<nav> を出力する", () => {
+  it("<nav> が空でないアクセシブル名を持つ", () => {
     render(<Pagination page={2} pageCount={5} onPageChange={vi.fn()} />);
-    expect(screen.getByRole("navigation")).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: /\S/ })).toBeTruthy();
   });
 
   it("先頭ページ（page=1）で「前へ」を押せない形にする", () => {

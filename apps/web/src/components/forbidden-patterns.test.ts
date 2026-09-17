@@ -28,7 +28,8 @@ const EXPECTED_FILES = [
   "pagination.tsx",
 ];
 
-const TAILWIND_PALETTE_COLORS = [
+// シェードを持つ色（bg-red-500 のように末尾に数値シェードを伴う）。
+const TAILWIND_SHADED_PALETTE_COLORS = [
   "red",
   "orange",
   "amber",
@@ -51,12 +52,13 @@ const TAILWIND_PALETTE_COLORS = [
   "zinc",
   "neutral",
   "stone",
-  "black",
-  "white",
 ];
 
+// シェードを持たない色（bg-white / text-black のように数値シェードを伴わない）。
+const TAILWIND_SHADELESS_PALETTE_COLORS = ["black", "white"];
+
 const paletteUtilityPattern = new RegExp(
-  `\\b(?:bg|text|border|ring|outline)-(?:${TAILWIND_PALETTE_COLORS.join("|")})-\\d{2,3}\\b`,
+  `\\b(?:bg|text|border|ring|outline)-(?:(?:${TAILWIND_SHADED_PALETTE_COLORS.join("|")})-\\d{2,3}|(?:${TAILWIND_SHADELESS_PALETTE_COLORS.join("|")}))\\b`,
 );
 const hexColorPattern = /#[0-9a-fA-F]{3,8}\b/;
 const rgbOrHslFunctionPattern = /\b(?:rgb|rgba|hsl|hsla)\(/;
