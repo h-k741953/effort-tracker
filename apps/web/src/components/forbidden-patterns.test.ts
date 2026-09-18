@@ -57,8 +57,37 @@ const TAILWIND_SHADED_PALETTE_COLORS = [
 // シェードを持たない色（bg-white / text-black のように数値シェードを伴わない）。
 const TAILWIND_SHADELESS_PALETTE_COLORS = ["black", "white"];
 
+// AC-10-3-c: 検査対象とする接頭辞の17種。条文が字面に逐語で列挙したものを、
+// 順序も含めてそのまま写す（条文を書き換えずに増減させない）。
+const TAILWIND_COLOR_UTILITY_PREFIXES = [
+  "bg",
+  "text",
+  "border",
+  "ring",
+  "ring-offset",
+  "outline",
+  "accent",
+  "caret",
+  "decoration",
+  "divide",
+  "fill",
+  "stroke",
+  "from",
+  "via",
+  "to",
+  "shadow",
+  "placeholder",
+];
+
+// 正規表現の交替は左から順に試されるため、他方の接頭辞となる語（ring ⊂ ring-offset）が
+// 先にあると短い方が先に照合してしまう。意図を明示するため、長い方を先に置いた順序で
+// 交替を組む（上の定数は条文との逐語対応のため条文の順序を保つ）。
+const paletteUtilityPrefixAlternation = [...TAILWIND_COLOR_UTILITY_PREFIXES]
+  .sort((a, b) => b.length - a.length)
+  .join("|");
+
 const paletteUtilityPattern = new RegExp(
-  `\\b(?:bg|text|border|ring|outline)-(?:(?:${TAILWIND_SHADED_PALETTE_COLORS.join("|")})-\\d{2,3}|(?:${TAILWIND_SHADELESS_PALETTE_COLORS.join("|")}))\\b`,
+  `\\b(?:${paletteUtilityPrefixAlternation})-(?:(?:${TAILWIND_SHADED_PALETTE_COLORS.join("|")})-\\d{2,3}|(?:${TAILWIND_SHADELESS_PALETTE_COLORS.join("|")}))\\b`,
 );
 const hexColorPattern = /#[0-9a-fA-F]{3,8}\b/;
 const rgbOrHslFunctionPattern = /\b(?:rgb|rgba|hsl|hsla)\(/;
