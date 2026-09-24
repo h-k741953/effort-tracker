@@ -79,12 +79,14 @@ const TAILWIND_COLOR_UTILITY_PREFIXES = [
   "placeholder",
 ];
 
-// 正規表現の交替は左から順に試されるため、他方の接頭辞となる語（ring ⊂ ring-offset）が
-// 先にあると短い方が先に照合してしまう。意図を明示するため、長い方を先に置いた順序で
-// 交替を組む（上の定数は条文との逐語対応のため条文の順序を保つ）。
-const paletteUtilityPrefixAlternation = [...TAILWIND_COLOR_UTILITY_PREFIXES]
-  .sort((a, b) => b.length - a.length)
-  .join("|");
+// 正規表現の交替（|）は最左位置で最初に一致した候補を採るが、その後ろが
+// パターン全体（-色名 部分）に一致しなければバックトラックして次の候補を
+// 試す。したがって ring ⊂ ring-offset のように一方が他方の接頭辞になって
+// いても、条文の字面の順序（bg / text / … / ring / ring-offset / … ）の
+// ままで交替を組んでよい —— ring-offset-red-500 は ring を先に試みても
+// 後ろの -red-500 に一致しないため ring-offset へ後退して一致する
+// （17種すべてで判別力が残ることを個別コンポーネントへの適用で確認済み）。
+const paletteUtilityPrefixAlternation = TAILWIND_COLOR_UTILITY_PREFIXES.join("|");
 
 const paletteUtilityPattern = new RegExp(
   `\\b(?:${paletteUtilityPrefixAlternation})-(?:(?:${TAILWIND_SHADED_PALETTE_COLORS.join("|")})-\\d{2,3}|(?:${TAILWIND_SHADELESS_PALETTE_COLORS.join("|")}))\\b`,
@@ -113,5 +115,40 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
     if (content.includes("outline-none")) {
       expect(content).toMatch(/focus-visible:[^\s"'`]*ring/);
     }
+  });
+});
+
+// docs/specs/design-system.md AC-10-3-d。
+//
+// 10-3-c 末尾「この17種のリストは、本条文の字面とテストの実装が逐語で
+// 対応すること」の検査。抽出の元は条文の字面であり、テスト側の定数の
+// 写しではない（写しどうしを比べると自明に一致してしまうため）。
+// 「順序を含めて突き合わせること」「どちらかが0件なら失敗とすること」の
+// 2点は 10-3-d が要求として固定している。
+describe("AC-10-3-d: 10-3-c の接頭辞リスト（条文とテストの逐語対応）", () => {
+  it("design-system.md の 10-3-c から抽出した接頭辞の列は、テストが読む接頭辞の列と順序を含めて一致する", () => {
+    const specPath = path.join(componentsDir, "..", "..", "..", "..", "docs", "specs", "design-system.md");
+    expect(existsSync(specPath)).toBe(true);
+
+    const specContent = readFileSync(specPath, "utf8");
+    const targetLines = specContent.split("\n").filter((line) => line.startsWith("| 10-3-c |"));
+
+    // 10-3-c の行がちょうど1本に絞れなければ、以降の抽出の前提が崩れて
+    // いるため、ここで失敗させる。
+    expect(targetLines).toHaveLength(1);
+    const targetLine = targetLines[0];
+
+    const enumerationMatch = targetLine.match(/逐語で列挙する\*\*\s*——\s*([^。]*)。/);
+    expect(enumerationMatch).not.toBeNull();
+
+    const extractedPrefixes = [...enumerationMatch![1].matchAll(/`([a-z-]+)`/g)].map(
+      (match) => match[1],
+    );
+
+    // 0件ヒットどうしの一致は一致ではない（10-3-d が明示する既知の偽 Green）。
+    expect(extractedPrefixes.length).toBeGreaterThan(0);
+    expect(TAILWIND_COLOR_UTILITY_PREFIXES.length).toBeGreaterThan(0);
+
+    expect(extractedPrefixes).toEqual(TAILWIND_COLOR_UTILITY_PREFIXES);
   });
 });
