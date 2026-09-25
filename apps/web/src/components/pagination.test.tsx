@@ -17,10 +17,23 @@ import { Pagination } from "./pagination";
 // 10-6-f・AC-11-16 により、<nav> は空でないアクセシブル名を持つことを
 // 読む。仕様が固定しないのは名の具体的な文字列であって、名を与えること
 // 自体ではないため、name オプションで空でないことを検証する。
+//
+// 同じ理由で、ボタンも name: /\S/ で引く —— 文言を識別に使わないことと、
+// 「名を持つこと」を検査しないことは別である。文言だけを期待値から外し、
+// 名の存在は読む（無名のボタンは 6-10-i の「押せない形になる側から識別
+// してよい」の前提を壊すため、素通りさせない）。
 
 afterEach(() => {
   cleanup();
 });
+
+/**
+ * 空でないアクセシブル名を持つボタンを、描画順に返す。
+ * 名の具体的な文字列は読まない（6-10-i）。
+ */
+function getNamedButtons(): HTMLElement[] {
+  return screen.getAllByRole("button", { name: /\S/ });
+}
 
 /**
  * 直前の描画から、ちょうど1つだけ disabled になっているボタンの
@@ -29,7 +42,13 @@ afterEach(() => {
  * いないことを示すため、ここで失敗させる。
  */
 function findSoleDisabledButtonIndex(): number {
-  const buttons = screen.getAllByRole("button");
+  const buttons = getNamedButtons();
+  // 名を持つボタンが2つ未満だと、戻る方向・進む方向の2つを別々に
+  // 識別できない（6-10-i は両方向を名指している）。
+  expect(
+    buttons.length,
+    "空でないアクセシブル名を持つボタンが2つ未満である（無名のボタンは name: /\\S/ で引けない）",
+  ).toBeGreaterThanOrEqual(2);
   const disabledIndexes = buttons
     .map((button, index) => ({ index, disabled: (button as HTMLButtonElement).disabled }))
     .filter((entry) => entry.disabled)
@@ -44,14 +63,14 @@ describe("Pagination - AC-6-10", () => {
     expect(screen.getByRole("navigation", { name: /\S/ })).toBeTruthy();
   });
 
-  it("先頭ページ（page=1）では、戻る方向がちょうど1つに定まる形で押せない", () => {
+  it("先頭ページ（page=1）では、押せないボタンがちょうど1つに定まる", () => {
     render(<Pagination page={1} pageCount={5} onPageChange={vi.fn()} />);
-    expect(() => findSoleDisabledButtonIndex()).not.toThrow();
+    findSoleDisabledButtonIndex();
   });
 
-  it("末尾ページでは、進む方向がちょうど1つに定まる形で押せない", () => {
+  it("末尾ページでは、押せないボタンがちょうど1つに定まる", () => {
     render(<Pagination page={5} pageCount={5} onPageChange={vi.fn()} />);
-    expect(() => findSoleDisabledButtonIndex()).not.toThrow();
+    findSoleDisabledButtonIndex();
   });
 
   it("先頭で押せない側と末尾で押せない側は互いに異なる", () => {
@@ -67,7 +86,8 @@ describe("Pagination - AC-6-10", () => {
 
   it("中間ページでは戻る方向・進む方向のいずれも押せる", () => {
     render(<Pagination page={3} pageCount={5} onPageChange={vi.fn()} />);
-    const buttons = screen.getAllByRole("button");
+    const buttons = getNamedButtons();
+    expect(buttons.length).toBeGreaterThanOrEqual(2);
     expect(buttons.every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
   });
 
@@ -87,7 +107,7 @@ describe("Pagination - AC-6-10", () => {
     const page = 3;
     const onPageChange = vi.fn();
     render(<Pagination page={page} pageCount={5} onPageChange={onPageChange} />);
-    const buttons = screen.getAllByRole("button");
+    const buttons = getNamedButtons();
 
     fireEvent.click(buttons[backIndex]);
     expect(onPageChange).toHaveBeenCalledTimes(1);
