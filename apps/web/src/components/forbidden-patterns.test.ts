@@ -99,6 +99,24 @@ const rgbOrHslFunctionPattern = /\b(?:rgb|rgba|hsl|hsla)\(/;
 const nonMdRoundedPattern = /\brounded(?!-md\b)(?:-[\w-]+)?\b/;
 const fetchCallPattern = /\bfetch\s*\(/;
 
+// AC-10-3-f: 不在を主張する5本を1つの表に集め、実ファイルの走査と陽性対照が
+// 同じ経路（findForbiddenExpressions）を通るようにする。経路を分けると、
+// 対照だけが通る形へパターンを差し替えられてしまい対照の意味が無くなる。
+const FORBIDDEN_EXPRESSION_PATTERNS = [
+  { label: "16進の色", pattern: hexColorPattern },
+  { label: "rgb() / hsl() の関数記法", pattern: rgbOrHslFunctionPattern },
+  { label: "パレットユーティリティ", pattern: paletteUtilityPattern },
+  { label: "rounded-md 以外の角丸", pattern: nonMdRoundedPattern },
+  { label: "fetch の呼び出し", pattern: fetchCallPattern },
+];
+
+/** テキストに現れた禁止表現のラベルを、表の順序で返す。 */
+function findForbiddenExpressions(text: string): string[] {
+  return FORBIDDEN_EXPRESSION_PATTERNS.filter(({ pattern }) => pattern.test(text)).map(
+    ({ label }) => label,
+  );
+}
+
 // AC-10-3-c: 「この17種のリストは、本条文の字面とテストの実装が逐語で
 // 対応すること」を支える判別力の検査。定数 TAILWIND_COLOR_UTILITY_PREFIXES
 // と条文（10-3-d が突き合わせる）の側は無傷のまま、交替の組み立て
@@ -129,11 +147,19 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
 
     const content = readFileSync(filePath, "utf8");
 
-    expect(hexColorPattern.test(content)).toBe(false);
-    expect(rgbOrHslFunctionPattern.test(content)).toBe(false);
-    expect(paletteUtilityPattern.test(content)).toBe(false);
-    expect(nonMdRoundedPattern.test(content)).toBe(false);
-    expect(fetchCallPattern.test(content)).toBe(false);
+    // AC-10-3-f: 読んだテキストが0文字なら失敗とする。不在の主張は走査対象が
+    // 空になると空虚に真になるため（10-3 の「1件も読めなかったときは失敗と
+    // する」と同型。あちらが数えるのはファイルの件数、ここは文字数である）。
+    expect(
+      content.length,
+      `${fileName} から読み取ったテキストが0文字である。不在の検査が空振りしたまま` +
+        `緑になるため失敗とする（AC-10-3-f）。`,
+    ).toBeGreaterThan(0);
+
+    expect(
+      findForbiddenExpressions(content),
+      `${fileName} が禁じた表現を含む（AC-2-4 / AC-4-4 / AC-5-5。検出された種類を配列で示す）。`,
+    ).toEqual([]);
 
     // AC-4-6: outline-none を書くなら、同じファイル内に代替のリング指定
     // （focus-visible:ring 系）を伴うこと。
@@ -241,6 +267,10 @@ const NON_MATCHING_SAMPLES = [
   "ring-focus-ring",
   "bg-surface",
   "text-surface-foreground",
+  // AC-2 のトークン名に数値シェードを足した形。色名の側を「語 + `-` + 2〜3桁の
+  // 数値」という *形* だけで判定する（色名の交替を [a-z]+ 等へ広げる）変異は、
+  // 上の5本では判別できない —— いずれもこの形を持たないためである。
+  "bg-primary-500",
   // 11-24: 接頭辞と色名の間に方向・軸のセグメントが挟まる形。
   "border-t-red-500",
   "divide-x-red-500",
@@ -282,7 +312,7 @@ describe("AC-10-3-e: paletteUtilityPattern の判別力（色名・シェード�
     ).toBe(false);
   });
 
-  it("シェードを持つ色の件数は 10-3-c の字面が述べる件数と一致し、シェードを持たない色は字面の語と順序を含めて一致する", () => {
+  it("シェードを持つ色の件数は 10-3-c の字面が述べる件数と一致し、シェードを持たない色は字面の語と一致する", () => {
     const hint =
       "10-3-c の字面から色名の側の記述を抽出できなかった。条文の体裁（括弧・区切り・強調）を変えたのなら、" +
       "色の増減ではないので条文ではなくこの抽出側を追随させること（10-3-e は抽出手段を仕様で固定していない）。";
@@ -314,9 +344,91 @@ describe("AC-10-3-e: paletteUtilityPattern の判別力（色名・シェード�
       extractedShadeless.length,
       `${hint} 括弧の中にバッククォート付きの色名が1つも無かった。`,
     ).toBeGreaterThan(0);
+    // 順序は読まない。10-3-e が要求するのは「字面に挙がっている語」であり、
+    // 「順序を含めて」を明文で要求しているのは 10-3-d（接頭辞の側）だけである。
+    // 条文の語順だけを入れ替える編集で落ちると偽 Red になるため、両側を
+    // 並べ替えて比べる。語の増減は並べ替えても落ちる（W5-3 と同じ理由）。
     expect(
-      extractedShadeless,
-      "シェードを持たない色の集合が 10-3-c の字面と順序を含めて一致しない。",
-    ).toEqual(TAILWIND_SHADELESS_PALETTE_COLORS);
+      [...extractedShadeless].sort(),
+      "シェードを持たない色の集合が 10-3-c の字面と一致しない（順序は読まない）。",
+    ).toEqual([...TAILWIND_SHADELESS_PALETTE_COLORS].sort());
   });
+});
+
+// docs/specs/design-system.md AC-10-3-f。
+//
+// 10-3 / 10-3-c の検査は「禁じた表現が現れないこと」という *不在* の主張で
+// あり、走査経路（パターンをテキストへ当てる部分）が壊れると空虚に真になる。
+// 陽性対照を欠いた緑は何も意味しない、という条文の趣旨を機械検査へ落とす。
+//
+// 対照のテキストは、違反を1つだけ含む複数行のテキストとし、違反をテキストの
+// 先頭・末尾のいずれでもない位置に置く。こうしておくと、パターンをテキスト
+// 全体に係るアンカー（^…$）へ差し替える変異が落ちる。
+//
+// なお、これが示すのは「パターンを当てる経路」までである。正しいファイルを
+// 読めていることは示さない（限界は AC-11-28。そちらは 10-3 の0件失敗と 10-4
+// が担保する）。
+const POSITIVE_CONTROL_TEXTS = [
+  {
+    label: "16進の色",
+    text: 'export function Sample() {\n  const color = "#ff0000";\n  return color;\n}\n',
+  },
+  {
+    label: "rgb() / hsl() の関数記法",
+    text: 'export const style = {\n  color: "rgb(1, 2, 3)",\n};\n',
+  },
+  {
+    label: "パレットユーティリティ",
+    text: 'export function Sample() {\n  return <div className="bg-red-50 p-4" />;\n}\n',
+  },
+  {
+    label: "rounded-md 以外の角丸",
+    text: 'export function Sample() {\n  return <div className="rounded-full p-4" />;\n}\n',
+  },
+  {
+    label: "fetch の呼び出し",
+    text: 'export async function load() {\n  const res = await fetch("/api/x");\n  return res;\n}\n',
+  },
+];
+
+describe("AC-10-3-f: 走査経路の陽性対照（不在の主張が空虚に真になっていないこと）", () => {
+  it("対照の一覧は、不在を主張するパターンを1つずつ覆う", () => {
+    expect(
+      POSITIVE_CONTROL_TEXTS.map(({ label }) => label),
+      "対照とパターンの対応が崩れている。パターンを増減させたなら対照も同時に増減させること（AC-10-3-f）。",
+    ).toEqual(FORBIDDEN_EXPRESSION_PATTERNS.map(({ label }) => label));
+  });
+
+  it.each(POSITIVE_CONTROL_TEXTS)(
+    "$label を含む複数行テキストを、実ファイルと同じ経路で検出できる",
+    ({ label, text }) => {
+      expect(
+        text.split("\n").length,
+        `${label} の対照が複数行でない。行をまたぐ走査であることを示せない（AC-10-3-f）。`,
+      ).toBeGreaterThan(1);
+
+      // 実ファイルの走査と同じ関数を通す。
+      expect(
+        findForbiddenExpressions(text),
+        `${label} を含むテキストを検出できていない。走査経路が空洞化している` +
+          `（パターンをテキスト全体に係るアンカーへ差し替えた／決して一致しない形へ` +
+          `差し替えた等）可能性がある。不在の主張はこの経路が壊れると空虚に真になる（AC-10-3-f）。`,
+      ).toContain(label);
+
+      // 違反がテキストの先頭・末尾のいずれでもない位置にあること（AC-10-3-f）。
+      // ここを満たさない対照は、アンカーを付ける変異を判別できない。
+      const entry = FORBIDDEN_EXPRESSION_PATTERNS.find((p) => p.label === label);
+      expect(entry, `${label} に対応するパターンが表に無い。`).not.toBeUndefined();
+      const matched = entry!.pattern.exec(text);
+      expect(matched, `${label} の対照から一致位置を取れなかった。`).not.toBeNull();
+      expect(
+        matched!.index,
+        `${label} の対照が先頭で一致している。先頭アンカーを付ける変異を判別できない（AC-10-3-f）。`,
+      ).toBeGreaterThan(0);
+      expect(
+        matched!.index + matched![0].length,
+        `${label} の対照が末尾で一致している。末尾アンカーを付ける変異を判別できない（AC-10-3-f）。`,
+      ).toBeLessThan(text.length);
+    },
+  );
 });
