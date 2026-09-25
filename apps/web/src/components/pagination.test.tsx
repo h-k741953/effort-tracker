@@ -18,10 +18,11 @@ import { Pagination } from "./pagination";
 // 読む。仕様が固定しないのは名の具体的な文字列であって、名を与えること
 // 自体ではないため、name オプションで空でないことを検証する。
 //
-// 同じ理由で、ボタンも name: /\S/ で引く —— 文言を識別に使わないことと、
-// 「名を持つこと」を検査しないことは別である。文言だけを期待値から外し、
-// 名の存在は読む（無名のボタンは 6-10-i の「押せない形になる側から識別
-// してよい」の前提を壊すため、素通りさせない）。
+// 方向ボタンを name: /\S/ で引くのは 6-10-ii の要求である（検査手段は
+// 10-6-k、限界は AC-11-27）。文言を識別に使わないこと（6-10-i）と、名を
+// 与えること自体（6-10-ii）は別の事柄であり、6-10-ii はアイコンのみの
+// 実装を禁じていない —— aria-label 等で名を与えれば足りる。名の具体的な
+// 文字列は期待値に持たず、空でないことだけを読む。
 
 afterEach(() => {
   cleanup();
@@ -29,7 +30,11 @@ afterEach(() => {
 
 /**
  * 空でないアクセシブル名を持つボタンを、描画順に返す。
- * 名の具体的な文字列は読まない（6-10-i）。
+ * 名の具体的な文字列は読まない（6-10-i / 6-10-ii）。
+ *
+ * 1本も引けない場合は getAllByRole がその場で throw する（testing-library
+ * の英文メッセージ）。名の不在そのものを日本語で診断するのは 6-10-ii の
+ * 専用の検査であり、そこでは queryAllByRole を使って0本の経路も読む。
  */
 function getNamedButtons(): HTMLElement[] {
   return screen.getAllByRole("button", { name: /\S/ });
@@ -44,10 +49,11 @@ function getNamedButtons(): HTMLElement[] {
 function findSoleDisabledButtonIndex(): number {
   const buttons = getNamedButtons();
   // 名を持つボタンが2つ未満だと、戻る方向・進む方向の2つを別々に
-  // 識別できない（6-10-i は両方向を名指している）。
+  // 識別できない（10-6-k。6-10-i は両方向を名指している）。1本だけ名を
+  // 持つ場合はここで落ち、0本の場合は getNamedButtons が先に throw する。
   expect(
     buttons.length,
-    "空でないアクセシブル名を持つボタンが2つ未満である（無名のボタンは name: /\\S/ で引けない）",
+    "空でないアクセシブル名を持つボタンが2つ未満である（6-10-ii / 10-6-k）",
   ).toBeGreaterThanOrEqual(2);
   const disabledIndexes = buttons
     .map((button, index) => ({ index, disabled: (button as HTMLButtonElement).disabled }))
@@ -61,6 +67,19 @@ describe("Pagination - AC-6-10", () => {
   it("<nav> が空でないアクセシブル名を持つ", () => {
     render(<Pagination page={2} pageCount={5} onPageChange={vi.fn()} />);
     expect(screen.getByRole("navigation", { name: /\S/ })).toBeTruthy();
+  });
+
+  it("6-10-ii: 方向ボタンは空でないアクセシブル名で2つ以上問い合わせられる", () => {
+    render(<Pagination page={2} pageCount={5} onPageChange={vi.fn()} />);
+    // 「ちょうど2つ」を要求しない（10-6-k）。ページ番号のボタンを出す
+    // 実装を本仕様は禁じていないため、2つ以上であることだけを読む。
+    // 0本の経路もここで診断できるよう queryAllByRole で引く。
+    const named = screen.queryAllByRole("button", { name: /\S/ });
+    expect(
+      named.length,
+      "空でないアクセシブル名を持つボタンが2つ以上ない（6-10-ii / 10-6-k）。" +
+        "アイコンのみのボタンは aria-label 等で名を与えること。名の文字列は仕様で固定しない（AC-11-27）。",
+    ).toBeGreaterThanOrEqual(2);
   });
 
   it("先頭ページ（page=1）では、押せないボタンがちょうど1つに定まる", () => {
