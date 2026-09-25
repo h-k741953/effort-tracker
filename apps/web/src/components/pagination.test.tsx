@@ -50,6 +50,21 @@ function getAllButtons(): HTMLElement[] {
 }
 
 /**
+ * 非活性（押せない形）であるかを読む（10-6-l）。
+ *
+ * AC-7-3 は disabled と aria-disabled の両方を非活性の表現として名指すため、
+ * どちらの形でも成り立つものとして読む。一方の形だけを読むと、他方で表した
+ * 条文適合の実装が落ちる（偽 Red）。属性だけではクリックを止められないため、
+ * 「押せない形」の実質は onPageChange が呼ばれないことで併せて読む。
+ */
+function isInactive(element: HTMLElement): boolean {
+  return (
+    (element as HTMLButtonElement).disabled === true ||
+    element.getAttribute("aria-disabled") === "true"
+  );
+}
+
+/**
  * 直前の描画から、ちょうど1つだけ disabled になっているボタンの
  * インデックスを返す（6-10-i: 識別手段は表示文言に依存させない）。
  * ちょうど1つに定まらない場合は、境界での抑止（AC-6-10）が満たされて
@@ -65,7 +80,7 @@ function findSoleDisabledButtonIndex(): number {
     "空でないアクセシブル名を持つボタンが2つ未満である（6-10-ii / 10-6-k）",
   ).toBeGreaterThanOrEqual(2);
   const disabledIndexes = buttons
-    .map((button, index) => ({ index, disabled: (button as HTMLButtonElement).disabled }))
+    .map((button, index) => ({ index, disabled: isInactive(button) }))
     .filter((entry) => entry.disabled)
     .map((entry) => entry.index);
   expect(disabledIndexes).toHaveLength(1);
@@ -126,24 +141,60 @@ describe("Pagination - AC-6-10", () => {
     { label: "先頭", page: 1 },
     { label: "末尾", page: 5 },
   ])(
-    "10-6-l: $label ページでは、押せないボタンが全体でちょうど1つに定まり、空でない名を持つ",
+    "10-6-l: $label ページでは、押せないボタンが全体でちょうど1つに定まり、空でない名を持ち、押しても呼ばれない",
     ({ page }) => {
-      render(<Pagination page={page} pageCount={5} onPageChange={vi.fn()} />);
-      const disabled = getAllButtons().filter((button) => (button as HTMLButtonElement).disabled);
+      const onPageChange = vi.fn();
+      render(<Pagination page={page} pageCount={5} onPageChange={onPageChange} />);
+      const inactive = getAllButtons().filter(isInactive);
       expect(
-        disabled.length,
-        "境界で disabled なボタンが全体でちょうど1つに定まらない（AC-6-10 / AC-7-3 / 10-6-l）。" +
-          "7-3 は disabled の使用を多重送信の抑止（6-2）と入力範囲外の抑止（6-10）に限る。",
+        inactive.length,
+        "境界で非活性なボタンが全体でちょうど1つに定まらない（AC-6-10 / AC-7-3 / 10-6-l）。" +
+          "7-3 は disabled / aria-disabled の使用を多重送信の抑止（6-2）と入力範囲外の抑止（6-10）に限る。",
       ).toBe(1);
       // 名を持つボタンの集合に含まれることで、空でない名を持つことを読む
       //（6-10-ii。名の文字列は期待値に持たない）。
       expect(
-        getNamedButtons().includes(disabled[0]),
+        getNamedButtons().includes(inactive[0]),
         "境界で押せなくなるボタンが空でないアクセシブル名を持たない（6-10-ii / 10-6-l）。" +
           "アイコンのみのボタンは aria-label 等で名を与えること。",
       ).toBe(true);
+      // 「押せない形にする」の実質。属性だけでは発火を止められないため併せて読む。
+      fireEvent.click(inactive[0]);
+      expect(
+        onPageChange,
+        "境界で非活性なボタンを押すと onPageChange が呼ばれる。属性だけでは" +
+          "「押せない形」にならない（AC-6-10 / 10-6-l）。",
+      ).not.toHaveBeenCalled();
     },
   );
+
+  // 10-6-m: 単ページ（page = pageCount = 1）は 10-6-l の対象外（1 < pageCount を
+  // 要求する）でありながら、6-10 の2条件が同時に効く唯一の組である。ここを
+  // 覆わないと、単ページのとき戻る方向が押せる実装が全緑になる。
+  //
+  // 「全体がすべて非活性」を要求してはならない —— 単ページのページ番号は範囲内
+  // であり AC-7-3 が非活性化を禁じるため、ページ番号ボタンを出す条文適合の実装が
+  // 落ちる（偽 Red）。ちょうど2つで読む（限界は 11-31）。
+  it("10-6-m: 単ページ（page=1 / pageCount=1）では、押せないボタンが全体でちょうど2つになり、いずれも空でない名を持ち、押しても呼ばれない", () => {
+    const onPageChange = vi.fn();
+    render(<Pagination page={1} pageCount={1} onPageChange={onPageChange} />);
+    const inactive = getAllButtons().filter(isInactive);
+    expect(
+      inactive.length,
+      "単ページで非活性なボタンが全体でちょうど2つに定まらない（AC-6-10 / AC-7-3 / 10-6-m）。" +
+        "page=1 は先頭かつ末尾であり、両方向が同時に範囲外となる。",
+    ).toBe(2);
+    const named = getNamedButtons();
+    expect(
+      inactive.every((button) => named.includes(button)),
+      "単ページで押せなくなるボタンに、空でないアクセシブル名を持たないものがある（6-10-ii / 10-6-m）。",
+    ).toBe(true);
+    inactive.forEach((button) => fireEvent.click(button));
+    expect(
+      onPageChange,
+      "単ページで非活性なボタンを押すと onPageChange が呼ばれる（AC-6-10 / 10-6-m）。",
+    ).not.toHaveBeenCalled();
+  });
 
   it("中間ページでは戻る方向・進む方向のいずれも押せる", () => {
     render(<Pagination page={3} pageCount={5} onPageChange={vi.fn()} />);
