@@ -161,24 +161,30 @@ const SPEC_DRIFT_HINT =
   "10-3-c の字面から接頭辞の列を抽出できなかった。条文の体裁（区切り・強調・余白）を変えたのなら、" +
   "接頭辞の増減ではないので条文ではなくこの抽出側を追随させること（10-3-d は抽出手段を仕様で固定していない）。";
 
+/**
+ * design-system.md の 10-3-c の行（表のセル1本）を返す。
+ * 行頭一致は表のセル区切りと ID だけを読む（ID 前後の余白を許す）。
+ * ちょうど1本に絞れなければ、以降の抽出の前提が崩れているため失敗させる。
+ */
+function readClause10_3_cLine(hint: string): string {
+  const specPath = path.join(componentsDir, "..", "..", "..", "..", "docs", "specs", "design-system.md");
+  expect(existsSync(specPath), `仕様書が見つからない: ${specPath}`).toBe(true);
+
+  const specContent = readFileSync(specPath, "utf8");
+  const targetLines = specContent
+    .split("\n")
+    .filter((line) => /^\|\s*10-3-c\s*\|/.test(line));
+
+  expect(
+    targetLines,
+    `${hint} 表の行 \`| 10-3-c |\` がちょうど1本に絞れなかった（${targetLines.length}本）。`,
+  ).toHaveLength(1);
+  return targetLines[0];
+}
+
 describe("AC-10-3-d: 10-3-c の接頭辞リスト（条文とテストの逐語対応）", () => {
   it("design-system.md の 10-3-c から抽出した接頭辞の列は、テストが読む接頭辞の列と順序を含めて一致する", () => {
-    const specPath = path.join(componentsDir, "..", "..", "..", "..", "docs", "specs", "design-system.md");
-    expect(existsSync(specPath), `仕様書が見つからない: ${specPath}`).toBe(true);
-
-    const specContent = readFileSync(specPath, "utf8");
-    // 行頭一致は表のセル区切りと ID だけを読む（ID 前後の余白を許す）。
-    const targetLines = specContent
-      .split("\n")
-      .filter((line) => /^\|\s*10-3-c\s*\|/.test(line));
-
-    // 10-3-c の行がちょうど1本に絞れなければ、以降の抽出の前提が崩れて
-    // いるため、ここで失敗させる。
-    expect(
-      targetLines,
-      `${SPEC_DRIFT_HINT} 表の行 \`| 10-3-c |\` がちょうど1本に絞れなかった（${targetLines.length}本）。`,
-    ).toHaveLength(1);
-    const targetLine = targetLines[0];
+    const targetLine = readClause10_3_cLine(SPEC_DRIFT_HINT);
 
     // 「17種」という語から、続く最初の句点までを列挙部として切り出す。
     // 件数は 10-3-c の要求そのものなので体裁ではなく内容であり、
@@ -208,5 +214,109 @@ describe("AC-10-3-d: 10-3-c の接頭辞リスト（条文とテストの逐語�
       "条文の字面から抽出した接頭辞の列と、テストが読む定数が、順序を含めて一致しない。" +
         "接頭辞を増減させるなら 10-3-c の字面とこの定数の両方を同時に変えること。",
     ).toEqual(TAILWIND_COLOR_UTILITY_PREFIXES);
+  });
+});
+
+// docs/specs/design-system.md AC-10-3-e。
+//
+// 10-3-c を実装したパターン（paletteUtilityPattern）の判別力を、一致する側と
+// 一致しない側の両方で読む。**読む相手はパターンそのものであり、実装ファイルの
+// 内容ではない** —— 実装が偶然そのトークンを含むかどうかで判別力が変わる状態を
+// 残さない（10-3-d と 10-3-c の逐語対応を無傷のまま、交替の組み立てだけを
+// より広い形・より狭い形へ差し替える変更を落とすのが目的である）。
+//
+// 一致しない側に並べるのは、11-24（方向・軸つき）と 11-25（任意値記法）が
+// 「落ちない」と宣言している形である。したがってこれは要求の追加ではなく、
+// 宣言済みの穴を機械で固定するものである。穴が塞がれる（＝検出されるように
+// なる）ときは、11-24 / 11-25 の字面の変更を伴うため、ここも同時に変わる。
+
+// 色名・シェードの軸だけを見るため、接頭辞は1つに固定する（接頭辞の側は
+// 10-3-c / 10-3-d と上記 AC-10-3-c の34ケースが持つ）。
+const PALETTE_SAMPLE_PREFIX = "bg";
+
+const NON_MATCHING_SAMPLES = [
+  // AC-2 のトークンを参照する形（AC-1-3 のマッピング）。適合しているので落ちない。
+  "bg-primary",
+  "border-border",
+  "ring-focus-ring",
+  "bg-surface",
+  "text-surface-foreground",
+  // 11-24: 接頭辞と色名の間に方向・軸のセグメントが挟まる形。
+  "border-t-red-500",
+  "divide-x-red-500",
+  // 11-25: 16進でも rgb() / hsl() でもない任意値記法。
+  "bg-[oklch(70%_0.1_20)]",
+  // シェードの桁の境界（10-3-c が読むのは2桁・3桁である）。
+  "bg-red-5",
+  "bg-red-5000",
+];
+
+describe("AC-10-3-e: paletteUtilityPattern の判別力（色名・シェードと、一致すべきでない形）", () => {
+  it.each(TAILWIND_SHADED_PALETTE_COLORS)(
+    "bg-%s-500（シェードを持つ色）を検出できる",
+    (color) => {
+      expect(paletteUtilityPattern.test(`${PALETTE_SAMPLE_PREFIX}-${color}-500`)).toBe(true);
+    },
+  );
+
+  it.each(TAILWIND_SHADELESS_PALETTE_COLORS)(
+    "bg-%s（シェードを持たない色）を検出できる",
+    (color) => {
+      expect(paletteUtilityPattern.test(`${PALETTE_SAMPLE_PREFIX}-${color}`)).toBe(true);
+    },
+  );
+
+  it.each(["bg-red-50", "bg-red-500"])("%s（シェード2桁・3桁）を検出できる", (sample) => {
+    expect(
+      paletteUtilityPattern.test(sample),
+      `${sample} を検出できない。10-3-c が読むシェードは2桁・3桁の両方である。`,
+    ).toBe(true);
+  });
+
+  it.each(NON_MATCHING_SAMPLES)("%s は検出しない", (sample) => {
+    expect(
+      paletteUtilityPattern.test(sample),
+      `${sample} を誤検出した。AC-2 のトークン参照は AC-2-4 に適合しており、` +
+        `方向・軸つき（11-24）と任意値記法（11-25）は 10-3-c が読む形の外にある。` +
+        `検出するよう強めるなら 10-3-c の字面（読む形の定義）と 11-24 / 11-25 を同時に変えること。`,
+    ).toBe(false);
+  });
+
+  it("シェードを持つ色の件数は 10-3-c の字面が述べる件数と一致し、シェードを持たない色は字面の語と順序を含めて一致する", () => {
+    const hint =
+      "10-3-c の字面から色名の側の記述を抽出できなかった。条文の体裁（括弧・区切り・強調）を変えたのなら、" +
+      "色の増減ではないので条文ではなくこの抽出側を追随させること（10-3-e は抽出手段を仕様で固定していない）。";
+    const targetLine = readClause10_3_cLine(hint);
+
+    // 「色名の側（…）」の括弧の中だけを読む。10-3-c の行には17種の接頭辞も
+    // バッククォート付きで並ぶため、行全体を相手にすると混ざる。
+    // 括弧の種類（全角・半角）と前後の余白は体裁であり契約ではないため、
+    // どちらも許す（W5-3 と同じ理由。偽 Red を作らない）。
+    const colorNoteMatch = targetLine.match(/色名の側\s*[（(]\s*([^）)]*)[）)]/);
+    expect(colorNoteMatch, `${hint} 「色名の側（…）」を切り出せなかった。`).not.toBeNull();
+    const colorNote = colorNoteMatch![1];
+
+    const shadedCountMatch = colorNote.match(/(\d+)\s*色/);
+    expect(shadedCountMatch, `${hint} 「N色」の件数を読めなかった: ${colorNote}`).not.toBeNull();
+    const shadedCount = Number(shadedCountMatch![1]);
+    // 0件は突き合わせにならない（10-3-d と同じ理由）。
+    expect(shadedCount, `${hint} 読み取った件数が 0 である。`).toBeGreaterThan(0);
+
+    expect(
+      TAILWIND_SHADED_PALETTE_COLORS.length,
+      "シェードを持つ色の件数が 10-3-c の字面と一致しない。色を増減させるなら条文の件数も同時に変えること" +
+        "（要素そのものの固定は 10-3-c が色名を逐語で列挙しないため行えない。限界は 11-26）。",
+    ).toBe(shadedCount);
+
+    // シェードを持たない色は条文が字面に挙げているため、要素まで突き合わせる。
+    const extractedShadeless = [...colorNote.matchAll(/`([a-z-]+)`/g)].map((match) => match[1]);
+    expect(
+      extractedShadeless.length,
+      `${hint} 括弧の中にバッククォート付きの色名が1つも無かった。`,
+    ).toBeGreaterThan(0);
+    expect(
+      extractedShadeless,
+      "シェードを持たない色の集合が 10-3-c の字面と順序を含めて一致しない。",
+    ).toEqual(TAILWIND_SHADELESS_PALETTE_COLORS);
   });
 });
