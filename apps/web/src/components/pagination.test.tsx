@@ -41,6 +41,15 @@ function getNamedButtons(): HTMLElement[] {
 }
 
 /**
+ * 直前の描画から、名の有無で絞り込まずに button のロールを持つ要素の
+ * 全体を返す（10-6-l）。無名のボタンも含めて数えるために getNamedButtons
+ * とは別に持つ。
+ */
+function getAllButtons(): HTMLElement[] {
+  return screen.getAllByRole("button");
+}
+
+/**
  * 直前の描画から、ちょうど1つだけ disabled になっているボタンの
  * インデックスを返す（6-10-i: 識別手段は表示文言に依存させない）。
  * ちょうど1つに定まらない場合は、境界での抑止（AC-6-10）が満たされて
@@ -102,6 +111,39 @@ describe("Pagination - AC-6-10", () => {
 
     expect(advanceIndex).not.toBe(backIndex);
   });
+
+  // 10-6-l: 境界で押せなくなるボタンを、名の有無で絞り込まずに同定する。
+  //
+  // findSoleDisabledButtonIndex は「名を持つボタン」の中で数えるため、方向
+  // ボタンを無名にしたうえで境界で別の名を持つボタンを disabled にする実装を
+  // 落とせない（10-6-k / 10-6-f / 10-6-j も落とせない。11-27）。そこで button
+  // のロールを持つ要素の全体で数え、ちょうど1つであること（7-3 が disabled の
+  // 使用を 6-2 と 6-10 に限り、6-10 が名指す範囲外の入力が各境界で1方向だけ
+  // であることから従う）と、その1つが空でない名を持つこと（6-10-ii）を読む。
+  //
+  // 新たな要求ではない。名の文言そのものは読まない（残る穴は 11-30）。
+  it.each([
+    { label: "先頭", page: 1 },
+    { label: "末尾", page: 5 },
+  ])(
+    "10-6-l: $label ページでは、押せないボタンが全体でちょうど1つに定まり、空でない名を持つ",
+    ({ page }) => {
+      render(<Pagination page={page} pageCount={5} onPageChange={vi.fn()} />);
+      const disabled = getAllButtons().filter((button) => (button as HTMLButtonElement).disabled);
+      expect(
+        disabled.length,
+        "境界で disabled なボタンが全体でちょうど1つに定まらない（AC-6-10 / AC-7-3 / 10-6-l）。" +
+          "7-3 は disabled の使用を多重送信の抑止（6-2）と入力範囲外の抑止（6-10）に限る。",
+      ).toBe(1);
+      // 名を持つボタンの集合に含まれることで、空でない名を持つことを読む
+      //（6-10-ii。名の文字列は期待値に持たない）。
+      expect(
+        getNamedButtons().includes(disabled[0]),
+        "境界で押せなくなるボタンが空でないアクセシブル名を持たない（6-10-ii / 10-6-l）。" +
+          "アイコンのみのボタンは aria-label 等で名を与えること。",
+      ).toBe(true);
+    },
+  );
 
   it("中間ページでは戻る方向・進む方向のいずれも押せる", () => {
     render(<Pagination page={3} pageCount={5} onPageChange={vi.fn()} />);
