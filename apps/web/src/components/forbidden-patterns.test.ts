@@ -167,16 +167,29 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
     // が対照を消すため落ちる。対照を検査自身のテキストだけで持つと、実ファイル
     // 側の引数を切る変異が対照に触れないまま生き残る（限界は AC-11-29）。
     const controlled = `${content}\n// const __positiveControl = "#ff0000";\n`;
-    const labels = findForbiddenExpressions(controlled);
+
+    // AC-10-3-f (i): 担い手が実ファイルから読んだテキストそのものであること
+    // 自体を読む。これを読まないと、担い手を検査自身のテキストへ差し替える変異
+    // （実ファイルのテキストを連結しない形）が落ちず、10-3-f が新設した要求が
+    // 機械検査されないまま残る。content の長さは上で0文字でないことを読んでいる。
     expect(
-      labels,
-      `${fileName} のテキストを担い手にした陽性対照（${HEX_COLOR_LABEL}）が検出されない。` +
-        `走査対象が切り落とされており、不在の主張が空虚に真になっている（AC-10-3-f）。`,
-    ).toContain(HEX_COLOR_LABEL);
+      controlled.startsWith(content) && controlled.length > content.length,
+      `${fileName} の陽性対照が実ファイルのテキストを担い手にしていない（AC-10-3-f）。`,
+    ).toBe(true);
+
+    // AC-10-3-f (ii): 不在の主張と陽性対照を1本の主張へまとめ、走査の結果と
+    // 期待値の間に可変の絞り込み（filter 等）を挟まない。絞り込みを挟むと、
+    // それを空にする変異で不在の主張だけが空虚に真になり、対照は別の主張として
+    // 通り続ける。期待値をちょうど1要素にすることで、走査結果が空になる変異は
+    // 陽性対照として落ち、実ファイル由来の違反は余剰として落ちる（期待値が
+    // 1要素なので表の並び順には依存しない）。
     expect(
-      labels.filter((label) => label !== HEX_COLOR_LABEL),
-      `${fileName} が禁じた表現を含む（AC-2-4 / AC-4-4 / AC-5-5。検出された種類を配列で示す）。`,
-    ).toEqual([]);
+      findForbiddenExpressions(controlled),
+      `${fileName} の走査結果が「${HEX_COLOR_LABEL}だけ」にならない。` +
+        `${HEX_COLOR_LABEL}が出ていないなら走査対象が切り落とされており、不在の主張が` +
+        `空虚に真になっている。他の種類が出ているならそのファイルが禁じた表現を含む` +
+        `（AC-2-4 / AC-4-4 / AC-5-5 / AC-10-3-f）。`,
+    ).toEqual([HEX_COLOR_LABEL]);
 
     // 16進の色そのものの不在は、上の対照が必ず検出させてしまうため、実ファイル
     // のテキストで別に読む（この1本だけは引数を切る変異が残る。AC-11-29）。
@@ -421,9 +434,9 @@ describe("AC-10-3-f: 走査経路の陽性対照（不在の主張が空虚に�
     // 「順序を含めて」を要求するのは接頭辞リストだけである）。並びを期待値に
     // 持つと、表の要素を入れ替えただけで Red になる（偽 Red）。
     expect(
-      [...POSITIVE_CONTROL_TEXTS].map(({ label }) => label).sort(),
+      POSITIVE_CONTROL_TEXTS.map(({ label }) => label).sort(),
       "対照とパターンの対応が崩れている。パターンを増減させたなら対照も同時に増減させること（順序は読まない。AC-10-3-f）。",
-    ).toEqual([...FORBIDDEN_EXPRESSION_PATTERNS].map(({ label }) => label).sort());
+    ).toEqual(FORBIDDEN_EXPRESSION_PATTERNS.map(({ label }) => label).sort());
   });
 
   it.each(POSITIVE_CONTROL_TEXTS)(
