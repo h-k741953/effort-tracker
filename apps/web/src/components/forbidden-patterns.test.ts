@@ -102,8 +102,12 @@ const fetchCallPattern = /\bfetch\s*\(/;
 // AC-10-3-f: 不在を主張する5本を1つの表に集め、実ファイルの走査と陽性対照が
 // 同じ経路（findForbiddenExpressions）を通るようにする。経路を分けると、
 // 対照だけが通る形へパターンを差し替えられてしまい対照の意味が無くなる。
+// 陽性対照の担い手に用いる形（AC-10-3-f）。表と対照の双方がこの定数を
+// 参照することで、ラベルの文字列がずれない。
+const HEX_COLOR_LABEL = "16進の色";
+
 const FORBIDDEN_EXPRESSION_PATTERNS = [
-  { label: "16進の色", pattern: hexColorPattern },
+  { label: HEX_COLOR_LABEL, pattern: hexColorPattern },
   { label: "rgb() / hsl() の関数記法", pattern: rgbOrHslFunctionPattern },
   { label: "パレットユーティリティ", pattern: paletteUtilityPattern },
   { label: "rounded-md 以外の角丸", pattern: nonMdRoundedPattern },
@@ -156,10 +160,30 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
         `緑になるため失敗とする（AC-10-3-f）。`,
     ).toBeGreaterThan(0);
 
+    // AC-10-3-f: 陽性対照の担い手を「実ファイルから読んだテキストそのもの」に
+    // する。読んだテキストの末尾へ16進の色を1つだけ足したものを、不在の主張と
+    // 同じ1回の走査へ通し、16進の色が検出されることを読む。こうすると、走査
+    // 対象を切り落とす変異（引数を丸ごと切る形・先頭の一定文字数だけを残す形）
+    // が対照を消すため落ちる。対照を検査自身のテキストだけで持つと、実ファイル
+    // 側の引数を切る変異が対照に触れないまま生き残る（限界は AC-11-29）。
+    const controlled = `${content}\n// const __positiveControl = "#ff0000";\n`;
+    const labels = findForbiddenExpressions(controlled);
     expect(
-      findForbiddenExpressions(content),
+      labels,
+      `${fileName} のテキストを担い手にした陽性対照（${HEX_COLOR_LABEL}）が検出されない。` +
+        `走査対象が切り落とされており、不在の主張が空虚に真になっている（AC-10-3-f）。`,
+    ).toContain(HEX_COLOR_LABEL);
+    expect(
+      labels.filter((label) => label !== HEX_COLOR_LABEL),
       `${fileName} が禁じた表現を含む（AC-2-4 / AC-4-4 / AC-5-5。検出された種類を配列で示す）。`,
     ).toEqual([]);
+
+    // 16進の色そのものの不在は、上の対照が必ず検出させてしまうため、実ファイル
+    // のテキストで別に読む（この1本だけは引数を切る変異が残る。AC-11-29）。
+    expect(
+      hexColorPattern.test(content),
+      `${fileName} が${HEX_COLOR_LABEL}を含む（AC-2-4）。`,
+    ).toBe(false);
 
     // AC-4-6: outline-none を書くなら、同じファイル内に代替のリング指定
     // （focus-visible:ring 系）を伴うこと。
@@ -393,10 +417,13 @@ const POSITIVE_CONTROL_TEXTS = [
 
 describe("AC-10-3-f: 走査経路の陽性対照（不在の主張が空虚に真になっていないこと）", () => {
   it("対照の一覧は、不在を主張するパターンを1つずつ覆う", () => {
+    // 読むのは集合としての一致であり、表と対照の並び順は読まない（10-3-d が
+    // 「順序を含めて」を要求するのは接頭辞リストだけである）。並びを期待値に
+    // 持つと、表の要素を入れ替えただけで Red になる（偽 Red）。
     expect(
-      POSITIVE_CONTROL_TEXTS.map(({ label }) => label),
-      "対照とパターンの対応が崩れている。パターンを増減させたなら対照も同時に増減させること（AC-10-3-f）。",
-    ).toEqual(FORBIDDEN_EXPRESSION_PATTERNS.map(({ label }) => label));
+      [...POSITIVE_CONTROL_TEXTS].map(({ label }) => label).sort(),
+      "対照とパターンの対応が崩れている。パターンを増減させたなら対照も同時に増減させること（順序は読まない。AC-10-3-f）。",
+    ).toEqual([...FORBIDDEN_EXPRESSION_PATTERNS].map(({ label }) => label).sort());
   });
 
   it.each(POSITIVE_CONTROL_TEXTS)(
