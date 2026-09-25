@@ -145,7 +145,7 @@ ADR 0007 の §1〜§4（testify を採らない / go-cmp のみ許す / モッ�
 | 3-2 | **テストが0件のとき緑にしない。** `passWithNoTests` を有効にしない。0件で成功する設定は、`check-domain-deps` の「検査対象が無い場合は失敗させる」と同じ理由で偽の Green にあたる |
 | 3-3 | **意味のあるテストを最低1件置く。** `expect(true).toBe(true)` のような、対象が壊れても落ちないテストを置かない（`docs/harness/verification-loop.md`「Red を踏んでいないテストは、対象が壊れても落ちない可能性を排除できていない」） |
 | 3-4 | そのテストが **Red を踏めること**を tester 工程が確認する。実装（またはテスト対象の値）を壊すと落ちることを実測する |
-| 3-5 | **アサーション / モックのライブラリを追加しない。** Vitest 標準の `expect` を使う。ADR 0007 の Go 向け制約は Web に自動適用されない（P-5）が、**「入れる」判断も本仕様の範囲外**であり、必要になった Issue で判断する。本 Issue はコンポーネントを作らないため `@testing-library/*` も要らない |
+| 3-5 | **アサーション / モックのライブラリを追加しない。** Vitest 標準の `expect` を使う。ADR 0007 の Go 向け制約は Web に自動適用されない（P-5）が、**「入れる」判断も本仕様の範囲外**であり、必要になった Issue で判断する。本 Issue はコンポーネントを作らないため `@testing-library/*` も要らない。**現況: 「必要になった Issue」はコンポーネントを初めて作るデザインシステムの Issue であり、そこで人間が 2026-09-16 に DOM 検証ライブラリの追加を決定した（決定の本文・理由・代替案は `docs/adr/0020-dom-testing-library-for-web-tests.md`。同 ADR は ADR 0007 を置換せず補完する。Issue #53 に効く受け入れ条件は `docs/specs/design-system.md` D-1。追加は同 ADR が挙げた3点に限り、アサーション / モックのライブラリは引き続き追加しない）。その決定は当該 Issue の範囲にのみ及び、本 Issue における追加禁止は緩めない** |
 | 3-6 | テスト設定（`vitest.config.ts` 等）は `apps/web` 配下に置く。リポジトリ直下へ出さない |
 | 3-7 | **3-4 の例外 — テストランナー自体を導入する Issue に限る。** ランナーが未導入の時点では意味のある Red を踏めないため、tester 工程による確認に代えて、**implementer 以外（reviewer）が独立にミューテーション実測を行い、その証跡を本仕様に記録する**。**「tester が確認できない」は「誰も確認しなくてよい」を意味しない。** 適用条件と本 Issue での実測結果は「AC-3-7」節（下記）に記す |
 
@@ -256,11 +256,11 @@ tester 工程の時点では **Vitest 自体が未導入**であり、テスト�
 |---|---|---|
 | `src/lib/lambda-client.ts`（実行ロールでの SigV4 署名） | 呼び出すドメイン API Lambda が存在してから（Terraform の後） | ADR 0003 / 0014、`docs/rules/architecture.md` |
 | Cognito トークンの BFF 終端・検証、ログイン3方式 | 認証基盤の Terraform の後 | ADR 0016、`docs/specs/login-ui.md` |
-| 画面・コンポーネントの実装（`src/components/` の中身） | 後続の画面 Issue。本 Issue は置き場所のみ確定（AC-1-5） | `docs/specs/work-month-screen-ui.md` ほか、ADR 0015 |
+| 画面・コンポーネントの実装（`src/components/` の中身） | 後続の画面 Issue。本 Issue は置き場所のみ確定（AC-1-5）。**現況: 共通コンポーネント（トークンを含むデザインシステム）の受け入れ条件は `docs/specs/design-system.md` が引き受けた。画面そのものの実装は引き続き後続の画面 Issue が持つ** | `docs/specs/work-month-screen-ui.md` ほか、ADR 0015 |
 | **`src/lib/rate-limit.ts`（レート制限）** | **最初の Route Handler を作る Issue。** U-1 を 2026-08-14 に**案1**で決定し、本 Issue から外した。**スタブも置かない**（AC-8-5）。**現況（2026-09-01）: その Issue は #52 であり、`docs/specs/bff-auth-termination.md` AC-11 が引き受けた** | U-1、`docs/rules/cost-guardrails.md`、ADR 0010 §A |
 | Route Handler（`src/app/api/**`） | **U-1 が決まってから。** 最初の Route Handler を作る Issue は、レート制限の決定（U-1 の a〜e をセットで）なしに着手できない。**この着手条件は案1の決定後も外れない**。**現況（2026-09-01）: 着手条件は Issue #52 で満たされた** —— 人間が a〜e をセットで決定し、値は `docs/specs/bff-auth-termination.md` AC-11 が持つ。**条件そのものは緩めていない**（以後 Route Handler を足す Issue も、レート制限を通す＝同 AC-11-12） | `docs/rules/cost-guardrails.md`、CLAUDE.md（ガードレールを「後で入れる」ことを許容しない） |
 | OpenNext の導入・ビルド / デプロイ設定 | Terraform の Issue | ADR 0013 |
-| Claude Design / DesignSync の同期運用 | 画面 Issue | ADR 0015（本仕様は配置先のみ確定。AC-1-5） |
+| Claude Design / DesignSync の同期運用 | 画面 Issue。**現況: デザインシステムの Issue が引き受け、受け入れ条件は `docs/specs/design-system.md` AC-9 が持つ** | ADR 0015（本仕様は配置先のみ確定。AC-1-5） |
 | ドメイン API の HTTP 呼び出し実装 | `lambda-client.ts` と同時 | `docs/specs/domain-api-http-contract.md` |
 
 ### AC-10. 限界 — 緑が意味しないこと
