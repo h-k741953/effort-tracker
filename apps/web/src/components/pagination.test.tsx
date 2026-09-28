@@ -79,12 +79,12 @@ function findSoleDisabledButtonIndex(): number {
     buttons.length,
     "空でないアクセシブル名を持つボタンが2つ未満である（6-10-ii / 10-6-k）",
   ).toBeGreaterThanOrEqual(2);
-  const disabledIndexes = buttons
-    .map((button, index) => ({ index, disabled: isInactive(button) }))
-    .filter((entry) => entry.disabled)
+  const inactiveIndexes = buttons
+    .map((button, index) => ({ index, inactive: isInactive(button) }))
+    .filter((entry) => entry.inactive)
     .map((entry) => entry.index);
-  expect(disabledIndexes).toHaveLength(1);
-  return disabledIndexes[0];
+  expect(inactiveIndexes).toHaveLength(1);
+  return inactiveIndexes[0];
 }
 
 describe("Pagination - AC-6-10", () => {
@@ -198,10 +198,12 @@ describe("Pagination - AC-6-10", () => {
 
   it("中間ページでは戻る方向・進む方向のいずれも押せる", () => {
     render(<Pagination page={3} pageCount={5} onPageChange={vi.fn()} />);
-    const buttons = getNamedButtons();
-    expect(buttons.length).toBeGreaterThanOrEqual(2);
-    // 非活性の観測は isInactive に揃える（10-6-l / AC-7-3）。生の disabled だけ
-    // を読むと、範囲内の中間ページで aria-disabled を付ける 7-3 違反が落ちない。
+    // 母集団も観測形も 10-6-l / 10-6-m に揃える（AC-7-3）。名で絞ると、中間ページ
+    // だけに現れる「名を持たない aria-disabled のボタン」という 7-3 違反が、境界を
+    // 読む 10-6-l でも描画されないため落ちない。観測形も生の disabled だけでは
+    // aria-disabled で表した 7-3 違反を落とせない。
+    const buttons = getAllButtons();
+    expect(getNamedButtons().length).toBeGreaterThanOrEqual(2);
     expect(
       buttons.every((button) => !isInactive(button)),
       "中間ページで非活性なボタンがある。7-3 は disabled / aria-disabled の使用を" +
