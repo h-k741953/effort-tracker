@@ -102,16 +102,20 @@ const fetchCallPattern = /\bfetch\s*\(/;
 // AC-10-3-f: 不在を主張する5本を1つの表に集め、実ファイルの走査と陽性対照が
 // 同じ経路（findForbiddenExpressions）を通るようにする。経路を分けると、
 // 対照だけが通る形へパターンを差し替えられてしまい対照の意味が無くなる。
-// 陽性対照の担い手に用いる形（AC-10-3-f）。表と対照の双方がこの定数を
-// 参照することで、ラベルの文字列がずれない。
+// ラベルの文字列は定数に持つ。表・陽性対照の一覧・担い手の期待値のいずれも
+// この定数を参照することで、文字列がずれない（AC-10-3-f）。
 const HEX_COLOR_LABEL = "16進の色";
+const RGB_OR_HSL_LABEL = "rgb() / hsl() の関数記法";
+const PALETTE_UTILITY_LABEL = "パレットユーティリティ";
+const NON_MD_ROUNDED_LABEL = "rounded-md 以外の角丸";
+const FETCH_CALL_LABEL = "fetch の呼び出し";
 
 const FORBIDDEN_EXPRESSION_PATTERNS = [
   { label: HEX_COLOR_LABEL, pattern: hexColorPattern },
-  { label: "rgb() / hsl() の関数記法", pattern: rgbOrHslFunctionPattern },
-  { label: "パレットユーティリティ", pattern: paletteUtilityPattern },
-  { label: "rounded-md 以外の角丸", pattern: nonMdRoundedPattern },
-  { label: "fetch の呼び出し", pattern: fetchCallPattern },
+  { label: RGB_OR_HSL_LABEL, pattern: rgbOrHslFunctionPattern },
+  { label: PALETTE_UTILITY_LABEL, pattern: paletteUtilityPattern },
+  { label: NON_MD_ROUNDED_LABEL, pattern: nonMdRoundedPattern },
+  { label: FETCH_CALL_LABEL, pattern: fetchCallPattern },
 ];
 
 /** テキストに現れた禁止表現のラベルを、表の順序で返す。 */
@@ -161,41 +165,53 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
     ).toBeGreaterThan(0);
 
     // AC-10-3-f: 陽性対照の担い手を「実ファイルから読んだテキストそのもの」に
-    // する。読んだテキストの末尾へ16進の色を1つだけ足したものを、不在の主張と
-    // 同じ1回の走査へ通し、16進の色が検出されることを読む。こうすると、走査
-    // 対象を切り落とす変異（引数を丸ごと切る形・先頭の一定文字数だけを残す形）
-    // が対照を消すため落ちる。対照を検査自身のテキストだけで持つと、実ファイル
-    // 側の引数を切る変異が対照に触れないまま生き残る（限界は AC-11-29）。
-    const controlled = `${content}\n// const __positiveControl = "#ff0000";\n`;
+    // する。読んだテキストの前後の両端へ、互いに異なる2つの形の違反を1つずつ
+    // 足したものを、不在の主張と同じ1回の走査へ通し、いずれも検出されることを
+    // 読む。こうすると、走査対象を切り落とす変異（引数を丸ごと切る形・先頭側
+    // だけを残す形・末尾側だけを残す形）はどの向きでも片方の対照を消すため
+    // 落ちる。片端だけに置くと、その端が残る向きの切り落とし（末尾に置いたなら
+    // slice(-N)）が対照を消さないまま、実ファイル由来の違反を不可視にする
+    // （限界は AC-11-29）。
+    const controlled =
+      `// const __headControl = () => fetch("/__control");\n` +
+      `${content}\n// const __tailControl = "#ff0000";\n`;
 
     // AC-10-3-f (i): 担い手が実ファイルから読んだテキストそのものであること
     // 自体を読む。これを読まないと、担い手を検査自身のテキストへ差し替える変異
     // （実ファイルのテキストを連結しない形）が落ちず、10-3-f が新設した要求が
-    // 機械検査されないまま残る。content の長さは上で0文字でないことを読んでいる。
+    // 機械検査されないまま残る。両端へ足すため「始まる」ではなく「部分として
+    // 含む」で読む。content の長さは上で0文字でないことを読んでいる。
     expect(
-      controlled.startsWith(content) && controlled.length > content.length,
+      controlled.includes(content) && controlled.length > content.length,
       `${fileName} の陽性対照が実ファイルのテキストを担い手にしていない（AC-10-3-f）。`,
     ).toBe(true);
 
     // AC-10-3-f (ii): 不在の主張と陽性対照を1本の主張へまとめ、走査の結果と
     // 期待値の間に可変の絞り込み（filter 等）を挟まない。絞り込みを挟むと、
     // それを空にする変異で不在の主張だけが空虚に真になり、対照は別の主張として
-    // 通り続ける。期待値をちょうど1要素にすることで、走査結果が空になる変異は
-    // 陽性対照として落ち、実ファイル由来の違反は余剰として落ちる（期待値が
-    // 1要素なので表の並び順には依存しない）。
+    // 通り続ける。期待値をちょうど2要素（両端の対照が出した2つの形）にすること
+    // で、走査結果が欠ける変異は陽性対照として落ち、実ファイル由来の違反は余剰
+    // として落ちる。両側を sort して集合として読む —— 表の並び順は読まない
+    // （10-3-d が順序を要求するのは接頭辞リストだけであり、並びを期待値に持つと
+    // 表を並べ替えただけで Red になる。I8-1 と同型の偽 Red）。sort は要素を
+    // 減らさないため、走査結果が欠ける変異はこの形でも落ちる。
     expect(
-      findForbiddenExpressions(controlled),
-      `${fileName} の走査結果が「${HEX_COLOR_LABEL}だけ」にならない。` +
-        `${HEX_COLOR_LABEL}が出ていないなら走査対象が切り落とされており、不在の主張が` +
+      [...findForbiddenExpressions(controlled)].sort(),
+      `${fileName} の走査結果が「${HEX_COLOR_LABEL}と${FETCH_CALL_LABEL}だけ」に` +
+        `ならない。どちらかが出ていないなら走査対象が切り落とされており、不在の主張が` +
         `空虚に真になっている。他の種類が出ているならそのファイルが禁じた表現を含む` +
-        `（AC-2-4 / AC-4-4 / AC-5-5 / AC-10-3-f）。`,
-    ).toEqual([HEX_COLOR_LABEL]);
+        `（AC-2-4 / AC-4-4 / AC-4-6 / AC-5-5 / AC-10-3-f）。`,
+    ).toEqual([HEX_COLOR_LABEL, FETCH_CALL_LABEL].sort());
 
-    // 16進の色そのものの不在は、上の対照が必ず検出させてしまうため、実ファイル
-    // のテキストで別に読む（この1本だけは引数を切る変異が残る。AC-11-29）。
+    // 対照そのものに用いた2つの形の不在は、上の対照が必ず検出させてしまうため、
+    // 実ファイルのテキストで別に読む（この2本は引数を切る変異が残る。AC-11-29）。
     expect(
       hexColorPattern.test(content),
       `${fileName} が${HEX_COLOR_LABEL}を含む（AC-2-4）。`,
+    ).toBe(false);
+    expect(
+      fetchCallPattern.test(content),
+      `${fileName} が${FETCH_CALL_LABEL}を含む（AC-4-6）。`,
     ).toBe(false);
 
     // AC-4-6: outline-none を書くなら、同じファイル内に代替のリング指定
@@ -407,23 +423,23 @@ describe("AC-10-3-e: paletteUtilityPattern の判別力（色名・シェード�
 // が担保する）。
 const POSITIVE_CONTROL_TEXTS = [
   {
-    label: "16進の色",
+    label: HEX_COLOR_LABEL,
     text: 'export function Sample() {\n  const color = "#ff0000";\n  return color;\n}\n',
   },
   {
-    label: "rgb() / hsl() の関数記法",
+    label: RGB_OR_HSL_LABEL,
     text: 'export const style = {\n  color: "rgb(1, 2, 3)",\n};\n',
   },
   {
-    label: "パレットユーティリティ",
+    label: PALETTE_UTILITY_LABEL,
     text: 'export function Sample() {\n  return <div className="bg-red-50 p-4" />;\n}\n',
   },
   {
-    label: "rounded-md 以外の角丸",
+    label: NON_MD_ROUNDED_LABEL,
     text: 'export function Sample() {\n  return <div className="rounded-full p-4" />;\n}\n',
   },
   {
-    label: "fetch の呼び出し",
+    label: FETCH_CALL_LABEL,
     text: 'export async function load() {\n  const res = await fetch("/api/x");\n  return res;\n}\n',
   },
 ];
