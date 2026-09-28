@@ -200,7 +200,13 @@ describe("Pagination - AC-6-10", () => {
     render(<Pagination page={3} pageCount={5} onPageChange={vi.fn()} />);
     const buttons = getNamedButtons();
     expect(buttons.length).toBeGreaterThanOrEqual(2);
-    expect(buttons.every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
+    // 非活性の観測は isInactive に揃える（10-6-l / AC-7-3）。生の disabled だけ
+    // を読むと、範囲内の中間ページで aria-disabled を付ける 7-3 違反が落ちない。
+    expect(
+      buttons.every((button) => !isInactive(button)),
+      "中間ページで非活性なボタンがある。7-3 は disabled / aria-disabled の使用を" +
+        "多重送信の抑止（6-2）と入力範囲外の抑止（6-10）に限る（AC-6-10 / AC-7-3）。",
+    ).toBe(true);
   });
 
   it("6-10-i: 押せない側から識別した戻る方向・進む方向は onPageChange をちょうど1回、page との大小関係を満たす引数で呼ぶ", () => {
