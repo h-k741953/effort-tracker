@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -164,6 +164,18 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
         `緑になるため失敗とする（AC-10-3-f）。`,
     ).toBeGreaterThan(0);
 
+    // AC-10-3-f (iii): 読んだテキストがファイル全体であることを、読み取りとは
+    // 別の出所（statSync のバイト数）で読む。0文字ガードと両端の対照は、読み取り
+    // 位置そのものを切り落とす変異（readFileSync(...) の結果を切る形）を通して
+    // しまう —— 対照は content の下流で組み立てるため両端とも無傷に残り、実ファイル
+    // 由来の違反のうち切り落とされた側だけが不可視になる（AC-11-29）。content は
+    // UTF-16 の長さなので、バイト数で比べる。
+    expect(
+      Buffer.byteLength(content, "utf8"),
+      `${fileName} から読み取ったテキストがファイル全体ではない。読み取り位置で` +
+        `切り落とされると、不在の検査が空振りしたまま緑になる（AC-10-3-f）。`,
+    ).toBe(statSync(filePath).size);
+
     // AC-10-3-f: 陽性対照の担い手を「実ファイルから読んだテキストそのもの」に
     // する。読んだテキストの前後の両端へ、互いに異なる2つの形の違反を1つずつ
     // 足したものを、不在の主張と同じ1回の走査へ通し、いずれも検出されることを
@@ -172,9 +184,13 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
     // 落ちる。片端だけに置くと、その端が残る向きの切り落とし（末尾に置いたなら
     // slice(-N)）が対照を消さないまま、実ファイル由来の違反を不可視にする
     // （限界は AC-11-29）。
+    //
+    // 担い手に fetch の不在（AC-5-5）を選ばない（AC-10-3-f）。担い手に選んだ形の
+    // 不在は「自身の引数を切る変異では落ちない」側（AC-11-29 (a)）へ移るため、
+    // BFF 一方通行を部品側で破らないための唯一の機械的な足場をそこへ置かない。
     const controlled =
-      `// const __headControl = () => fetch("/__control");\n` +
-      `${content}\n// const __tailControl = "#ff0000";\n`;
+      `// const __headControl = "rgb(0 0 0)";\n` +
+      `${content}\n// const __tailControl = "rounded-full";\n`;
 
     // AC-10-3-f (i): 担い手が実ファイルから読んだテキストそのものであること
     // 自体を読む。これを読まないと、担い手を検査自身のテキストへ差し替える変異
@@ -197,21 +213,23 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
     // 減らさないため、走査結果が欠ける変異はこの形でも落ちる。
     expect(
       [...findForbiddenExpressions(controlled)].sort(),
-      `${fileName} の走査結果が「${HEX_COLOR_LABEL}と${FETCH_CALL_LABEL}だけ」に` +
+      `${fileName} の走査結果が「${RGB_OR_HSL_LABEL}と${NON_MD_ROUNDED_LABEL}だけ」に` +
         `ならない。どちらかが出ていないなら走査対象が切り落とされており、不在の主張が` +
         `空虚に真になっている。他の種類が出ているならそのファイルが禁じた表現を含む` +
-        `（AC-2-4 / AC-4-4 / AC-4-6 / AC-5-5 / AC-10-3-f）。`,
-    ).toEqual([HEX_COLOR_LABEL, FETCH_CALL_LABEL].sort());
+        `（AC-2-4 / AC-4-4 / AC-5-5 / AC-10-3-f）。`,
+    ).toEqual([RGB_OR_HSL_LABEL, NON_MD_ROUNDED_LABEL].sort());
 
     // 対照そのものに用いた2つの形の不在は、上の対照が必ず検出させてしまうため、
     // 実ファイルのテキストで別に読む（この2本は引数を切る変異が残る。AC-11-29）。
+    // 16進の色と fetch はこちらではなく上の統合した主張が読む（対照に選ばない形は
+    // 実ファイル由来の違反が余剰として落ちるため、引数を切る変異でも落ちる）。
     expect(
-      hexColorPattern.test(content),
-      `${fileName} が${HEX_COLOR_LABEL}を含む（AC-2-4）。`,
+      rgbOrHslFunctionPattern.test(content),
+      `${fileName} が${RGB_OR_HSL_LABEL}を含む（AC-2-4）。`,
     ).toBe(false);
     expect(
-      fetchCallPattern.test(content),
-      `${fileName} が${FETCH_CALL_LABEL}を含む（AC-4-6）。`,
+      nonMdRoundedPattern.test(content),
+      `${fileName} が${NON_MD_ROUNDED_LABEL}を含む（AC-4-4）。`,
     ).toBe(false);
 
     // AC-4-6: outline-none を書くなら、同じファイル内に代替のリング指定
