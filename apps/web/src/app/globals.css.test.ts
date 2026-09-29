@@ -55,6 +55,25 @@ function extractBlockBody(source: string, headerRegex: RegExp): string | undefin
   return source.slice(openIndex + 1, closeIndex);
 }
 
+// AC-10-1-a: 同じヘッダに一致するブロックを「最初の1つ」ではなく**すべて**取る。
+// 最初の1つだけを読むと、2つ目以降のブロックへ書いたトークンが 1-4（表に無い
+// トークンを増やさない）の母集団から外れ、素通りする。値については後に書かれた
+// ものが CSS の詰め込み順で勝つため、出現順に連結して読む。
+function extractBlockBodies(source: string, headerRegex: RegExp): string[] {
+  const re = new RegExp(headerRegex.source, "g");
+  const bodies: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(source))) {
+    const openIndex = source.indexOf("{", match.index + match[0].length - 1);
+    if (openIndex === -1) break;
+    const closeIndex = source.indexOf("}", openIndex);
+    if (closeIndex === -1) break;
+    bodies.push(source.slice(openIndex + 1, closeIndex));
+    re.lastIndex = closeIndex + 1;
+  }
+  return bodies;
+}
+
 function parseCustomProps(block: string | undefined): Map<string, string> {
   const map = new Map<string, string>();
   if (!block) return map;
@@ -69,23 +88,19 @@ function parseCustomProps(block: string | undefined): Map<string, string> {
 // @media (prefers-color-scheme: dark) { :root { ... } } を先に取り出し、
 // 残りのテキストから素の :root ブロック（明色）を取る。
 const darkMediaHeader = /@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{\s*:root\s*/;
-const darkBlockBody = extractBlockBody(css, darkMediaHeader);
-const darkTokens = parseCustomProps(darkBlockBody);
+const darkBlockBodies = extractBlockBodies(css, darkMediaHeader);
+const darkTokens = parseCustomProps(darkBlockBodies.join("\n"));
 
-const cssWithoutDarkBlock = darkBlockBody
-  ? css.replace(
-      new RegExp(
-        darkMediaHeader.source + "\\{[^}]*\\}\\s*\\}",
-      ),
-      "",
-    )
-  : css;
+const cssWithoutDarkBlock = css.replace(
+  new RegExp(darkMediaHeader.source + "\\{[^}]*\\}\\s*\\}", "g"),
+  "",
+);
 
-const lightBlockBody = extractBlockBody(cssWithoutDarkBlock, /:root\s*/);
-const lightTokens = parseCustomProps(lightBlockBody);
+const lightBlockBodies = extractBlockBodies(cssWithoutDarkBlock, /:root\s*/);
+const lightTokens = parseCustomProps(lightBlockBodies.join("\n"));
 
-const themeInlineBody = extractBlockBody(cssWithoutDarkBlock, /@theme\s+inline\s*/);
-const themeInlineTokens = parseCustomProps(themeInlineBody);
+const themeInlineBodies = extractBlockBodies(cssWithoutDarkBlock, /@theme\s+inline\s*/);
+const themeInlineTokens = parseCustomProps(themeInlineBodies.join("\n"));
 
 describe("globals.css - AC-1: トークンの定義場所と形式", () => {
   it("1-1: globals.css 以外に CSS ファイルを持たない（src 配下）", () => {
@@ -113,8 +128,8 @@ describe("globals.css - AC-1: トークンの定義場所と形式", () => {
   });
 
   it("1-2: :root（明色）と @media (prefers-color-scheme: dark) の :root（暗色）の両方が定義されている", () => {
-    expect(lightBlockBody).toBeDefined();
-    expect(darkBlockBody).toBeDefined();
+    expect(lightBlockBodies.length).toBeGreaterThan(0);
+    expect(darkBlockBodies.length).toBeGreaterThan(0);
   });
 
   it("1-3: AC-2 の各トークンに対応する --color-X: var(--X) が @theme inline にある", () => {
@@ -127,6 +142,30 @@ describe("globals.css - AC-1: トークンの定義場所と形式", () => {
     const names = [...lightTokens.keys()].sort();
     const expected = TOKENS.map((t) => t.name).sort();
     expect(names).toEqual(expected);
+  });
+
+  // AC-10-1-a: 暗色側も同じ母集団で読む。1-4 は「表に無いトークンを増やさない」
+  // であり、明色だけを読むと暗色ブロックへ足したトークンが素通りする。
+  it("1-4: 暗色（prefers-color-scheme: dark）の :root のカスタムプロパティも AC-2 の17トークンのみである", () => {
+    const names = [...darkTokens.keys()].sort();
+    const expected = TOKENS.map((t) => t.name).sort();
+    expect(names).toEqual(expected);
+  });
+
+  // AC-10-1-a: ブロックの抽出が「最初の1つ」で止まっていないことを、字面に
+  // 現れるブロックの個数と突き合わせて読む。0件のときは失敗させる（0件どうしの
+  // 一致は一致ではない）。
+  it("1-4: :root / @theme inline / 暗色ブロックの抽出が取りこぼしていない", () => {
+    const rootOccurrences = cssWithoutDarkBlock.match(/:root\s*\{/g) ?? [];
+    const themeOccurrences = cssWithoutDarkBlock.match(/@theme\s+inline\s*\{/g) ?? [];
+    const darkOccurrences =
+      css.match(/@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{\s*:root\s*\{/g) ?? [];
+    expect(rootOccurrences.length).toBeGreaterThan(0);
+    expect(themeOccurrences.length).toBeGreaterThan(0);
+    expect(darkOccurrences.length).toBeGreaterThan(0);
+    expect(lightBlockBodies.length).toBe(rootOccurrences.length);
+    expect(themeInlineBodies.length).toBe(themeOccurrences.length);
+    expect(darkBlockBodies.length).toBe(darkOccurrences.length);
   });
 
   it("1-4: @theme inline の --color-* は AC-2 の17トークンのみである", () => {
@@ -205,9 +244,39 @@ describe("globals.css - AC-4-1〜4-3", () => {
     expect(css).not.toMatch(/@import\s+url\(/);
   });
 
-  it("4-3: next/font/google を使わない", () => {
-    const layoutPath = path.join(appDir, "layout.tsx");
-    const layout = existsSync(layoutPath) ? readFileSync(layoutPath, "utf8") : "";
-    expect(layout).not.toMatch(/next\/font\/google/);
+  // AC-10-1-b: 4-3 は使用箇所を限定していないため、母集団は `src` 配下の
+  // TypeScript / TSX の全体とする。layout.tsx だけを読むと、他のファイル
+  // （page.tsx 等）での使用が素通りする。読めたファイルが0件のときは失敗させる。
+  it("4-3: next/font/google を使わない（src 配下の全ファイル）", () => {
+    const srcDir = path.join(appDir, "..");
+    const sources: Array<{ file: string; text: string }> = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === "node_modules") continue;
+          walk(full);
+        } else if (
+          (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) &&
+          !entry.name.endsWith(".test.ts") &&
+          !entry.name.endsWith(".test.tsx")
+        ) {
+          // 検査ファイル自身は母集団から外す（アプリの出力に入らないうえ、
+          // 禁じた文字列を期待値として持つため自己言及で落ちる）。10-3 が
+          // *.test.tsx を除くのと同じ扱い。
+          sources.push({ file: path.relative(srcDir, full), text: readFileSync(full, "utf8") });
+        }
+      }
+    };
+    walk(srcDir);
+    expect(sources.length).toBeGreaterThan(0);
+    // layout.tsx が母集団に入っていることを明示的に読む（走査が空振りして
+    // いないことの陽性側の足場）。
+    expect(existsSync(path.join(appDir, "layout.tsx"))).toBe(true);
+    expect(sources.map((s) => s.file)).toContain(path.join("app", "layout.tsx"));
+    const offending = sources
+      .filter((s) => /next\/font\/google/.test(s.text))
+      .map((s) => s.file);
+    expect(offending).toEqual([]);
   });
 });
