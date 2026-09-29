@@ -237,4 +237,16 @@ describe("Pagination - AC-6-10", () => {
     expect(onPageChange).toHaveBeenCalledTimes(2);
     expect(onPageChange.mock.calls[1][0]).toBeGreaterThan(page);
   });
+
+  // AC-10-5: AC-6-10 が禁じた「1ページあたりの件数」の props（人間決定 P-7）を、
+  // 型で拒むことを @ts-expect-error で示す。この1本が無いと、props 型へ
+  // pageSize?: number を1行足す変更が tsc / eslint / vitest のいずれでも
+  // 落ちない（実行時の出力が変わらないため、DOM を読む主張では検出できない）。
+  it("型: 1ページあたりの件数を props に持たない（AC-6-10 / AC-10-5）", () => {
+    const invalid = (
+      // @ts-expect-error 件数の props は持たない（P-7）。型に足すとこの行が未使用になり落ちる
+      <Pagination page={1} pageCount={2} pageSize={20} onPageChange={vi.fn()} />
+    );
+    void invalid;
+  });
 });

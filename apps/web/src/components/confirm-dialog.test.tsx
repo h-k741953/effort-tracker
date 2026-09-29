@@ -17,8 +17,12 @@ afterEach(() => {
 });
 
 describe("ConfirmDialog - AC-6-9", () => {
+  // AC-10-6-n: `*ByRole` は既定で hidden: false、すなわちアクセシビリティ
+  // ツリーに載らない要素を問い合わせ対象から外すため、`queryByRole("dialog")`
+  // だけでは `hidden` を付けた role="dialog" や sr-only な div を落とせない。
+  // 「何も出力しない」はレンダ結果の全体が空であることとして読む。
   it("open が偽のとき何も出力しない", () => {
-    render(
+    const { container } = render(
       <ConfirmDialog
         open={false}
         title="締めますか"
@@ -29,6 +33,7 @@ describe("ConfirmDialog - AC-6-9", () => {
       />,
     );
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(container.innerHTML).toBe("");
   });
 
   it("open が真のとき role='dialog' と aria-modal='true' を持ち、title と aria-labelledby で結ぶ", () => {
