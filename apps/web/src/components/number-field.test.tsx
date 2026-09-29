@@ -23,6 +23,15 @@ describe("NumberField - AC-6-5", () => {
     expect(input.tagName).toBe("INPUT");
     expect(input.getAttribute("type")).toBe("number");
     expect(input.getAttribute("id")).toBe("hours");
+
+    // AC-10-6-o: 「label と入力欄の結び付き」は <label> 要素との結び付きとして
+    // 読む。*ByLabelText は aria-label / aria-labelledby でも一致するため、
+    // 問い合わせが通ることだけでは可視のラベル要素が在ることを示さない。
+    const labels = Array.from((input as HTMLInputElement).labels ?? []);
+    expect(
+      labels.map((label) => label.textContent),
+      "入力欄が <label> 要素と結び付いていない（AC-6-5「label と入力欄の結び付き」/ AC-10-6-o）。",
+    ).toEqual(["時間"]);
   });
 
   it("invalid かつ errorId があるとき aria-invalid='true' と aria-describedby を付ける", () => {
