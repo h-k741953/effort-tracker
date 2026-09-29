@@ -570,3 +570,130 @@ describe("AC-10-3-f: 走査経路の陽性対照（不在の主張が空虚に�
     },
   );
 });
+
+// docs/specs/design-system.md AC-10-3-i。
+//
+// AC-6 の表の 6-3 は「型 Role は apps/web/src/lib/role-cookie.ts の既存の型を
+// 輸入して使う（リテラル union を再定義しない）」と定める。この要求は型検査でも
+// DOM の検査でも落ちない —— ローカルに同じリテラル union を書いた実装は tsc /
+// eslint を通り、出力も変わらないため 10-6 の検査にも掛からない。したがって
+// 実装のテキストで読む（10-3 と同じ手段）。
+//
+// 輸入元のファイルと対象コンポーネントのファイル名は条文の字面から取る
+// （テスト側に書いた写しを期待値にすると条文と乖離したまま緑になる。10-3-d /
+// 10-2-a と同じ理由）。0件のときは失敗とする。
+const ROLE_TYPE_NAME = "Role";
+
+function escapeForRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** テキストが型 Role をローカルに宣言しているか（リテラル union の再定義）。 */
+function declaresLocalRoleType(text: string): boolean {
+  return new RegExp(`\\b(?:type|interface|enum)\\s+${escapeForRegExp(ROLE_TYPE_NAME)}\\b`).test(
+    text,
+  );
+}
+
+/** テキストが型 Role を、末尾が moduleBase のモジュールから輸入しているか。 */
+function importsRoleTypeFrom(text: string, moduleBase: string): boolean {
+  return new RegExp(
+    `import\\s+(?:type\\s+)?\\{[^}]*\\b${escapeForRegExp(ROLE_TYPE_NAME)}\\b[^}]*\\}\\s*from\\s*` +
+      `["'][^"']*\\/${escapeForRegExp(moduleBase)}["']`,
+  ).test(text);
+}
+
+describe("AC-10-3-i: 型 Role は条文が名指す既存の型を輸入する（6-3）", () => {
+  const specPath = path.join(componentsDir, "..", "..", "..", "..", "docs", "specs", "design-system.md");
+  const hint =
+    `仕様書 ${specPath} の字面から 6-3 / AC-5-1 の記述を読めなかった。条文の体裁を` +
+    `変えたのなら、要求の変更ではないのでこの抽出側を追随させること（10-3-i は抽出` +
+    `手段を仕様で固定していない）。`;
+
+  function readSpec(): string {
+    expect(existsSync(specPath), `仕様書が見つからない: ${specPath}`).toBe(true);
+    return readFileSync(specPath, "utf8");
+  }
+
+  /** AC-6 の表の 6-3 行から、輸入元のモジュール名（拡張子なしのファイル名）を読む。 */
+  function readRoleModuleBase(spec: string): string {
+    const row = spec.match(/^\|\s*6-3\s*\|.*$/m);
+    expect(row, hint).not.toBeNull();
+    const pathMatch = row![0].match(/`(apps\/web\/src\/lib\/[\w./-]+)\.ts`/);
+    expect(pathMatch, `${hint} 6-3 行から lib 配下のファイルパスを切り出せなかった。`).not.toBeNull();
+    const base = pathMatch![1].split("/").pop() as string;
+    expect(base.length, `${hint} 読み取ったモジュール名が空である。`).toBeGreaterThan(0);
+    return base;
+  }
+
+  /** AC-5-1 の台帳から RoleSwitcher の実装ファイル名を読む。 */
+  function readRoleSwitcherFile(spec: string): string {
+    const row = spec.match(/^\|\s*5-1-[a-z]+\s*\|\s*`RoleSwitcher`\s*\|\s*`([^`]+)`/m);
+    expect(row, `${hint} AC-5-1 の台帳から RoleSwitcher の行を切り出せなかった。`).not.toBeNull();
+    const fileName = row![1];
+    // 台帳から読んだファイル名が、この検査が走査する母集団（10-3-h が実ディレクトリ
+    // との一致を読む）に在ることを確かめる。空振りしたまま緑にならないようにする。
+    expect(EXPECTED_FILES, `${hint} 台帳の ${fileName} が走査する母集団に無い。`).toContain(
+      fileName,
+    );
+    return fileName;
+  }
+
+  it("条文から輸入元のモジュール名と対象ファイル名を読める（0件なら失敗）", () => {
+    const spec = readSpec();
+    expect(readRoleModuleBase(spec).length).toBeGreaterThan(0);
+    expect(readRoleSwitcherFile(spec).length).toBeGreaterThan(0);
+  });
+
+  it("RoleSwitcher の実装は Role を条文が名指すモジュールから輸入する", () => {
+    const spec = readSpec();
+    const moduleBase = readRoleModuleBase(spec);
+    const fileName = readRoleSwitcherFile(spec);
+    const source = readFileSync(path.join(componentsDir, fileName), "utf8");
+    expect(source.length, `${fileName} から読み取ったテキストが0文字である。`).toBeGreaterThan(0);
+    expect(
+      importsRoleTypeFrom(source, moduleBase),
+      `${fileName} が型 ${ROLE_TYPE_NAME} を ${moduleBase} から輸入していない（AC-6-3 / AC-10-3-i）。`,
+    ).toBe(true);
+  });
+
+  // 「ローカルに再定義しない」は母集団全体で読む。1ファイルだけを名指しすると、
+  // 他のコンポーネントが同じ union を書き始めても誰も読まない（10-3-h が是正した
+  // のと同型の穴）。母集団は 10-3-h が実ディレクトリとの一致を読む列である。
+  it.each(EXPECTED_FILES)("%s は型 Role をローカルに宣言しない（リテラル union の再定義）", (fileName) => {
+    const source = readFileSync(path.join(componentsDir, fileName), "utf8");
+    expect(source.length, `${fileName} から読み取ったテキストが0文字である。`).toBeGreaterThan(0);
+    expect(
+      declaresLocalRoleType(source),
+      `${fileName} が型 ${ROLE_TYPE_NAME} をローカルに宣言している（AC-6-3 は既存の型の輸入を求める / AC-10-3-i）。`,
+    ).toBe(false);
+  });
+
+  // 上の2本のうち「宣言しない」側は不在の主張であり、判定が恒偽へ潰れると空虚に
+  // 真になる。輸入の側も、判定が恒真へ潰れると実装を読まずに緑になる。どちらも
+  // 実ファイルと同じ述語へテキストを与えて両側を読む（10-3-g と同じ形）。
+  it.each([
+    ["リテラル union を再定義する", 'type Role = "Engineer" | "Approver";', true],
+    ["interface で再定義する", "interface Role { name: string }", true],
+    ["輸入だけを行う", 'import type { Role } from "@/lib/role-cookie";', false],
+    ["型として参照するだけ", 'const role: Role = "Engineer";', false],
+  ])("ローカル宣言の判定: %s", (_name, text, expected) => {
+    expect(
+      declaresLocalRoleType(text as string),
+      `ローカル宣言の判定が期待と異なる（AC-10-3-i）。対象: ${text}`,
+    ).toBe(expected);
+  });
+
+  it.each([
+    ["名指すモジュールから輸入する", 'import type { Role } from "@/lib/role-cookie";', true],
+    ["型として輸入する（type 節つき）", 'import { type Role } from "@/lib/role-cookie";', true],
+    ["別のモジュールから輸入する", 'import type { Role } from "./local-role";', false],
+    ["別の型だけを輸入する", 'import type { RoleName } from "@/lib/role-cookie";', false],
+    ["輸入せずに宣言する", 'type Role = "Engineer";', false],
+  ])("輸入の判定: %s", (_name, text, expected) => {
+    expect(
+      importsRoleTypeFrom(text as string, "role-cookie"),
+      `輸入の判定が期待と異なる（AC-10-3-i）。対象: ${text}`,
+    ).toBe(expected);
+  });
+});

@@ -40,7 +40,55 @@ afterEach(() => {
 // この検査ファイル自身がそこに在ることで読む（陽性側の足場）。
 const componentsDir = path.join(process.cwd(), "src", "components");
 
-const INTERACTIVE_SELECTOR = "button, input, a";
+// AC-10-3-a の母集団（要素の側）: 要素名だけを母集団にすると、`div` へ ARIA の
+// ウィジェットロールを与えて対話要素にした実装がまるごと読まれないまま緑になる
+// （列挙の母集団を実ディレクトリへ突き合わせたのと同型の穴が、要素の側に残って
+// いた）。そこで (i) ネイティブの対話要素、(ii) フォーカスを受けて操作される
+// ARIA のウィジェットロール、(iii) 負でない tabindex の3つを母集団とする。
+// 負の tabindex はキーボードで到達できないため除く（`ConfirmDialog` が初期
+// フォーカスのために置く `tabIndex={-1}` は対話要素ではない）。
+const NATIVE_INTERACTIVE_SELECTOR = "button, input, select, textarea, a";
+const INTERACTIVE_ARIA_ROLES = [
+  "button",
+  "link",
+  "checkbox",
+  "radio",
+  "switch",
+  "tab",
+  "menuitem",
+  "menuitemcheckbox",
+  "menuitemradio",
+  "option",
+  "textbox",
+  "searchbox",
+  "combobox",
+  "slider",
+  "spinbutton",
+];
+const TABBABLE_SELECTOR = '[tabindex]:not([tabindex^="-"])';
+const INTERACTIVE_SELECTOR = [
+  NATIVE_INTERACTIVE_SELECTOR,
+  ...INTERACTIVE_ARIA_ROLES.map((role) => `[role="${role}"]`),
+  TABBABLE_SELECTOR,
+].join(", ");
+
+// AC-10-3-j: AC-4-6（`outline-none` を書くなら代替のリングを伴う）の判定を
+// **要素単位**で読む。実装ファイルのテキストを1ファイル単位で読む形（10-3 が
+// 持つ検査）では、`outline-none` を或る要素へ、リング指定を別の要素へ置いた
+// 実装が素通りする —— ファイルのどこかにリング指定が在れば判定が満たされる
+// ためである。描画結果は合成後の class を持つため、要素単位の判定はここで行う。
+function violatesOutlineNoneRuleOnElement(element: Element): boolean {
+  const classes = (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
+  if (!classes.includes("outline-none")) return false;
+  return !classes.some((className) => className.startsWith("focus-visible:ring-"));
+}
+
+/** 描画結果のうち、outline-none を代替のリングなしで持つ要素を返す。 */
+function outlineNoneViolations(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>("*")).filter((element) =>
+    violatesOutlineNoneRuleOnElement(element),
+  );
+}
 
 // AC-5-1 の共通コンポーネント11本。対話要素が出る条件（ConfirmDialog は open を
 // 真に、ErrorBanner は onRetry を与える）で描画する。props は AC-6 の表の範囲。
@@ -164,6 +212,93 @@ describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
           `対話要素 <${element.tagName.toLowerCase()}> が ring-focus-ring を持たない（AC-4-5）。class: ${element.className}`,
         ).toBe(true);
       }
+    },
+  );
+
+  // AC-10-3-a: 母集団の取り方そのものの判別力。セレクタを要素名だけへ戻す変更、
+  // あるいはロールの綴りを崩す変更が落ちるように、選ばれる側と選ばれない側の
+  // 両方を、実ケースと同じセレクタで読む。ロールでない `role="alert"` と、負の
+  // tabindex（キーボードで到達できない）は選ばれない側に置く。
+  it("対話要素の母集団は、ネイティブ要素・ARIA ロール・負でない tabindex のいずれでも取れる", () => {
+    const { container } = render(
+      <div>
+        <button id="native-button">押す</button>
+        <div id="aria-button" role="button" />
+        <div id="aria-link" role="link" />
+        <div id="tabbable" tabIndex={0} />
+        <div id="plain" />
+        <div id="untabbable" tabIndex={-1} />
+        <div id="non-widget-role" role="alert" />
+      </div>,
+    );
+    const matched = Array.from(container.querySelectorAll<HTMLElement>(INTERACTIVE_SELECTOR))
+      .map((element) => element.id)
+      .sort();
+    expect(
+      matched,
+      "対話要素の母集団が期待と一致しない。要素名だけへ戻すとロールで対話要素にした" +
+        "実装が読まれず、逆に広げすぎると条文適合の実装が落ちる（AC-10-3-a）。",
+    ).toEqual(["aria-button", "aria-link", "native-button", "tabbable"]);
+  });
+
+  // AC-10-3-j: outline-none を持つ要素は、同じ要素でリングを与えること。
+  it.each(ALL_CASES)(
+    "$name: outline-none を持つ要素は同じ要素で focus-visible:ring- を与える（AC-4-6）",
+    ({ render: renderCase }) => {
+      const { container } = renderCase();
+      expect(
+        outlineNoneViolations(container).map(
+          (element) => `<${element.tagName.toLowerCase()} class="${element.getAttribute("class")}">`,
+        ),
+        "outline-none を持つ要素が、同じ要素でリング指定を伴っていない（AC-4-6）。" +
+          "ファイル単位の判定（10-3）はリング指定が同じファイルのどこかに在れば通るため、" +
+          "要素単位ではここで読む（AC-10-3-j）。",
+      ).toEqual([]);
+    },
+  );
+
+  // AC-10-3-j の判別力: 判定を恒偽へ潰す変更・要素の境界を越えて読む変更が落ちる
+  // ように、実ケースと同じ関数へ描画結果を与えて両側を読む（10-3-g と同じ形）。
+  const OUTLINE_NONE_CASES: Array<{
+    name: string;
+    render: () => { container: HTMLElement };
+    expected: number;
+  }> = [
+    {
+      name: "同じ要素が outline-none とリング指定を持つ",
+      render: () => render(<div className="outline-none focus-visible:ring-2 ring-focus-ring" />),
+      expected: 0,
+    },
+    {
+      name: "outline-none だけを持つ",
+      render: () => render(<div className="outline-none p-2" />),
+      expected: 1,
+    },
+    {
+      name: "outline-none とリング指定が別の要素に分かれている",
+      render: () =>
+        render(
+          <div className="outline-none">
+            <span className="focus-visible:ring-2 ring-focus-ring" />
+          </div>,
+        ),
+      expected: 1,
+    },
+    {
+      name: "outline-none を持たない",
+      render: () => render(<div className="focus-visible:ring-2 ring-focus-ring" />),
+      expected: 0,
+    },
+  ];
+
+  it.each(OUTLINE_NONE_CASES)(
+    "4-6 の要素単位の判定: $name",
+    ({ render: renderCase, expected }) => {
+      const { container } = renderCase();
+      expect(
+        outlineNoneViolations(container).length,
+        "4-6 の要素単位の判定が期待と異なる（AC-10-3-j）。",
+      ).toBe(expected);
     },
   );
 
