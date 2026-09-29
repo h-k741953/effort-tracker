@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -98,6 +98,14 @@ const rgbOrHslFunctionPattern = /\b(?:rgb|rgba|hsl|hsla)\(/;
 // AC-4-4: 角丸ユーティリティは rounded-md のみ。rounded-md 以外の rounded* を拾う。
 const nonMdRoundedPattern = /\brounded(?!-md\b)(?:-[\w-]+)?\b/;
 const fetchCallPattern = /\bfetch\s*\(/;
+
+// AC-4-6: outline-none を書くなら、同じファイル内に代替のリング指定
+// （focus-visible:ring 系）を伴うこと。判定を述語として切り出すのは、
+// 条件つきの検査に陽性対照を置くため（AC-10-3-g）。
+const focusVisibleRingPattern = /focus-visible:[^\s"'`]*ring/;
+function violatesOutlineNoneRule(text: string): boolean {
+  return text.includes("outline-none") && !focusVisibleRingPattern.test(text);
+}
 
 // AC-10-3-f: 不在を主張する5本を1つの表に集め、実ファイルの走査と陽性対照が
 // 同じ経路（findForbiddenExpressions）を通るようにする。経路を分けると、
@@ -227,12 +235,25 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
         `（AC-2-4 / AC-4-4 / AC-5-5 / AC-10-3-f）。`,
     ).toEqual([HEX_COLOR_LABEL, RGB_OR_HSL_LABEL].sort());
 
-    // 対照そのものに用いた2つの形の不在は、上の対照が必ず検出させてしまうため、
-    // 実ファイルのテキストで別に読む（この2本は引数を切る変異が残る。AC-11-29 (a)）。
+    // AC-10-3-f (iv): 実ファイルのテキストだけを走査する不在の主張を、上の統合した
+    // 主張と対にして別に1本置く。単独ではこの主張は走査経路が壊れると空虚に真になる
+    // （それが (ii) で統合した理由である）。いっぽう統合した主張は、両端の対照を
+    // いずれも残したまま結果を絞り込む変異（`.sort().slice(0, 2)` —— 対照の2形より
+    // 後ろに並ぶラベルが落ちる）や中間だけを落とす変異で空虚になる。両者の弱点は
+    // 重ならないため、対にすると単一の変異ではどちらかが必ず落ちる。統合した主張を
+    // 置き換えるのではなく、相互に守らせるために足す。
+    expect(
+      [...findForbiddenExpressions(content)],
+      `${fileName} が禁止表現を含む（AC-2-4 / AC-4-4 / AC-5-5）。`,
+    ).toEqual([]);
+
+    // 対照そのものに用いた2つの形の不在は、上の統合した主張では実ファイル由来のそれを
+    // 読めない（対照が必ず検出させてしまう）ため、実ファイルのテキストで別に読む。
+    // この2本と (iv) は担い手の2形について互いの足場になるので、どちらか一方の引数を
+    // 切る変異はもう一方が落とす。担い手でない3形は (iv) と統合した主張が対になる。
     // どちらも AC-2-4 の形であり、同 AC には残る1つ（パレットユーティリティ）が
     // 統合した主張の側に足場として残る。rounded-md 以外の角丸（AC-4-4）と fetch
-    // （AC-5-5）はこちらではなく上の統合した主張が読む —— 対照に選ばない形は実ファイル
-    // 由来の違反が余剰として落ちるため、引数を切る変異でも落ちる。
+    // （AC-5-5）はこちらではなく上の2本が読む。
     expect(
       hexColorPattern.test(content),
       `${fileName} が${HEX_COLOR_LABEL}を含む（AC-2-4）。`,
@@ -242,11 +263,44 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
       `${fileName} が${RGB_OR_HSL_LABEL}を含む（AC-2-4）。`,
     ).toBe(false);
 
-    // AC-4-6: outline-none を書くなら、同じファイル内に代替のリング指定
-    // （focus-visible:ring 系）を伴うこと。
-    if (content.includes("outline-none")) {
-      expect(content).toMatch(/focus-visible:[^\s"'`]*ring/);
-    }
+    // AC-4-6。判定は述語に持たせ、陽性対照は下の一覧が別に読む（AC-10-3-g）。
+    expect(
+      violatesOutlineNoneRule(content),
+      `${fileName} が outline-none を代替のリング指定なしで用いている（AC-4-6）。`,
+    ).toBe(false);
+  });
+
+  // AC-10-3-h: 走査する母集団が components/ 直下の実装 *.tsx の集合と一致する
+  // ことを、この検査の中で読む。一覧から1行落とす変異は、そのファイルの不在検査を
+  // 丸ごと消すが、件数が1件減るだけで誰も落とさない（AC-10-4 は別の検査が持つ
+  // 別の一覧に対する検査であり、こちらの一覧を縛らない）。
+  it("走査する母集団が components/ 直下の実装 *.tsx の集合と一致する", () => {
+    const actual = readdirSync(componentsDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .filter((name) => name.endsWith(".tsx") && !name.endsWith(".test.tsx"))
+      .sort();
+    expect(
+      actual,
+      "走査する母集団が components/ 直下の実装 *.tsx の集合と一致しない。一覧から" +
+        "落ちたファイルは不在の検査を丸ごと免れる（AC-10-3-h）。",
+    ).toEqual([...EXPECTED_FILES].sort());
+  });
+
+  // AC-10-3-g: 4-6 の条件つき検査の判別力。判定パターンを恒真へ緩めるだけで
+  // 実ファイル由来の違反（代替のリング指定を伴わない outline-none）が通るため、
+  // 適合・不適合の両ケースを実ファイルと同じ述語で読む。10-3-f の陽性対照は
+  // 10-3 の5つの形だけを覆い、4-6 を覆わない。
+  it.each([
+    ["outline-none に focus-visible のリング指定を伴う", 'className="outline-none focus-visible:ring-2"', false],
+    ["outline-none をリング指定なしで用いる", 'className="outline-none px-2"', true],
+    ["outline-none を用いない", 'className="px-2 focus-visible:ring-2"', false],
+    ["リング指定が focus-visible を伴わない", 'className="outline-none ring-2"', true],
+  ])("4-6 の判定: %s", (_name, text, expected) => {
+    expect(
+      violatesOutlineNoneRule(text as string),
+      `4-6 の判定が期待と異なる（AC-10-3-g）。対象: ${text}`,
+    ).toBe(expected);
   });
 });
 
