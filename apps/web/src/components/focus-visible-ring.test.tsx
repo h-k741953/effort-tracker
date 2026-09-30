@@ -49,6 +49,8 @@ const componentsDir = path.join(process.cwd(), "src", "components");
 // フォーカスのために置く `tabIndex={-1}` は対話要素ではない）。
 // `type="hidden"` の input と `href` を持たない a もキーボードで到達しないため除く
 // （4-5 の「input / リンク」はキーボードで到達する対話要素として読む。AC-10-3-a）。
+// disabled の button / input は残す。非活性の間はフォーカスを受けないが、状態が
+// 変われば同じ要素が到達するため、リングの指定は状態によらず要る（AC-10-3-a）。
 const NATIVE_INTERACTIVE_SELECTOR =
   'button, input:not([type="hidden"]), select, textarea, a[href]';
 const INTERACTIVE_ARIA_ROLES = [
@@ -80,8 +82,15 @@ const INTERACTIVE_SELECTOR = [
 // を与えないため、`focus-visible:ring-focus-ring` の1語は「focus-visible:ring-
 // で始まる」と「ring-focus-ring で終わる」の両方に一致しながらリングを描かない。
 // 前方一致で読むと幅の指定を落とした実装が緑のまま通るので、幅は正の整数か
-// `[<長さ>]` に限り、1語全体で読む（区切りなしで2語を連結した形も落とす）。
-const FOCUS_VISIBLE_RING_WIDTH = /^focus-visible:ring-(?:[1-9]\d*|\[\d*\.?\d+(?:px|rem|em)\])$/;
+// `[<長さ>]` に限り、1語全体で読む（区切りなしで2語を連結した形も、
+// `group-focus-visible:ring-2` のように別のバリアントを前置した形も落とす）。
+// 長さの単位は Tailwind v4 が任意値を長さとして推論するもの（大文字の単位は
+// 色として扱われ、リングを描かない）。
+const CSS_LENGTH_UNITS =
+  "cm|mm|Q|in|pc|pt|px|em|ex|ch|rem|lh|rlh|vw|vh|vmin|vmax|vb|vi|svw|svh|lvw|lvh|dvw|dvh|cqw|cqh|cqi|cqb|cqmin|cqmax";
+const FOCUS_VISIBLE_RING_WIDTH = new RegExp(
+  `^focus-visible:ring-(?:[1-9]\\d*|\\[\\d*\\.?\\d+(?:${CSS_LENGTH_UNITS})\\])$`,
+);
 function givesFocusVisibleRingWidth(className: string): boolean {
   return FOCUS_VISIBLE_RING_WIDTH.test(className);
 }
@@ -247,6 +256,7 @@ describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
         <input id="hidden-input" type="hidden" />
         <a id="link-with-href" href="#top">先頭へ</a>
         <a id="anchor-without-href">目印</a>
+        <button id="disabled-button" disabled>押せない</button>
       </div>,
     );
     const matched = Array.from(container.querySelectorAll<HTMLElement>(INTERACTIVE_SELECTOR))
@@ -256,7 +266,15 @@ describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
       matched,
       "対話要素の母集団が期待と一致しない。要素名だけへ戻すとロールで対話要素にした" +
         "実装が読まれず、逆に広げすぎると条文適合の実装が落ちる（AC-10-3-a）。",
-    ).toEqual(["aria-button", "aria-link", "link-with-href", "native-button", "tabbable", "text-input"]);
+    ).toEqual([
+      "aria-button",
+      "aria-link",
+      "disabled-button",
+      "link-with-href",
+      "native-button",
+      "tabbable",
+      "text-input",
+    ]);
   });
 
   // AC-10-3-j: outline-none を持つ要素は、同じ要素でリングを与えること。
@@ -320,6 +338,11 @@ describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
     ["focus-visible:ring-2", true],
     ["focus-visible:ring-1", true],
     ["focus-visible:ring-[3px]", true],
+    ["focus-visible:ring-[0.15vw]", true],
+    ["focus-visible:ring-[1ch]", true],
+    ["focus-visible:ring-[1PX]", false],
+    ["group-focus-visible:ring-2", false],
+    ["dark:focus-visible:ring-2", false],
     ["focus-visible:ring-focus-ring", false],
     ["focus-visible:ring-offset-2", false],
     ["focus-visible:ring-inset", false],

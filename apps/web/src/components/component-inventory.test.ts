@@ -22,7 +22,14 @@ function parseLedgerFiles(spec: string): string[] {
   const hint =
     `仕様書 ${specPath} の AC-5-1 の台帳を読めなかった。条文の体裁を変えたのなら、` +
     `要求の変更ではないのでこの抽出側を追随させること（10-4 は抽出手段を仕様で固定していない）。`;
-  const rowLines = spec.match(/^\|\s*5-1-[a-z]+\s*\|.*$/gm) ?? [];
+  // 台帳は AC-5 の節の中だけから読む。仕様書の全体から拾うと、他の節に同じ形の
+  // 行を置いたときに台帳でない行を期待値に混ぜる（10-4）。
+  const start = spec.indexOf("### AC-5.");
+  if (start < 0) throw new Error(`${hint} AC-5 の節が見つからない。`);
+  const rest = spec.slice(start + 1);
+  const end = rest.indexOf("\n### ");
+  const section = end === -1 ? rest : rest.slice(0, end);
+  const rowLines = section.match(/^\|\s*5-1-[a-z]+\s*\|.*$/gm) ?? [];
   const files = rowLines.flatMap((line) => {
     const match = line.match(/^\|\s*5-1-[a-z]+\s*\|\s*`[A-Za-z]+`\s*\|\s*`([a-z-]+\.tsx)`\s*\|/);
     return match ? [match[1]] : [];
@@ -51,8 +58,16 @@ describe("components ディレクトリ構成 - AC-5-1 / AC-5-2", () => {
   // 形の合わない行を読み飛ばさない検査は、現行の台帳では一度も働かないため、
   // 実ケースと同じ関数へ合成した台帳を与えて両側を読む。
   it("10-4: 台帳の読み取りは形の合う行を読み、崩れた行を含むと投げる", () => {
-    const good = "| 5-1-a | `Button` | `button.tsx` | 各画面 | 出典 |\n";
+    const head = "### AC-5. 共通コンポーネントの一覧と境界\n\n";
+    const good = `${head}| 5-1-a | \`Button\` | \`button.tsx\` | 各画面 | 出典 |\n`;
     expect(parseLedgerFiles(good)).toEqual(["button.tsx"]);
+    // 節の外に置いた同じ形の行は台帳として読まない。
+    expect(
+      parseLedgerFiles(`${good}\n### AC-6. 別の節\n\n| 5-1-z | \`Panel\` | \`panel.tsx\` | 各画面 | 出典 |\n`),
+    ).toEqual(["button.tsx"]);
+    expect(() => parseLedgerFiles("| 5-1-a | `Button` | `button.tsx` | 各画面 | 出典 |\n")).toThrow(
+      /AC-5 の節が見つからない/,
+    );
     expect(() => parseLedgerFiles(`${good}| 5-1-b | Card | card.tsx | 各画面 | 出典 |\n`)).toThrow(
       /形の合わない行/,
     );
