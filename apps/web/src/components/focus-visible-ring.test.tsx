@@ -19,8 +19,8 @@ import { StatusBadge } from "./status-badge";
 //
 // AC-5-1 の共通コンポーネントのうち、対話要素（button / input / リンク）を
 // 出力するものすべてを、対話要素が出る条件で描画し、出力に含まれる対話
-// 要素の1つ1つについて、(i) フォーカス可視時にリングを与えるユーティリティ
-// （focus-visible:ring- で始まるもの）と (ii) リング色として --focus-ring を
+// 要素の1つ1つについて、(i) フォーカス可視時にリングの幅を与えるユーティリティ
+// （focus-visible:ring- で始まるもののうち幅を与えるもの）と (ii) リング色として --focus-ring を
 // 指すユーティリティ（ring-focus-ring。AC-1-3 のマッピング）の両方が
 // class に現れることを読む。1要素でも欠けたら落ちる形にする。
 //
@@ -47,7 +47,10 @@ const componentsDir = path.join(process.cwd(), "src", "components");
 // ARIA のウィジェットロール、(iii) 負でない tabindex の3つを母集団とする。
 // 負の tabindex はキーボードで到達できないため除く（`ConfirmDialog` が初期
 // フォーカスのために置く `tabIndex={-1}` は対話要素ではない）。
-const NATIVE_INTERACTIVE_SELECTOR = "button, input, select, textarea, a";
+// `type="hidden"` の input と `href` を持たない a もキーボードで到達しないため除く
+// （4-5 の「input / リンク」はキーボードで到達する対話要素として読む。AC-10-3-a）。
+const NATIVE_INTERACTIVE_SELECTOR =
+  'button, input:not([type="hidden"]), select, textarea, a[href]';
 const INTERACTIVE_ARIA_ROLES = [
   "button",
   "link",
@@ -72,6 +75,17 @@ const INTERACTIVE_SELECTOR = [
   TABBABLE_SELECTOR,
 ].join(", ");
 
+// AC-10-3-a (i): フォーカス可視時にリングの**幅**を与えるユーティリティか。
+// Tailwind v4 の `ring-<色>` は `--tw-ring-color` を設定するだけで `box-shadow`
+// を与えないため、`focus-visible:ring-focus-ring` の1語は「focus-visible:ring-
+// で始まる」と「ring-focus-ring で終わる」の両方に一致しながらリングを描かない。
+// 前方一致で読むと幅の指定を落とした実装が緑のまま通るので、幅は正の整数か
+// `[<長さ>]` に限り、1語全体で読む（区切りなしで2語を連結した形も落とす）。
+const FOCUS_VISIBLE_RING_WIDTH = /^focus-visible:ring-(?:[1-9]\d*|\[\d*\.?\d+(?:px|rem|em)\])$/;
+function givesFocusVisibleRingWidth(className: string): boolean {
+  return FOCUS_VISIBLE_RING_WIDTH.test(className);
+}
+
 // AC-10-3-j: AC-4-6（`outline-none` を書くなら代替のリングを伴う）の判定を
 // **要素単位**で読む。実装ファイルのテキストを1ファイル単位で読む形（10-3 が
 // 持つ検査）では、`outline-none` を或る要素へ、リング指定を別の要素へ置いた
@@ -80,7 +94,7 @@ const INTERACTIVE_SELECTOR = [
 function violatesOutlineNoneRuleOnElement(element: Element): boolean {
   const classes = (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
   if (!classes.includes("outline-none")) return false;
-  return !classes.some((className) => className.startsWith("focus-visible:ring-"));
+  return !classes.some(givesFocusVisibleRingWidth);
 }
 
 /** 描画結果のうち、outline-none を代替のリングなしで持つ要素を返す。 */
@@ -188,7 +202,7 @@ describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
   });
 
   it.each(ALL_CASES)(
-    "$name: 出力される対話要素のすべてが focus-visible:ring- と ring-focus-ring の両方を持つ",
+    "$name: 出力される対話要素のすべてが focus-visible のリングの幅と ring-focus-ring の両方を持つ",
     ({ render: renderCase }) => {
       const { container } = renderCase();
       const elements = Array.from(
@@ -197,11 +211,11 @@ describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
 
       for (const element of elements) {
         const classes = element.className.split(/\s+/).filter(Boolean);
-        // (i) フォーカス可視時にリングを与えるユーティリティ
-        // （focus-visible:ring- で始まるもの）。
+        // (i) フォーカス可視時にリングの幅を与えるユーティリティ
+        // （focus-visible:ring- で始まるもののうち、幅を与えるもの）。
         expect(
-          classes.some((c) => c.startsWith("focus-visible:ring-")),
-          `対話要素 <${element.tagName.toLowerCase()}> が focus-visible:ring- を持たない（AC-4-5）。class: ${element.className}`,
+          classes.some(givesFocusVisibleRingWidth),
+          `対話要素 <${element.tagName.toLowerCase()}> が focus-visible のリングの幅を持たない（AC-4-5）。class: ${element.className}`,
         ).toBe(true);
         // (ii) リング色として --focus-ring を指すユーティリティ
         // （ring-focus-ring。AC-1-3 のマッピング）。Tailwind の状態
@@ -229,6 +243,10 @@ describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
         <div id="plain" />
         <div id="untabbable" tabIndex={-1} />
         <div id="non-widget-role" role="alert" />
+        <input id="text-input" />
+        <input id="hidden-input" type="hidden" />
+        <a id="link-with-href" href="#top">先頭へ</a>
+        <a id="anchor-without-href">目印</a>
       </div>,
     );
     const matched = Array.from(container.querySelectorAll<HTMLElement>(INTERACTIVE_SELECTOR))
@@ -238,12 +256,12 @@ describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
       matched,
       "対話要素の母集団が期待と一致しない。要素名だけへ戻すとロールで対話要素にした" +
         "実装が読まれず、逆に広げすぎると条文適合の実装が落ちる（AC-10-3-a）。",
-    ).toEqual(["aria-button", "aria-link", "native-button", "tabbable"]);
+    ).toEqual(["aria-button", "aria-link", "link-with-href", "native-button", "tabbable", "text-input"]);
   });
 
   // AC-10-3-j: outline-none を持つ要素は、同じ要素でリングを与えること。
   it.each(ALL_CASES)(
-    "$name: outline-none を持つ要素は同じ要素で focus-visible:ring- を与える（AC-4-6）",
+    "$name: outline-none を持つ要素は同じ要素で focus-visible のリングの幅を与える（AC-4-6）",
     ({ render: renderCase }) => {
       const { container } = renderCase();
       expect(
@@ -289,7 +307,31 @@ describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
       render: () => render(<div className="focus-visible:ring-2 ring-focus-ring" />),
       expected: 0,
     },
+    {
+      name: "outline-none と色だけのリングを持つ",
+      render: () => render(<div className="outline-none focus-visible:ring-focus-ring" />),
+      expected: 1,
+    },
   ];
+
+  // AC-10-3-a (i) の判別力: 判定を前方一致へ戻す変更、幅でない語を幅として数える
+  // 変更が落ちるように、幅を与える形と与えない形の両方を同じ述語で読む。
+  it.each([
+    ["focus-visible:ring-2", true],
+    ["focus-visible:ring-1", true],
+    ["focus-visible:ring-[3px]", true],
+    ["focus-visible:ring-focus-ring", false],
+    ["focus-visible:ring-offset-2", false],
+    ["focus-visible:ring-inset", false],
+    ["focus-visible:ring-0", false],
+    ["focus-visible:ring-2,focus-visible:ring-focus-ring", false],
+    ["ring-2", false],
+  ])("(i) リングの幅の判定: %s", (className, expected) => {
+    expect(
+      givesFocusVisibleRingWidth(className as string),
+      `リングの幅の判定が期待と異なる（AC-10-3-a）。対象: ${className}`,
+    ).toBe(expected);
+  });
 
   it.each(OUTLINE_NONE_CASES)(
     "4-6 の要素単位の判定: $name",

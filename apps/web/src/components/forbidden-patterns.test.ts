@@ -100,9 +100,12 @@ const nonMdRoundedPattern = /\brounded(?!-md\b)(?:-[\w-]+)?\b/;
 const fetchCallPattern = /\bfetch\s*\(/;
 
 // AC-4-6: outline-none を書くなら、同じファイル内に代替のリング指定
-// （focus-visible:ring 系）を伴うこと。判定を述語として切り出すのは、
-// 条件つきの検査に陽性対照を置くため（AC-10-3-g）。
-const focusVisibleRingPattern = /focus-visible:[^\s"'`]*ring/;
+// （focus-visible のリングの幅を与えるユーティリティ）を伴うこと。判定を述語
+// として切り出すのは、条件つきの検査に陽性対照を置くため（AC-10-3-g）。
+// 幅は正の整数か `[<長さ>]` に限る（AC-10-3-a）。`focus-visible:ring-focus-ring`
+// は色を設定するだけでリングを描かないため、代替に数えない。
+const focusVisibleRingPattern =
+  /focus-visible:ring-(?:[1-9]\d*|\[\d*\.?\d+(?:px|rem|em)\])(?=[\s"'`]|$)/;
 function violatesOutlineNoneRule(text: string): boolean {
   return text.includes("outline-none") && !focusVisibleRingPattern.test(text);
 }
@@ -296,6 +299,17 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
     ["outline-none をリング指定なしで用いる", 'className="outline-none px-2"', true],
     ["outline-none を用いない", 'className="px-2 focus-visible:ring-2"', false],
     ["リング指定が focus-visible を伴わない", 'className="outline-none ring-2"', true],
+    ["リング指定が色だけ", 'className="outline-none focus-visible:ring-focus-ring"', true],
+    [
+      "リング指定がオフセットと色だけ",
+      'className="outline-none focus-visible:ring-offset-2 focus-visible:ring-focus-ring"',
+      true,
+    ],
+    [
+      "長さの任意値で幅を与える",
+      'className="outline-none focus-visible:ring-[3px] focus-visible:ring-focus-ring"',
+      false,
+    ],
   ])("4-6 の判定: %s", (_name, text, expected) => {
     expect(
       violatesOutlineNoneRule(text as string),
@@ -588,11 +602,18 @@ function escapeForRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** テキストが型 Role をローカルに宣言しているか（リテラル union の再定義）。 */
+/**
+ * テキストが型 Role をローカルに宣言しているか（リテラル union の再定義）。
+ * 宣言として数えるのは `type Role =` / `interface Role` / `enum Role` の文だけで、
+ * 輸入・再輸出の中の `type Role`（`import { type Role }`）とコメント中の語は
+ * 数えない —— 数えると条文どおりの輸入が落ちる（AC-10-3-i）。
+ */
 function declaresLocalRoleType(text: string): boolean {
-  return new RegExp(`\\b(?:type|interface|enum)\\s+${escapeForRegExp(ROLE_TYPE_NAME)}\\b`).test(
-    text,
-  );
+  const code = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const name = escapeForRegExp(ROLE_TYPE_NAME);
+  return new RegExp(
+    `\\b(?:type\\s+${name}\\s*(?:<[^>]*>)?\\s*=|(?:interface|enum)\\s+${name}\\b)`,
+  ).test(code);
 }
 
 /** テキストが型 Role を、末尾が moduleBase のモジュールから輸入しているか。 */
@@ -677,6 +698,12 @@ describe("AC-10-3-i: 型 Role は条文が名指す既存の型を輸入する�
     ["interface で再定義する", "interface Role { name: string }", true],
     ["輸入だけを行う", 'import type { Role } from "@/lib/role-cookie";', false],
     ["型として参照するだけ", 'const role: Role = "Engineer";', false],
+    ["export つきで再定義する", 'export type Role = "Engineer";', true],
+    ["enum で再定義する", "enum Role { Engineer }", true],
+    ["type 節つきで輸入する", 'import { type Role } from "@/lib/role-cookie";', false],
+    ["type 節つきで複数行に分けて輸入する", 'import {\n  type Role,\n} from "@/lib/role-cookie";', false],
+    ["type 節つきで再輸出する", 'export { type Role } from "@/lib/role-cookie";', false],
+    ["コメントで型の名に触れる", "// type Role = を再定義しない\n/* interface Role */", false],
   ])("ローカル宣言の判定: %s", (_name, text, expected) => {
     expect(
       declaresLocalRoleType(text as string),

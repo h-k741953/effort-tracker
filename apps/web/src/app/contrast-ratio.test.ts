@@ -129,12 +129,11 @@ const specPath = path.join(appDir, "..", "..", "..", "..", "docs", "specs", "des
 type SpecPairRow = { id: string; fg: string; bg: string; min: number };
 
 /** 条文の AC-3 の節から表の行を読む。体裁を読めないときは投げる（Red にする）。 */
-function readAc3Rows(): SpecPairRow[] {
+function parseAc3Rows(spec: string): SpecPairRow[] {
   const hint =
     `仕様書 ${specPath} の AC-3 の表を読めなかった。条文の体裁（見出し・表の列・下限の` +
     `強調）を変えたのなら、組の増減ではないのでこの抽出側を追随させること（10-2-a は` +
     `抽出手段を仕様で固定していない）。`;
-  const spec = readFileSync(specPath, "utf8");
   const start = spec.indexOf("### AC-3.");
   if (start < 0) throw new Error(`${hint} AC-3 の節が見つからない。`);
   const rest = spec.slice(start + 1);
@@ -151,10 +150,21 @@ function readAc3Rows(): SpecPairRow[] {
     rows.push({ id: match[1], fg: tokens[0], bg: tokens[1], min: Number(match[3]) });
   }
   if (rows.length === 0) throw new Error(`${hint} 表の行を1件も読めなかった。`);
+  // 形の合わない `3-N` 行を黙って読み飛ばすと、その組のコントラストは誰も測らない
+  // まま緑になる（上の一覧を条文へ結んだ理由そのもの）。節の中の `3-N` 行の数と、
+  // 読めた行の数が一致することを読む（AC-10-2-a）。
+  const rowLines = section.match(/^\|\s*3-\d+\s*\|.*$/gm) ?? [];
+  if (rowLines.length !== rows.length) {
+    const readIds = new Set(rows.map((row) => row.id));
+    const unread = rowLines.filter((line) => !readIds.has(line.split("|")[1].trim()));
+    throw new Error(
+      `${hint} AC-3 の表に形の合わない行がある（下限の欄が **<値>:1** でない等）: ${unread.join(" / ")}`,
+    );
+  }
   return rows;
 }
 
-const AC3_ROWS = readAc3Rows();
+const AC3_ROWS = parseAc3Rows(readFileSync(specPath, "utf8"));
 
 /** 「3-7 (draft)」のような展開後の # から、条文の行の # を取る。 */
 function baseId(id: string): string {
@@ -174,6 +184,23 @@ function templateToRegExp(template: string, placeholder: string): RegExp {
 describe("contrast-ratio - AC-10-2-a: 検査ペアが AC-3 の表の字面と一致する", () => {
   it("条文から読んだ AC-3 の行は0件ではない", () => {
     expect(AC3_ROWS.length).toBeGreaterThan(0);
+  });
+
+  // 形の合わない行を読み飛ばさない検査は、現行の条文では一度も働かない（全行が
+  // 形に合う）ため、検査を外しても緑のままになる。実ケースと同じ関数へ合成した
+  // 節を与えて、形の合う行だけの節は読め、崩れた行を含む節は投げることを読む。
+  const SECTION_HEAD = "### AC-3. コントラスト\n\n| # | 組 | 下限 |\n|---|---|---|\n";
+  it("AC-3 の表の読み取り: 形の合う行だけなら読める", () => {
+    expect(
+      parseAc3Rows(`${SECTION_HEAD}| 3-1 | \`--a\` / \`--b\` | **4.5:1** |\n`).map((row) => row.id),
+    ).toEqual(["3-1"]);
+  });
+  it("AC-3 の表の読み取り: 下限が強調されていない行を読み飛ばさずに投げる", () => {
+    expect(() =>
+      parseAc3Rows(
+        `${SECTION_HEAD}| 3-1 | \`--a\` / \`--b\` | **4.5:1** |\n| 3-2 | \`--c\` / \`--d\` | 4.5:1 |\n`,
+      ),
+    ).toThrow(/形の合わない行/);
   });
 
   it("検査ペアの # の集合が AC-3 の表の行と一致する", () => {
