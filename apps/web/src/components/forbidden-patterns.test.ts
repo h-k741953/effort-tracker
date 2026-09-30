@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 // docs/specs/design-system.md AC-2-4 / AC-4-4 / AC-4-6 / AC-5-5（検証手段は AC-10-3）。
@@ -103,9 +104,15 @@ const fetchCallPattern = /\bfetch\s*\(/;
 // （focus-visible のリングの幅を与えるユーティリティ）を伴うこと。判定を述語
 // として切り出すのは、条件つきの検査に陽性対照を置くため（AC-10-3-g）。
 // 幅は正の整数か `[<長さ>]` に限る（AC-10-3-a）。`focus-visible:ring-focus-ring`
-// は色を設定するだけでリングを描かないため、代替に数えない。
-const focusVisibleRingPattern =
-  /focus-visible:ring-(?:[1-9]\d*|\[\d*\.?\d+(?:px|rem|em)\])(?=[\s"'`]|$)/;
+// は色を設定するだけでリングを描かないため、代替に数えない。長さの単位は
+// Tailwind v4 が任意値を長さとして推論するもの（大文字は色として扱われる）。
+// 語の前後に境界を置き、`group-focus-visible:ring-2` のようにバリアントを前置した
+// 語（要素自身のフォーカスでは描かれない）や後ろへ続く語を数えない（AC-10-3-g）。
+const CSS_LENGTH_UNITS =
+  "cm|mm|Q|in|pc|pt|px|em|ex|ch|rem|lh|rlh|vw|vh|vmin|vmax|vb|vi|svw|svh|lvw|lvh|dvw|dvh|cqw|cqh|cqi|cqb|cqmin|cqmax";
+const focusVisibleRingPattern = new RegExp(
+  `(?<![\\w:-])focus-visible:ring-(?:[1-9]\\d*|\\[\\d*\\.?\\d+(?:${CSS_LENGTH_UNITS})\\])(?=[\\s"'\`]|$)`,
+);
 function violatesOutlineNoneRule(text: string): boolean {
   return text.includes("outline-none") && !focusVisibleRingPattern.test(text);
 }
@@ -310,6 +317,13 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
       'className="outline-none focus-visible:ring-[3px] focus-visible:ring-focus-ring"',
       false,
     ],
+    [
+      "px 以外の長さの単位で幅を与える",
+      'className="outline-none focus-visible:ring-[0.15vw] focus-visible:ring-focus-ring"',
+      false,
+    ],
+    ["リング指定がグループのバリアントだけ", 'className="outline-none group-focus-visible:ring-2"', true],
+    ["リング指定の語が後ろへ続く", 'className="outline-none focus-visible:ring-2x"', true],
   ])("4-6 の判定: %s", (_name, text, expected) => {
     expect(
       violatesOutlineNoneRule(text as string),
@@ -598,8 +612,12 @@ describe("AC-10-3-f: 走査経路の陽性対照（不在の主張が空虚に�
 // 10-2-a と同じ理由）。0件のときは失敗とする。
 const ROLE_TYPE_NAME = "Role";
 
-function escapeForRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// 宣言と輸入はテキストの字面ではなく構文木で読む。コメントを字面の置換で除くと、
+// 文字列の中の `//` や `/*` から後ろまで消えて再定義を読み落とし、逆にコメントの
+// 中にだけ書いた輸入を輸入として数えてしまう（AC-10-3-i）。typescript は既存の
+// devDependency であり、新たな依存は加えない。
+function parseSource(text: string): ts.SourceFile {
+  return ts.createSourceFile("source.tsx", text, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
 }
 
 /**
@@ -609,19 +627,32 @@ function escapeForRegExp(text: string): string {
  * 数えない —— 数えると条文どおりの輸入が落ちる（AC-10-3-i）。
  */
 function declaresLocalRoleType(text: string): boolean {
-  const code = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-  const name = escapeForRegExp(ROLE_TYPE_NAME);
-  return new RegExp(
-    `\\b(?:type\\s+${name}\\s*(?:<[^>]*>)?\\s*=|(?:interface|enum)\\s+${name}\\b)`,
-  ).test(code);
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node) || ts.isEnumDeclaration(node)) &&
+      node.name.text === ROLE_TYPE_NAME
+    ) {
+      found = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parseSource(text));
+  return found;
 }
 
 /** テキストが型 Role を、末尾が moduleBase のモジュールから輸入しているか。 */
 function importsRoleTypeFrom(text: string, moduleBase: string): boolean {
-  return new RegExp(
-    `import\\s+(?:type\\s+)?\\{[^}]*\\b${escapeForRegExp(ROLE_TYPE_NAME)}\\b[^}]*\\}\\s*from\\s*` +
-      `["'][^"']*\\/${escapeForRegExp(moduleBase)}["']`,
-  ).test(text);
+  return parseSource(text).statements.some((statement) => {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) return false;
+    if (!statement.moduleSpecifier.text.endsWith(`/${moduleBase}`)) return false;
+    const bindings = statement.importClause?.namedBindings;
+    return (
+      bindings !== undefined &&
+      ts.isNamedImports(bindings) &&
+      bindings.elements.some((element) => (element.propertyName ?? element.name).text === ROLE_TYPE_NAME)
+    );
+  });
 }
 
 describe("AC-10-3-i: 型 Role は条文が名指す既存の型を輸入する（6-3）", () => {
@@ -704,6 +735,16 @@ describe("AC-10-3-i: 型 Role は条文が名指す既存の型を輸入する�
     ["type 節つきで複数行に分けて輸入する", 'import {\n  type Role,\n} from "@/lib/role-cookie";', false],
     ["type 節つきで再輸出する", 'export { type Role } from "@/lib/role-cookie";', false],
     ["コメントで型の名に触れる", "// type Role = を再定義しない\n/* interface Role */", false],
+    [
+      "URL を含む文字列の後ろで再定義する",
+      'const docs = "https://example.com"; type Role = "Engineer" | "Approver";',
+      true,
+    ],
+    [
+      "/* と */ を含む文字列に挟んで再定義する",
+      'const a = "src/*"; type Role = "Engineer" | "Approver"; const b = "*/";',
+      true,
+    ],
   ])("ローカル宣言の判定: %s", (_name, text, expected) => {
     expect(
       declaresLocalRoleType(text as string),
@@ -717,6 +758,8 @@ describe("AC-10-3-i: 型 Role は条文が名指す既存の型を輸入する�
     ["別のモジュールから輸入する", 'import type { Role } from "./local-role";', false],
     ["別の型だけを輸入する", 'import type { RoleName } from "@/lib/role-cookie";', false],
     ["輸入せずに宣言する", 'type Role = "Engineer";', false],
+    ["コメントの中にだけ輸入を書く", '// import type { Role } from "@/lib/role-cookie";', false],
+    ["文字列の中にだけ輸入を書く", 'const s = \'import type { Role } from "@/lib/role-cookie";\';', false],
   ])("輸入の判定: %s", (_name, text, expected) => {
     expect(
       importsRoleTypeFrom(text as string, "role-cookie"),
