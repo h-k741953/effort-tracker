@@ -338,8 +338,8 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
   });
 
   // AC-10-3-g: 長さの単位の判定は、単位の列の写しではなく Tailwind v4 が実際に
-  // 生成する CSS と突き合わせる（10-3-a (i) と同じ）。列を狭める変更・広げる変更の
-  // どちらも、候補のどこかで Tailwind と食い違って落ちる。
+  // 生成する CSS と突き合わせる（10-3-a (i) と同じ）。候補に在る単位について、列を
+  // 狭める変更・広げる変更のどちらも Tailwind と食い違って落ちる（11-40）。
   it.each(RING_WIDTH_UNIT_CANDIDATES)("4-6 の長さの単位の判定は Tailwind と一致する: %s", async (unit) => {
     const value = `1${unit}`;
     const text = `className="outline-none focus-visible:ring-[${value}]"`;
@@ -688,13 +688,36 @@ function declaresLocalRoleType(text: string): boolean {
   return found;
 }
 
+/** テキストのどこかで `import("<…/moduleBase>").Role` を型として使っているか。 */
+function usesImportTypeOfRole(source: ts.SourceFile, moduleBase: string): boolean {
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isImportTypeNode(node) &&
+      ts.isLiteralTypeNode(node.argument) &&
+      ts.isStringLiteral(node.argument.literal) &&
+      node.argument.literal.text.endsWith(`/${moduleBase}`) &&
+      node.qualifier !== undefined &&
+      ts.isIdentifier(node.qualifier) &&
+      node.qualifier.text === ROLE_TYPE_NAME
+    ) {
+      found = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
 /**
  * テキストが型 Role を、末尾が moduleBase のモジュールから輸入しているか。
- * 名前を挙げた輸入（別名を含む）と、名前空間として輸入して `<名前空間>.Role` を
- * 型として使う形を数える（AC-10-3-i (i)）。
+ * 名前を挙げた輸入（別名を含む）、名前空間として輸入して `<名前空間>.Role` を
+ * 型として使う形、同じモジュールを指す import 型 `import("…").Role` を数える
+ * （AC-10-3-i (i)）。いずれも使う型の名が Role であることまで読む。
  */
 function importsRoleTypeFrom(text: string, moduleBase: string): boolean {
   const source = parseSource(text);
+  if (usesImportTypeOfRole(source, moduleBase)) return true;
   return source.statements.some((statement) => {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) return false;
     if (!statement.moduleSpecifier.text.endsWith(`/${moduleBase}`)) return false;
@@ -825,6 +848,14 @@ describe("AC-10-3-i: 型 Role は条文が名指す既存の型を輸入する�
       true,
     ],
     ["名前空間として輸入するが Role を使わない", 'import * as rc from "@/lib/role-cookie";\nvoid rc;', false],
+    [
+      "名前空間として輸入して同じモジュールの別の型だけを使う",
+      'import * as rc from "@/lib/role-cookie";\nlet r: rc.RoleCookieRejected;',
+      false,
+    ],
+    ["import 型で Role を使う", 'let r: import("@/lib/role-cookie").Role;', true],
+    ["import 型で同じモジュールの別の型だけを使う", 'let r: import("@/lib/role-cookie").RoleCookieRejected;', false],
+    ["import 型で別のモジュールの Role を使う", 'let r: import("./other").Role;', false],
     [
       "別の名前空間の Role を使う",
       'import * as rc from "@/lib/role-cookie";\nimport * as other from "./other";\nlet role: other.Role;\nvoid rc;',

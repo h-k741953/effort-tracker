@@ -14,12 +14,16 @@ export const CSS_LENGTH_UNITS =
 
 // 単位の判定を Tailwind と突き合わせるときの候補。CSS_LENGTH_UNITS から作らない
 // （作ると、列を狭める変更が候補も一緒に狭めて通る）。長さでない単位・Tailwind が
-// 推論しない長さの単位・大文字の綴りを負の側として含める。
+// 推論しない長さの単位・大文字の綴りを負の側として含める。推論しない長さの単位は、
+// 推論する単位と同じ系統の綴り（`svw` に対する `svi` 等）まで置く —— 置かないと、
+// 列へその綴りを足す変更が候補のどこにも当たらずに通る（AC-10-3-a）。
 export const RING_WIDTH_UNIT_CANDIDATES = [
   "cm", "mm", "Q", "in", "pc", "pt", "px", "em", "ex", "ch", "rem", "lh", "rlh",
   "vw", "vh", "vmin", "vmax", "vb", "vi", "svw", "svh", "lvw", "lvh", "dvw", "dvh",
   "cqw", "cqh", "cqi", "cqb", "cqmin", "cqmax",
-  "rex", "rch", "cap", "rcap", "ic", "ric", "q", "x", "%", "deg", "fr", "s", "PX", "Rem", "Vw",
+  "rex", "rch", "cap", "rcap", "ic", "ric",
+  "svi", "svb", "lvi", "lvb", "dvi", "dvb", "svmin", "svmax", "lvmin", "lvmax", "dvmin", "dvmax",
+  "q", "x", "%", "deg", "fr", "s", "PX", "Rem", "Vw",
 ];
 
 /** Tailwind v4 が `ring-[<value>]` からリングの幅を生成するか（AC-10-3-a の正解）。 */

@@ -361,8 +361,8 @@ describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
   });
 
   // AC-10-3-a (i): 長さの単位の判定は、単位の列の写しではなく Tailwind v4 が実際に
-  // 生成する CSS と突き合わせる。列を狭める変更・広げる変更のどちらも、候補の
-  // どこかで Tailwind と食い違って落ちる。
+  // 生成する CSS と突き合わせる。候補に在る単位について、列を狭める変更・広げる
+  // 変更のどちらも Tailwind と食い違って落ちる（候補に無い単位は読まない。11-40）。
   it.each(RING_WIDTH_UNIT_CANDIDATES)("(i) 長さの単位の判定は Tailwind と一致する: %s", async (unit) => {
     const value = `1${unit}`;
     expect(
