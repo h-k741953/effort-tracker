@@ -3,6 +3,12 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import {
+  CSS_LENGTH_UNITS,
+  RING_WIDTH_UNIT_CANDIDATES,
+  readAc5Section,
+  tailwindTreatsAsRingWidth,
+} from "../test-support/design-system";
 
 // docs/specs/design-system.md AC-2-4 / AC-4-4 / AC-4-6 / AC-5-5（検証手段は AC-10-3）。
 //
@@ -108,8 +114,7 @@ const fetchCallPattern = /\bfetch\s*\(/;
 // Tailwind v4 が任意値を長さとして推論するもの（大文字は色として扱われる）。
 // 語の前後に境界を置き、`group-focus-visible:ring-2` のようにバリアントを前置した
 // 語（要素自身のフォーカスでは描かれない）や後ろへ続く語を数えない（AC-10-3-g）。
-const CSS_LENGTH_UNITS =
-  "cm|mm|Q|in|pc|pt|px|em|ex|ch|rem|lh|rlh|vw|vh|vmin|vmax|vb|vi|svw|svh|lvw|lvh|dvw|dvh|cqw|cqh|cqi|cqb|cqmin|cqmax";
+// 単位の列は focus-visible-ring.test.tsx と共有する（AC-10-3-a「1か所に置く」）。
 const focusVisibleRingPattern = new RegExp(
   `(?<![\\w:-])focus-visible:ring-(?:[1-9]\\d*|\\[\\d*\\.?\\d+(?:${CSS_LENGTH_UNITS})\\])(?=[\\s"'\`]|$)`,
 );
@@ -323,12 +328,25 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
       false,
     ],
     ["リング指定がグループのバリアントだけ", 'className="outline-none group-focus-visible:ring-2"', true],
+    ["リング指定が dark: を前置した語だけ", 'className="outline-none dark:focus-visible:ring-2"', true],
     ["リング指定の語が後ろへ続く", 'className="outline-none focus-visible:ring-2x"', true],
   ])("4-6 の判定: %s", (_name, text, expected) => {
     expect(
       violatesOutlineNoneRule(text as string),
       `4-6 の判定が期待と異なる（AC-10-3-g）。対象: ${text}`,
     ).toBe(expected);
+  });
+
+  // AC-10-3-g: 長さの単位の判定は、単位の列の写しではなく Tailwind v4 が実際に
+  // 生成する CSS と突き合わせる（10-3-a (i) と同じ）。列を狭める変更・広げる変更の
+  // どちらも、候補のどこかで Tailwind と食い違って落ちる。
+  it.each(RING_WIDTH_UNIT_CANDIDATES)("4-6 の長さの単位の判定は Tailwind と一致する: %s", async (unit) => {
+    const value = `1${unit}`;
+    const text = `className="outline-none focus-visible:ring-[${value}]"`;
+    expect(
+      violatesOutlineNoneRule(text),
+      `ring-[${value}] の判定が Tailwind の生成結果と食い違う（AC-10-3-g / AC-10-3-a）。`,
+    ).toBe(!(await tailwindTreatsAsRingWidth(value)));
   });
 });
 
@@ -616,8 +634,37 @@ const ROLE_TYPE_NAME = "Role";
 // 文字列の中の `//` や `/*` から後ろまで消えて再定義を読み落とし、逆にコメントの
 // 中にだけ書いた輸入を輸入として数えてしまう（AC-10-3-i）。typescript は既存の
 // devDependency であり、新たな依存は加えない。
+// 構文として読めないテキストは読み進めずに投げる。構文の誤りの後ろは構文木が
+// 崩れ、そこに在る宣言を黙って見落とすため（AC-10-3-i）。
 function parseSource(text: string): ts.SourceFile {
-  return ts.createSourceFile("source.tsx", text, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
+  const { diagnostics = [] } = ts.transpileModule(text, {
+    fileName: "source.tsx",
+    reportDiagnostics: true,
+    compilerOptions: { jsx: ts.JsxEmit.Preserve },
+  });
+  if (diagnostics.length > 0) {
+    const messages = diagnostics.map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"));
+    throw new Error(`構文として読めないテキストである（AC-10-3-i）: ${messages.join(" / ")}`);
+  }
+  return ts.createSourceFile("source.tsx", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+}
+
+/** テキストのどこかで `<namespaceName>.Role` を型として使っているか。 */
+function usesQualifiedRoleType(source: ts.SourceFile, namespaceName: string): boolean {
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isQualifiedName(node) &&
+      ts.isIdentifier(node.left) &&
+      node.left.text === namespaceName &&
+      node.right.text === ROLE_TYPE_NAME
+    ) {
+      found = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
 }
 
 /**
@@ -641,17 +688,20 @@ function declaresLocalRoleType(text: string): boolean {
   return found;
 }
 
-/** テキストが型 Role を、末尾が moduleBase のモジュールから輸入しているか。 */
+/**
+ * テキストが型 Role を、末尾が moduleBase のモジュールから輸入しているか。
+ * 名前を挙げた輸入（別名を含む）と、名前空間として輸入して `<名前空間>.Role` を
+ * 型として使う形を数える（AC-10-3-i (i)）。
+ */
 function importsRoleTypeFrom(text: string, moduleBase: string): boolean {
-  return parseSource(text).statements.some((statement) => {
+  const source = parseSource(text);
+  return source.statements.some((statement) => {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) return false;
     if (!statement.moduleSpecifier.text.endsWith(`/${moduleBase}`)) return false;
     const bindings = statement.importClause?.namedBindings;
-    return (
-      bindings !== undefined &&
-      ts.isNamedImports(bindings) &&
-      bindings.elements.some((element) => (element.propertyName ?? element.name).text === ROLE_TYPE_NAME)
-    );
+    if (bindings === undefined) return false;
+    if (ts.isNamespaceImport(bindings)) return usesQualifiedRoleType(source, bindings.name.text);
+    return bindings.elements.some((element) => (element.propertyName ?? element.name).text === ROLE_TYPE_NAME);
   });
 }
 
@@ -680,7 +730,8 @@ describe("AC-10-3-i: 型 Role は条文が名指す既存の型を輸入する�
 
   /** AC-5-1 の台帳から RoleSwitcher の実装ファイル名を読む。 */
   function readRoleSwitcherFile(spec: string): string {
-    const row = spec.match(/^\|\s*5-1-[a-z]+\s*\|\s*`RoleSwitcher`\s*\|\s*`([^`]+)`/m);
+    // 台帳は 10-4 と同じく AC-5 の節の中から読む。
+    const row = readAc5Section(spec, hint).match(/^\|\s*5-1-[a-z]+\s*\|\s*`RoleSwitcher`\s*\|\s*`([^`]+)`/m);
     expect(row, `${hint} AC-5-1 の台帳から RoleSwitcher の行を切り出せなかった。`).not.toBeNull();
     const fileName = row![1];
     // 台帳から読んだファイル名が、この検査が走査する母集団（10-3-h が実ディレクトリ
@@ -745,6 +796,13 @@ describe("AC-10-3-i: 型 Role は条文が名指す既存の型を輸入する�
       'const a = "src/*"; type Role = "Engineer" | "Approver"; const b = "*/";',
       true,
     ],
+    [
+      "// と /* を含むテンプレートリテラルの後ろで再定義する",
+      'const t = `https://x/* ${1} */`; type Role = "Engineer" | "Approver";',
+      true,
+    ],
+    ["関数の本体で再定義する", 'export function F() { type Role = "A" | "B"; return null; }', true],
+    ["名前空間の中で再定義する", 'namespace N { export type Role = "A"; }', true],
   ])("ローカル宣言の判定: %s", (_name, text, expected) => {
     expect(
       declaresLocalRoleType(text as string),
@@ -760,10 +818,30 @@ describe("AC-10-3-i: 型 Role は条文が名指す既存の型を輸入する�
     ["輸入せずに宣言する", 'type Role = "Engineer";', false],
     ["コメントの中にだけ輸入を書く", '// import type { Role } from "@/lib/role-cookie";', false],
     ["文字列の中にだけ輸入を書く", 'const s = \'import type { Role } from "@/lib/role-cookie";\';', false],
+    ["別名を付けて輸入する", 'import type { Role as R } from "@/lib/role-cookie";', true],
+    [
+      "名前空間として輸入して Role を型として使う",
+      'import * as rc from "@/lib/role-cookie";\nlet role: rc.Role;',
+      true,
+    ],
+    ["名前空間として輸入するが Role を使わない", 'import * as rc from "@/lib/role-cookie";\nvoid rc;', false],
+    [
+      "別の名前空間の Role を使う",
+      'import * as rc from "@/lib/role-cookie";\nimport * as other from "./other";\nlet role: other.Role;\nvoid rc;',
+      false,
+    ],
   ])("輸入の判定: %s", (_name, text, expected) => {
     expect(
       importsRoleTypeFrom(text as string, "role-cookie"),
       `輸入の判定が期待と異なる（AC-10-3-i）。対象: ${text}`,
     ).toBe(expected);
+  });
+
+  // 構文の誤りの後ろの宣言を黙って見落とさない（AC-10-3-i）。`.tsx` では
+  // `<T>(x: T) => x` が JSX として読まれて構文が崩れ、後ろの宣言が構文木から消える。
+  it("構文として読めないテキストは、宣言・輸入のどちらの判定でも投げる", () => {
+    const broken = 'const f = <T>(x: T) => x;\ntype Role = "Engineer" | "Approver";';
+    expect(() => declaresLocalRoleType(broken)).toThrow(/構文として読めない/);
+    expect(() => importsRoleTypeFrom(broken, "role-cookie")).toThrow(/構文として読めない/);
   });
 });

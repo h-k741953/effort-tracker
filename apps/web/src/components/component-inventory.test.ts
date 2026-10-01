@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { readAc5Section } from "../test-support/design-system";
 
 // docs/specs/design-system.md AC-5-1 / AC-5-2（検証手段は AC-10-4）。
 //
@@ -24,11 +25,7 @@ function parseLedgerFiles(spec: string): string[] {
     `要求の変更ではないのでこの抽出側を追随させること（10-4 は抽出手段を仕様で固定していない）。`;
   // 台帳は AC-5 の節の中だけから読む。仕様書の全体から拾うと、他の節に同じ形の
   // 行を置いたときに台帳でない行を期待値に混ぜる（10-4）。
-  const start = spec.indexOf("### AC-5.");
-  if (start < 0) throw new Error(`${hint} AC-5 の節が見つからない。`);
-  const rest = spec.slice(start + 1);
-  const end = rest.indexOf("\n### ");
-  const section = end === -1 ? rest : rest.slice(0, end);
+  const section = readAc5Section(spec, hint);
   const rowLines = section.match(/^\|\s*5-1-[a-z]+\s*\|.*$/gm) ?? [];
   const files = rowLines.flatMap((line) => {
     const match = line.match(/^\|\s*5-1-[a-z]+\s*\|\s*`[A-Za-z]+`\s*\|\s*`([a-z-]+\.tsx)`\s*\|/);
@@ -61,10 +58,14 @@ describe("components ディレクトリ構成 - AC-5-1 / AC-5-2", () => {
     const head = "### AC-5. 共通コンポーネントの一覧と境界\n\n";
     const good = `${head}| 5-1-a | \`Button\` | \`button.tsx\` | 各画面 | 出典 |\n`;
     expect(parseLedgerFiles(good)).toEqual(["button.tsx"]);
-    // 節の外に置いた同じ形の行は台帳として読まない。
-    expect(
-      parseLedgerFiles(`${good}\n### AC-6. 別の節\n\n| 5-1-z | \`Panel\` | \`panel.tsx\` | 各画面 | 出典 |\n`),
-    ).toEqual(["button.tsx"]);
+    // 節の外に置いた同じ形の行は、節の前・後ろのどちらでも台帳として読まない。
+    const stray = "| 5-1-z | `Panel` | `panel.tsx` | 各画面 | 出典 |\n";
+    expect(parseLedgerFiles(`${good}\n### AC-6. 別の節\n\n${stray}`)).toEqual(["button.tsx"]);
+    // 節の前の行は、後ろに別の節が続く形で読む（後ろに節が無いと、節の終わりを探す
+    // 分岐を通らず、読み始めを文書の先頭へ広げる変更が素通りする）。
+    expect(parseLedgerFiles(`### AC-4. 前の節\n\n${stray}\n${good}\n### AC-6. 後の節\n`)).toEqual([
+      "button.tsx",
+    ]);
     expect(() => parseLedgerFiles("| 5-1-a | `Button` | `button.tsx` | 各画面 | 出典 |\n")).toThrow(
       /AC-5 の節が見つからない/,
     );
