@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 // docs/specs/design-system.md AC-1 / AC-2 / AC-4-1〜4-3（検証手段は AC-10-1）。
@@ -118,6 +119,14 @@ describe("globals.css - AC-1: トークンの定義場所と形式", () => {
       }
     };
     walk(srcDir);
+    // AC-10-1: 走査の範囲を狭める変更（階層を落とす形）が、範囲の外に置いた CSS を
+    // 見逃したまま通らないよう、走査とは別の手段で数えた集合と突き合わせる。
+    const independent = ts.sys
+      .readDirectory(srcDir, [".css"])
+      .map((full) => path.relative(srcDir, full))
+      .sort();
+    expect(independent.length).toBeGreaterThan(0);
+    expect([...cssFiles].sort()).toEqual(independent);
     expect(cssFiles).toEqual(["app/globals.css"]);
   });
 
@@ -274,6 +283,16 @@ describe("globals.css - AC-4-1〜4-3", () => {
     // いないことの陽性側の足場）。
     expect(existsSync(path.join(appDir, "layout.tsx"))).toBe(true);
     expect(sources.map((s) => s.file)).toContain(path.join("app", "layout.tsx"));
+    // AC-10-1-b: 1件の足場だけでは、走査の範囲を狭める変更（拡張子・階層を落とす形）が
+    // layout.tsx を残したまま他のファイルを落として通る。走査とは別の手段で数えた
+    // 集合と過不足なく一致することを読む（10-3-k と同じ理由）。
+    const independent = ts.sys
+      .readDirectory(srcDir, [".ts", ".tsx"])
+      .map((full) => path.relative(srcDir, full))
+      .filter((file) => !/\.test\.tsx?$/.test(file))
+      .sort();
+    expect(independent.length).toBeGreaterThan(0);
+    expect(sources.map((s) => s.file).sort()).toEqual(independent);
     const offending = sources
       .filter((s) => /next\/font\/google/.test(s.text))
       .map((s) => s.file);
