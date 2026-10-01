@@ -77,7 +77,7 @@ describe("AC-10-3-k: アプリの実装は test-support を import しない", (
     expect(files.length).toBeGreaterThan(0);
     // 走査が空振りしていないことの陽性側の足場。
     expect(files).toContain(path.join("components", "button.tsx"));
-    expect(files.some((file) => file.startsWith("test-support"))).toBe(false);
+    expect(files.some((file) => file.startsWith(`test-support${path.sep}`))).toBe(false);
     // 1件の足場だけでは、走査の範囲を狭める変更（拡張子・階層を落とす形）が通る。
     // 走査とは別の手段で数えた集合と過不足なく一致することを読む（AC-10-3-k）。
     const independent = ts.sys
@@ -103,6 +103,9 @@ describe("AC-10-3-k: アプリの実装は test-support を import しない", (
     ["相対パスで輸入する", 'import { a } from "../test-support/design-system";', true],
     ["パスの別名で輸入する", 'import { a } from "@/test-support/design-system";', true],
     ["再輸出する", 'export * from "../test-support/design-system";', true],
+    ["名前を挙げて再輸出する", 'export { a } from "../test-support/design-system";', true],
+    ["副作用だけのために import する", 'import "../test-support/design-system";', true],
+    ["import type で輸入する", 'import type { a } from "../test-support/design-system";', true],
     ["動的に import する", 'const m = await import("../test-support/design-system");', true],
     ["テンプレートリテラルで動的に import する", "const m = await import(`../test-support/design-system`);", true],
     ["import 型で参照する", 'type T = import("../test-support/design-system").T;', true],
