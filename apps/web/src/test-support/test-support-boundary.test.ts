@@ -78,6 +78,15 @@ describe("AC-10-3-k: アプリの実装は test-support を import しない", (
     // 走査が空振りしていないことの陽性側の足場。
     expect(files).toContain(path.join("components", "button.tsx"));
     expect(files.some((file) => file.startsWith("test-support"))).toBe(false);
+    // 1件の足場だけでは、走査の範囲を狭める変更（拡張子・階層を落とす形）が通る。
+    // 走査とは別の手段で数えた集合と過不足なく一致することを読む（AC-10-3-k）。
+    const independent = ts.sys
+      .readDirectory(srcDir, [".ts", ".tsx"])
+      .map((full) => path.relative(srcDir, full))
+      .filter((file) => !/\.test\.tsx?$/.test(file) && !file.startsWith(`test-support${path.sep}`))
+      .sort();
+    expect(independent.length).toBeGreaterThan(0);
+    expect(files).toEqual(independent);
   });
 
   it.each(listImplementationFiles())("%s は test-support を import しない", (file) => {
@@ -95,11 +104,14 @@ describe("AC-10-3-k: アプリの実装は test-support を import しない", (
     ["パスの別名で輸入する", 'import { a } from "@/test-support/design-system";', true],
     ["再輸出する", 'export * from "../test-support/design-system";', true],
     ["動的に import する", 'const m = await import("../test-support/design-system");', true],
+    ["テンプレートリテラルで動的に import する", "const m = await import(`../test-support/design-system`);", true],
     ["import 型で参照する", 'type T = import("../test-support/design-system").T;', true],
     ["別のモジュールを輸入する", 'import { a } from "@/lib/role-cookie";', false],
     ["コメントで触れる", '// import { a } from "../test-support/design-system";', false],
     ["文字列で触れる", 'const s = "../test-support/design-system";', false],
     ["似た名のディレクトリを輸入する", 'import { a } from "../test-supports/x";', false],
+    ["前に語が付いた名のディレクトリを輸入する", 'import { a } from "../my-test-support/x";', false],
+    ["ディレクトリそのものを輸入する", 'import { a } from "@/test-support";', true],
   ])("test-support の import の判定: %s", (_name, text, expected) => {
     expect(
       importsTestSupport(text as string),

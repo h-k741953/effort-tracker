@@ -854,6 +854,8 @@ describe("AC-10-3-i: 型 Role は条文が名指す既存の型を輸入する�
       false,
     ],
     ["import 型で Role を使う", 'let r: import("@/lib/role-cookie").Role;', true],
+    ["import 型の Role を型引数の中で使う", 'let r: Array<{ v: import("@/lib/role-cookie").Role }>;', true],
+    ["名前空間の Role を型引数の中で使う", 'import * as rc from "@/lib/role-cookie";\nlet r: Array<{ v: rc.Role }>;', true],
     ["import 型で同じモジュールの別の型だけを使う", 'let r: import("@/lib/role-cookie").RoleCookieRejected;', false],
     ["import 型で別のモジュールの Role を使う", 'let r: import("./other").Role;', false],
     [
