@@ -14,6 +14,11 @@ import { NumberField } from "./number-field";
 import { Pagination } from "./pagination";
 import { RoleSwitcher } from "./role-switcher";
 import { StatusBadge } from "./status-badge";
+import {
+  CSS_LENGTH_UNITS,
+  RING_WIDTH_UNIT_CANDIDATES,
+  tailwindTreatsAsRingWidth,
+} from "../test-support/design-system";
 
 // docs/specs/design-system.md AC-4-5（検証手段は AC-10-3-a）。
 //
@@ -85,9 +90,8 @@ const INTERACTIVE_SELECTOR = [
 // `[<長さ>]` に限り、1語全体で読む（区切りなしで2語を連結した形も、
 // `group-focus-visible:ring-2` のように別のバリアントを前置した形も落とす）。
 // 長さの単位は Tailwind v4 が任意値を長さとして推論するもの（大文字の単位は
-// 色として扱われ、リングを描かない）。
-const CSS_LENGTH_UNITS =
-  "cm|mm|Q|in|pc|pt|px|em|ex|ch|rem|lh|rlh|vw|vh|vmin|vmax|vb|vi|svw|svh|lvw|lvh|dvw|dvh|cqw|cqh|cqi|cqb|cqmin|cqmax";
+// 色として扱われ、リングを描かない）。単位の列は forbidden-patterns.test.ts と
+// 共有し、正しさは Tailwind の生成結果と突き合わせて読む（AC-10-3-a）。
 const FOCUS_VISIBLE_RING_WIDTH = new RegExp(
   `^focus-visible:ring-(?:[1-9]\\d*|\\[\\d*\\.?\\d+(?:${CSS_LENGTH_UNITS})\\])$`,
 );
@@ -354,6 +358,17 @@ describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
       givesFocusVisibleRingWidth(className as string),
       `リングの幅の判定が期待と異なる（AC-10-3-a）。対象: ${className}`,
     ).toBe(expected);
+  });
+
+  // AC-10-3-a (i): 長さの単位の判定は、単位の列の写しではなく Tailwind v4 が実際に
+  // 生成する CSS と突き合わせる。列を狭める変更・広げる変更のどちらも、候補の
+  // どこかで Tailwind と食い違って落ちる。
+  it.each(RING_WIDTH_UNIT_CANDIDATES)("(i) 長さの単位の判定は Tailwind と一致する: %s", async (unit) => {
+    const value = `1${unit}`;
+    expect(
+      givesFocusVisibleRingWidth(`focus-visible:ring-[${value}]`),
+      `ring-[${value}] の判定が Tailwind の生成結果と食い違う（AC-10-3-a）。`,
+    ).toBe(await tailwindTreatsAsRingWidth(value));
   });
 
   it.each(OUTLINE_NONE_CASES)(
