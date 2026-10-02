@@ -108,11 +108,32 @@ const fetchCallPattern = /\bfetch\s*\(/;
 // AC-2-4（10-3）: `style` 属性に色に関わるプロパティを書くこと自体を違反とする。値は読まない
 // （名前付きの色の一覧は持たない）。色に関わるプロパティは、名前に `color`（大文字小文字を
 // 問わない）を含むもの、および `background` / `fill` / `stroke`（名前そのもの。
-// `strokeWidth` 等は色でないため対象外）。`style={{ ... }}` に直に書いたオブジェクト
-// リテラルのキーだけを読む。変数・スプレッドを介した `style`、`border` / `outline` /
+// `strokeWidth` 等は色でないため対象外）。判定は正規表現ではなく TypeScript の構文木で読む
+// （正規表現は値の中の語をキーとして数えて偽 Red を出し、`${…}` の後ろのキーを読み落とす）。
+// JSX の `style` 属性に直に書いたオブジェクトリテラルのキーだけを読む。変数・スプレッド・
+// 括弧や型アサーションで包んだ形、中身が文字列リテラルでない計算キー、`border` / `outline` /
 // `boxShadow` 等の一括指定は読まない（10-3 の残る穴）。
-const styleColorPropertyPattern =
-  /\bstyle\s*=\s*\{\s*\{(?:[^}]*?,)?\s*["']?(?:[\w$-]*color[\w$-]*|background|fill|stroke)["']?\s*[:,}]/i;
+//
+// AC-2-4（10-3）: 色の JSX 属性（下の9つ）に、文字列リテラルで与えた値を書くことも違反とする。
+// 値が字面どおり `none` / `currentColor` のものは違反でない。同じ構文木の走査で読む。
+const SVG_COLOR_ATTRIBUTE_NAMES = [
+  "fill",
+  "stroke",
+  "color",
+  "stopColor",
+  "stop-color",
+  "floodColor",
+  "flood-color",
+  "lightingColor",
+  "lighting-color",
+];
+const SVG_COLOR_ALLOWED_VALUES = ["none", "currentColor"];
+
+/** 禁止表現の一致位置（テキスト内の [start, end)）。 */
+interface Span {
+  start: number;
+  end: number;
+}
 
 // AC-4-6: outline-none を書くなら、同じファイル内に代替のリング指定
 // （focus-visible のリングの幅を与えるユーティリティ）を伴うこと。判定を述語
@@ -142,27 +163,42 @@ const NON_MD_ROUNDED_LABEL = "rounded-md 以外の角丸";
 const FETCH_CALL_LABEL = "fetch の呼び出し";
 const STYLE_COLOR_LABEL = "style 属性の色に関わるプロパティ";
 
-const FORBIDDEN_EXPRESSION_PATTERNS = [
-  { label: HEX_COLOR_LABEL, pattern: hexColorPattern },
-  { label: RGB_OR_HSL_LABEL, pattern: rgbOrHslFunctionPattern },
-  { label: PALETTE_UTILITY_LABEL, pattern: paletteUtilityPattern },
-  { label: NON_MD_ROUNDED_LABEL, pattern: nonMdRoundedPattern },
-  { label: FETCH_CALL_LABEL, pattern: fetchCallPattern },
-  { label: STYLE_COLOR_LABEL, pattern: styleColorPropertyPattern },
+const SVG_COLOR_ATTRIBUTE_LABEL = "SVG の色属性への値";
+
+/** 正規表現で読む禁止表現の検出器。 */
+function locateByPattern(pattern: RegExp): (text: string) => Span | null {
+  return (text) => {
+    const matched = pattern.exec(text);
+    return matched === null ? null : { start: matched.index, end: matched.index + matched[0].length };
+  };
+}
+
+// 各行は「テキストから最初の違反の位置を返す」検出器を持つ。実ファイルの走査・陽性対照・
+// 述語の両側の表が、いずれもこの検出器を通る（10-3-f）。構文木で読む2行は構文として
+// 読めないテキストに対して投げる（読み進めずに失敗とする）。
+const FORBIDDEN_EXPRESSIONS: { label: string; locate: (text: string) => Span | null }[] = [
+  { label: HEX_COLOR_LABEL, locate: locateByPattern(hexColorPattern) },
+  { label: RGB_OR_HSL_LABEL, locate: locateByPattern(rgbOrHslFunctionPattern) },
+  { label: PALETTE_UTILITY_LABEL, locate: locateByPattern(paletteUtilityPattern) },
+  { label: NON_MD_ROUNDED_LABEL, locate: locateByPattern(nonMdRoundedPattern) },
+  { label: FETCH_CALL_LABEL, locate: locateByPattern(fetchCallPattern) },
+  { label: STYLE_COLOR_LABEL, locate: (text) => locateStyleColorProperty(text) },
+  { label: SVG_COLOR_ATTRIBUTE_LABEL, locate: (text) => locateSvgColorAttribute(text) },
 ];
 
 /** テキストに現れた禁止表現のラベルを、表の順序で返す。 */
 function findForbiddenExpressions(text: string): string[] {
-  return FORBIDDEN_EXPRESSION_PATTERNS.filter(({ pattern }) => pattern.test(text)).map(
-    ({ label }) => label,
-  );
+  return FORBIDDEN_EXPRESSIONS.filter(({ locate }) => locate(text) !== null).map(({ label }) => label);
 }
 
-// AC-10-3 / AC-2-4: `style` 属性の色の判定を述語として切り出す（10-3-g と同じ形）。実ファイルの
-// 不在の主張は上の表（findForbiddenExpressions）を通り、この述語も同じ表を通るため、
-// 述語の両側を読むことが実ファイルの経路を読むことになる。
+// AC-10-3 / AC-2-4: `style` の色・SVG の色属性の判定を述語として切り出す（10-3-g と同じ形）。
+// 実ファイルの不在の主張は上の表（findForbiddenExpressions）を通り、これらの述語も同じ表を
+// 通るため、述語の両側を読むことが実ファイルの経路を読むことになる。
 function violatesStyleColorRule(text: string): boolean {
   return findForbiddenExpressions(text).includes(STYLE_COLOR_LABEL);
+}
+function violatesSvgColorAttributeRule(text: string): boolean {
+  return findForbiddenExpressions(text).includes(SVG_COLOR_ATTRIBUTE_LABEL);
 }
 
 // AC-10-3-c: 「この17種のリストは、本条文の字面とテストの実装が逐語で
@@ -392,11 +428,107 @@ describe("AC-10-3: style 属性の色に関わるプロパティの判定", () =
     ["style 属性が無い", '<div className="text-primary" />', false],
     ["値に color を含むがキーは色でない", "<div style={{ width: colorWidth }} />", false],
     ["strokeWidth（色でない）", "<svg style={{ strokeWidth: 2 }} />", false],
+    // 構文木で読む（正規表現の偽 Red / すり抜け。10-3）。
+    [
+      "${…} を含むテンプレートリテラルの値の後ろに backgroundColor",
+      "<div style={{ minHeight: `${4}rem`, backgroundColor: \"white\" }} />",
+      true,
+    ],
+    ["値の文字列の中に color（キーは transitionProperty）", '<div style={{ transitionProperty: "opacity, color" }} />', false],
+    ["値の中の color を含む識別子と文字列", '<div style={{ width: colorWidth, content: "color: red" }} />', false],
+    ["計算キー（文字列リテラル）", '<div style={{ ["color"]: "red" }} />', true],
+    ["計算キー（置換なしテンプレート）", "<div style={{ [`backgroundColor`]: \"red\" }} />", true],
+    ["計算キー（中身が文字列リテラルでない）は読まない", '<div style={{ [key]: "red" }} />', false],
+    ["計算キー（置換ありテンプレート）は読まない", "<div style={{ [`${k}`]: \"red\" }} />", false],
+    ["複数行に分けたオブジェクト", '<div\n  style={{\n    width: 10,\n    borderTopColor: "red",\n  }}\n/>', true],
+    ["入れ子の要素の style", '<div><span style={{ color: "red" }} /></div>', true],
+    // 残る穴（10-3 (i)(ii)）は違反として数えない。
+    ["style を変数で渡す", "<div style={s} />", false],
+    ["JSX のスプレッド属性で渡す", "<div {...props} />", false],
+    ["オブジェクトリテラルの中のスプレッド", '<div style={{ ...(cond ? { color: "red" } : {}) }} />', false],
+    ["括弧で包んだオブジェクトリテラル", '<div style={({ color: "red" })} />', false],
+    ["型アサーションで包んだオブジェクトリテラル", '<div style={{ color: "red" } as CSSProperties} />', false],
+    ["border の一括指定", '<div style={{ border: "1px solid red" }} />', false],
+    ["boxShadow の一括指定", '<div style={{ boxShadow: "0 0 1px red" }} />', false],
+    ["backgroundImage のグラデーション", '<div style={{ backgroundImage: "linear-gradient(red, blue)" }} />', false],
+    // style 属性でないもの。
+    ["style 属性でない属性のオブジェクト", '<div data={{ color: "red" }} />', false],
+    ["JSX の外のオブジェクト", 'const style = { color: "red" };', false],
+    ["JSX の子の文字列", '<p>style={{ color: "red" }}</p>', false],
   ])("style の判定: %s", (_name, text, expected) => {
     expect(
       violatesStyleColorRule(text as string),
       `style の色の判定が期待と異なる（AC-10-3）。対象: ${text}`,
     ).toBe(expected);
+  });
+
+  it("構文として読めないテキストは、読み進めずに投げる", () => {
+    const broken = 'const f = <T>(x: T) => x;\nconst el = <div style={{ color: "red" }} />;';
+    expect(() => violatesStyleColorRule(broken)).toThrow(/構文として読めない/);
+  });
+});
+
+// docs/specs/design-system.md AC-10-3（SVG の色属性）。
+//
+// 述語そのものへ与えるテキストで両側を読む（10-3-g と同じ形）。違反でない側には、条文が
+// 「残る穴」と明文化した形（列挙外の属性・文字列リテラルでない値・スプレッド属性）を含める。
+describe("AC-10-3: SVG の色属性の判定", () => {
+  it.each([
+    ["stroke に名前付きの色", '<path stroke="gray" />', true],
+    ["stop-color に名前付きの色", '<stop stop-color="red" />', true],
+    ["式の括弧の中の文字列リテラル", '<path fill={"red"} />', true],
+    ["式の括弧の中の置換なしテンプレートリテラル", "<path fill={`red`} />", true],
+    ["16進", '<path fill="#fff" />', true],
+    ["rgb()", '<path fill="rgb(0, 0, 0)" />', true],
+    ["transparent", '<path fill="transparent" />', true],
+    ["inherit", '<path fill="inherit" />', true],
+    ["url(#…)", '<path fill="url(#g)" />', true],
+    ["空文字列", '<path fill="" />', true],
+    ["字面が違う（None）", '<path fill="None" />', true],
+    ["字面が違う（currentcolor）", '<path fill="currentcolor" />', true],
+    ["1つ目が none でも2つ目の色属性を読む", '<svg fill="none" stroke="gray" />', true],
+    ["コンポーネントに書いた color", '<Icon color="red" />', true],
+    ["複数行に分けた svg", '<svg\n  viewBox="0 0 24 24"\n  fill="none"\n  stroke="gray"\n>\n  <path d="M4 12h16" />\n</svg>', true],
+    ["fill が none", '<path fill="none" />', false],
+    ["fill が currentColor", '<path fill="currentColor" />', false],
+    ["式の括弧の中の none", '<path fill={"none"} />', false],
+    ["置換なしテンプレートの currentColor", "<path stroke={`currentColor`} />", false],
+    ["fill=none と stroke=currentColor（条文どおりの svg）", '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 12h16" /></svg>', false],
+    ["色でない属性", '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" />', false],
+    ["strokeWidth（色でない）", '<path strokeWidth="2" />', false],
+    ["属性が無い", "<path />", false],
+    ["JSX の子の文字列", '<p>fill="red"</p>', false],
+    ["JSX の外の代入", 'const fill = "red";', false],
+    // 残る穴（条文の (a)(b)(c)）。
+    ["列挙外の属性（borderColor）", '<div borderColor="red" />', false],
+    ["列挙外の属性（floodOpacity）", '<feFlood floodOpacity="0.5" />', false],
+    ["変数の値", "<path fill={fill} />", false],
+    ["条件式の値", '<path fill={cond ? "red" : "none"} />', false],
+    ["置換を含むテンプレートリテラル", "<path fill={`${c}`} />", false],
+    ["値を省いた属性", "<path fill />", false],
+    ["スプレッド属性", "<path {...props} />", false],
+  ])("SVG の色属性の判定: %s", (_name, text, expected) => {
+    expect(
+      violatesSvgColorAttributeRule(text as string),
+      `SVG の色属性の判定が期待と異なる（AC-10-3）。対象: ${text}`,
+    ).toBe(expected);
+  });
+
+  // 読む属性名は9つ。条文の字面と実装の対応は機械検査しない（人間のレビュー）。名前ごとに1行ずつ
+  // 読み、1つだけ列から外す変更が落ちるようにする。
+  it.each(SVG_COLOR_ATTRIBUTE_NAMES)("%s に色を書くと違反、none / currentColor は違反でない", (name) => {
+    expect(violatesSvgColorAttributeRule(`<g ${name}="red" />`), `${name}="red"`).toBe(true);
+    expect(violatesSvgColorAttributeRule(`<g ${name}="none" />`), `${name}="none"`).toBe(false);
+    expect(violatesSvgColorAttributeRule(`<g ${name}="currentColor" />`), `${name}="currentColor"`).toBe(false);
+  });
+
+  it("読む属性名は条文が固定した9つである", () => {
+    expect(SVG_COLOR_ATTRIBUTE_NAMES).toHaveLength(9);
+  });
+
+  it("構文として読めないテキストは、読み進めずに投げる", () => {
+    const broken = 'const f = <T>(x: T) => x;\nconst el = <path fill="red" />;';
+    expect(() => violatesSvgColorAttributeRule(broken)).toThrow(/構文として読めない/);
   });
 });
 
@@ -624,6 +756,10 @@ const POSITIVE_CONTROL_TEXTS = [
     label: STYLE_COLOR_LABEL,
     text: 'export function Sample() {\n  return <div style={{ color: "red" }} />;\n}\n',
   },
+  {
+    label: SVG_COLOR_ATTRIBUTE_LABEL,
+    text: 'export function Sample() {\n  return <svg fill="none" stroke="gray" />;\n}\n',
+  },
 ];
 
 describe("AC-10-3-f: 走査経路の陽性対照（不在の主張が空虚に真になっていないこと）", () => {
@@ -634,7 +770,7 @@ describe("AC-10-3-f: 走査経路の陽性対照（不在の主張が空虚に�
     expect(
       POSITIVE_CONTROL_TEXTS.map(({ label }) => label).sort(),
       "対照とパターンの対応が崩れている。パターンを増減させたなら対照も同時に増減させること（順序は読まない。AC-10-3-f）。",
-    ).toEqual(FORBIDDEN_EXPRESSION_PATTERNS.map(({ label }) => label).sort());
+    ).toEqual(FORBIDDEN_EXPRESSIONS.map(({ label }) => label).sort());
   });
 
   it.each(POSITIVE_CONTROL_TEXTS)(
@@ -655,16 +791,16 @@ describe("AC-10-3-f: 走査経路の陽性対照（不在の主張が空虚に�
 
       // 違反がテキストの先頭・末尾のいずれでもない位置にあること（AC-10-3-f）。
       // ここを満たさない対照は、アンカーを付ける変異を判別できない。
-      const entry = FORBIDDEN_EXPRESSION_PATTERNS.find((p) => p.label === label);
-      expect(entry, `${label} に対応するパターンが表に無い。`).not.toBeUndefined();
-      const matched = entry!.pattern.exec(text);
+      const entry = FORBIDDEN_EXPRESSIONS.find((p) => p.label === label);
+      expect(entry, `${label} に対応する検出器が表に無い。`).not.toBeUndefined();
+      const matched = entry!.locate(text);
       expect(matched, `${label} の対照から一致位置を取れなかった。`).not.toBeNull();
       expect(
-        matched!.index,
+        matched!.start,
         `${label} の対照が先頭で一致している。先頭アンカーを付ける変異を判別できない（AC-10-3-f）。`,
       ).toBeGreaterThan(0);
       expect(
-        matched!.index + matched![0].length,
+        matched!.end,
         `${label} の対照が末尾で一致している。末尾アンカーを付ける変異を判別できない（AC-10-3-f）。`,
       ).toBeLessThan(text.length);
     },
@@ -701,6 +837,78 @@ function parseSource(text: string): ts.SourceFile {
     throw new Error(`構文として読めないテキストである（AC-10-3-i）: ${messages.join(" / ")}`);
   }
   return ts.createSourceFile("source.tsx", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+}
+
+/** 構文木の全ノードを順に訪れ、最初に位置を返したものを返す。 */
+function firstSpanIn(text: string, pick: (node: ts.Node, source: ts.SourceFile) => ts.Node | null): Span | null {
+  const source = parseSource(text);
+  let found: Span | null = null;
+  const visit = (node: ts.Node): void => {
+    if (found !== null) return;
+    const hit = pick(node, source);
+    if (hit !== null) {
+      found = { start: hit.getStart(source), end: hit.getEnd() };
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
+/** キーの名前。識別子・文字列リテラル、および中身が文字列リテラル（置換なしテンプレートを含む）の計算キー。 */
+function readPropertyKeyName(name: ts.PropertyName): string | null {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)) {
+    return name.text;
+  }
+  if (ts.isComputedPropertyName(name)) {
+    const inner = name.expression;
+    if (ts.isStringLiteral(inner) || ts.isNoSubstitutionTemplateLiteral(inner)) return inner.text;
+  }
+  return null;
+}
+
+/** 色に関わる `style` のキーか（名前に color を含む／background・fill・stroke。10-3）。 */
+function isColorStyleKey(name: string): boolean {
+  return /color/i.test(name) || name === "background" || name === "fill" || name === "stroke";
+}
+
+/** JSX の `style` 属性に直に書いたオブジェクトリテラルの、色に関わるキー（最初の1つ）の位置。 */
+function locateStyleColorProperty(text: string): Span | null {
+  return firstSpanIn(text, (node) => {
+    if (!ts.isJsxAttribute(node) || !ts.isIdentifier(node.name) || node.name.text !== "style") return null;
+    const init = node.initializer;
+    if (init === undefined || !ts.isJsxExpression(init) || init.expression === undefined) return null;
+    if (!ts.isObjectLiteralExpression(init.expression)) return null;
+    for (const property of init.expression.properties) {
+      if (ts.isSpreadAssignment(property)) continue;
+      const key = property.name === undefined ? null : readPropertyKeyName(property.name);
+      if (key !== null && isColorStyleKey(key)) return property;
+    }
+    return null;
+  });
+}
+
+/** JSX 属性に文字列リテラルで与えた値（`"x"` と `{"x"}`・置換なしテンプレート）。それ以外は null。 */
+function readStringLiteralAttributeValue(attribute: ts.JsxAttribute): string | null {
+  const init = attribute.initializer;
+  if (init === undefined) return null;
+  if (ts.isStringLiteral(init)) return init.text;
+  if (ts.isJsxExpression(init) && init.expression !== undefined) {
+    const inner = init.expression;
+    if (ts.isStringLiteral(inner) || ts.isNoSubstitutionTemplateLiteral(inner)) return inner.text;
+  }
+  return null;
+}
+
+/** 9つの色属性に、`none` / `currentColor` 以外の文字列リテラルを書いた属性（最初の1つ）の位置。 */
+function locateSvgColorAttribute(text: string): Span | null {
+  return firstSpanIn(text, (node) => {
+    if (!ts.isJsxAttribute(node) || !ts.isIdentifier(node.name)) return null;
+    if (!SVG_COLOR_ATTRIBUTE_NAMES.includes(node.name.text)) return null;
+    const value = readStringLiteralAttributeValue(node);
+    return value !== null && !SVG_COLOR_ALLOWED_VALUES.includes(value) ? node : null;
+  });
 }
 
 /** テキストのどこかで `<namespaceName>.Role` を型として使っているか。 */
