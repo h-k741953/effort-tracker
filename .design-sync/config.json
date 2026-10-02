@@ -1,0 +1,14 @@
+{
+  "projectId": "e78b9dba-eda0-46e0-9bdd-581218064f0b",
+  "pkg": "web",
+  "globalName": "EffortTrackerDS",
+  "shape": "package",
+  "buildCmd": "node .design-sync/build-inputs.mjs",
+  "tsconfig": "../tsconfig.json",
+  "cssEntry": "ds.css",
+  "srcDir": "../src/components",
+  "dtsPropsFor": {
+    "RoleSwitcher": "role: \"Engineer\" | \"Approver\"; onChange: (role: \"Engineer\" | \"Approver\") => void;"
+  },
+  "readmeHeader": ".design-sync/conventions.md"
+}

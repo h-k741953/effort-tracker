@@ -94,3 +94,17 @@ Thumbs.db
 # =============================================================================
 /progress.md
 /.harness/
+
+# =============================================================================
+# Claude Design 同期（design-sync スキル）の作業物
+#   変換スクリプトと依存・生成物・機械の状態はローカル限り。
+#   .design-sync/ のうち以下で除外しないもの（config.json / NOTES.md /
+#   conventions.md / previews/ / tailwind.css / build-css.mjs）はコミットする。
+#   正はローカル（docs/specs/design-system.md AC-9-1）。
+# =============================================================================
+/.ds-sync/
+/ds-bundle/
+/.design-sync/.cache/
+/.design-sync/learnings/
+/.design-sync/node_modules
+/apps/web/.ds-css/
