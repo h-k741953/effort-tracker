@@ -1,0 +1,26 @@
+{
+  "//": "design-sync 用: 共通コンポーネントの型宣言を apps/web/.ds-css/types へ生成する（変換ツールが props を読む）",
+  "extends": "../apps/web/tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "incremental": false,
+    "plugins": [],
+    "rootDir": "../apps/web/src",
+    "outDir": "../apps/web/.ds-css/types",
+    "typeRoots": [
+      "../apps/web/node_modules/@types"
+    ],
+    "types": [
+      "node",
+      "react"
+    ]
+  },
+  "include": [
+    "../apps/web/src/components/*.tsx"
+  ],
+  "exclude": [
+    "../apps/web/src/components/*.test.tsx"
+  ]
+}
