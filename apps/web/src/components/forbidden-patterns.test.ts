@@ -105,6 +105,14 @@ const rgbOrHslFunctionPattern = /\b(?:rgb|rgba|hsl|hsla)\(/;
 // AC-4-4: 角丸ユーティリティは rounded-md のみ。rounded-md 以外の rounded* を拾う。
 const nonMdRoundedPattern = /\brounded(?!-md\b)(?:-[\w-]+)?\b/;
 const fetchCallPattern = /\bfetch\s*\(/;
+// AC-2-4（10-3）: `style` 属性に色に関わるプロパティを書くこと自体を違反とする。値は読まない
+// （名前付きの色の一覧は持たない）。色に関わるプロパティは、名前に `color`（大文字小文字を
+// 問わない）を含むもの、および `background` / `fill` / `stroke`（名前そのもの。
+// `strokeWidth` 等は色でないため対象外）。`style={{ ... }}` に直に書いたオブジェクト
+// リテラルのキーだけを読む。変数・スプレッドを介した `style`、`border` / `outline` /
+// `boxShadow` 等の一括指定は読まない（10-3 の残る穴）。
+const styleColorPropertyPattern =
+  /\bstyle\s*=\s*\{\s*\{(?:[^}]*?,)?\s*["']?(?:[\w$-]*color[\w$-]*|background|fill|stroke)["']?\s*[:,}]/i;
 
 // AC-4-6: outline-none を書くなら、同じファイル内に代替のリング指定
 // （focus-visible のリングの幅を与えるユーティリティ）を伴うこと。判定を述語
@@ -132,6 +140,7 @@ const RGB_OR_HSL_LABEL = "rgb() / hsl() の関数記法";
 const PALETTE_UTILITY_LABEL = "パレットユーティリティ";
 const NON_MD_ROUNDED_LABEL = "rounded-md 以外の角丸";
 const FETCH_CALL_LABEL = "fetch の呼び出し";
+const STYLE_COLOR_LABEL = "style 属性の色に関わるプロパティ";
 
 const FORBIDDEN_EXPRESSION_PATTERNS = [
   { label: HEX_COLOR_LABEL, pattern: hexColorPattern },
@@ -139,6 +148,7 @@ const FORBIDDEN_EXPRESSION_PATTERNS = [
   { label: PALETTE_UTILITY_LABEL, pattern: paletteUtilityPattern },
   { label: NON_MD_ROUNDED_LABEL, pattern: nonMdRoundedPattern },
   { label: FETCH_CALL_LABEL, pattern: fetchCallPattern },
+  { label: STYLE_COLOR_LABEL, pattern: styleColorPropertyPattern },
 ];
 
 /** テキストに現れた禁止表現のラベルを、表の順序で返す。 */
@@ -146,6 +156,13 @@ function findForbiddenExpressions(text: string): string[] {
   return FORBIDDEN_EXPRESSION_PATTERNS.filter(({ pattern }) => pattern.test(text)).map(
     ({ label }) => label,
   );
+}
+
+// AC-10-3 / AC-2-4: `style` 属性の色の判定を述語として切り出す（10-3-g と同じ形）。実ファイルの
+// 不在の主張は上の表（findForbiddenExpressions）を通り、この述語も同じ表を通るため、
+// 述語の両側を読むことが実ファイルの経路を読むことになる。
+function violatesStyleColorRule(text: string): boolean {
+  return findForbiddenExpressions(text).includes(STYLE_COLOR_LABEL);
 }
 
 // AC-10-3-c: 「この17種のリストは、本条文の字面とテストの実装が逐語で
@@ -347,6 +364,39 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
       violatesOutlineNoneRule(text),
       `ring-[${value}] の判定が Tailwind の生成結果と食い違う（AC-10-3-g / AC-10-3-a）。`,
     ).toBe(!(await tailwindTreatsAsRingWidth(value)));
+  });
+});
+
+// docs/specs/design-system.md AC-10-3（`style` 属性の色）。
+//
+// 述語そのものへ与えるテキストで両側を読む。実ファイルが偶然その形を含むかどうかで
+// 判別力が変わる状態を残さない（10-3-g と同じ形）。値は読まない: 名前付きの色も
+// トークンの var() も違反であり、色に関わらない style は違反でない。
+describe("AC-10-3: style 属性の色に関わるプロパティの判定", () => {
+  it.each([
+    ["color（名前付きの色）", '<div style={{ color: "red" }} />', true],
+    ["backgroundColor（トークンの var()）", '<div style={{ backgroundColor: "var(--primary)" }} />', true],
+    ["borderTopColor", '<div style={{ borderTopColor: "var(--border)" }} />', true],
+    ["borderColor", '<div style={{ borderColor: "blue" }} />', true],
+    ["outlineColor", '<div style={{ outlineColor: "blue" }} />', true],
+    ["caretColor", '<div style={{ caretColor: "blue" }} />', true],
+    ["background", '<div style={{ background: "red" }} />', true],
+    ["fill", '<svg style={{ fill: "red" }} />', true],
+    ["stroke", '<svg style={{ stroke: "red" }} />', true],
+    ["COLOR（大文字小文字を問わない）", '<div style={{ COLOR: "red" }} />', true],
+    ["色以外のプロパティの後ろに書く", '<div style={{ width: 10, color: "red" }} />', true],
+    ["引用符つきのキー", '<div style={{ "background-color": "red" }} />', true],
+    ["省略記法のキー", "<div style={{ color }} />", true],
+    ["width だけ", "<div style={{ width: 10 }} />", false],
+    ["色に関わらないプロパティだけ", "<div style={{ width: 10, height: 20 }} />", false],
+    ["style 属性が無い", '<div className="text-primary" />', false],
+    ["値に color を含むがキーは色でない", "<div style={{ width: colorWidth }} />", false],
+    ["strokeWidth（色でない）", "<svg style={{ strokeWidth: 2 }} />", false],
+  ])("style の判定: %s", (_name, text, expected) => {
+    expect(
+      violatesStyleColorRule(text as string),
+      `style の色の判定が期待と異なる（AC-10-3）。対象: ${text}`,
+    ).toBe(expected);
   });
 });
 
@@ -569,6 +619,10 @@ const POSITIVE_CONTROL_TEXTS = [
   {
     label: FETCH_CALL_LABEL,
     text: 'export async function load() {\n  const res = await fetch("/api/x");\n  return res;\n}\n',
+  },
+  {
+    label: STYLE_COLOR_LABEL,
+    text: 'export function Sample() {\n  return <div style={{ color: "red" }} />;\n}\n',
   },
 ];
 

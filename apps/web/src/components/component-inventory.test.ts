@@ -81,6 +81,19 @@ describe("components ディレクトリ構成 - AC-5-1 / AC-5-2", () => {
     expect(tsxFiles).toEqual(EXPECTED_FILES);
   });
 
+  // AC-10-4: 直下だけを読む上の検査は、サブディレクトリへ置いたファイルを見ずに緑になる。
+  // サブディレクトリが在ること自体を違反とする（中に *.tsx が無い空のディレクトリも違反）。
+  // これにより 2-4 の `components/**` と 10-3 の直下は同じ集合を指す。
+  it("10-4: components/ にサブディレクトリが存在しない（空のディレクトリも違反）", () => {
+    const directories = readdirSync(componentsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+    expect(
+      directories,
+      "components/ にサブディレクトリがある。直下だけを読む検査がその中のファイルを見ないまま緑になる（AC-10-4）。",
+    ).toEqual([]);
+  });
+
   it("5-2: index.ts / index.tsx（バレル）が存在しない", () => {
     const entries = listEntries();
     expect(entries.includes("index.ts")).toBe(false);

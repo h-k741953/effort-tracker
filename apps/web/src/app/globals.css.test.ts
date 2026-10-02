@@ -16,34 +16,39 @@ const appDir = fileURLToPath(new URL(".", import.meta.url));
 const cssPath = path.join(appDir, "globals.css");
 const css = readFileSync(cssPath, "utf8");
 
-// AC-2 の17トークン（表 2-1-a 〜 2-1-q）。値は仕様の表そのもの。
-const TOKENS: ReadonlyArray<{
-  name: string;
-  light: string;
-  dark: string;
-}> = [
-  { name: "background", light: "#ffffff", dark: "#0a0a0a" },
-  { name: "foreground", light: "#171717", dark: "#ededed" },
-  { name: "surface", light: "#f8fafc", dark: "#171717" },
-  { name: "surface-foreground", light: "#171717", dark: "#ededed" },
-  { name: "muted-foreground", light: "#52525b", dark: "#a1a1aa" },
-  { name: "border", light: "#71717a", dark: "#a1a1aa" },
-  { name: "primary", light: "#1d4ed8", dark: "#93c5fd" },
-  { name: "primary-foreground", light: "#ffffff", dark: "#0a0a0a" },
-  { name: "danger", light: "#b91c1c", dark: "#fca5a5" },
-  { name: "danger-foreground", light: "#ffffff", dark: "#0a0a0a" },
-  { name: "focus-ring", light: "#1d4ed8", dark: "#93c5fd" },
-  { name: "state-draft", light: "#e4e4e7", dark: "#3f3f46" },
-  { name: "state-draft-foreground", light: "#27272a", dark: "#f4f4f5" },
-  { name: "state-pending-approval", light: "#fef3c7", dark: "#78350f" },
-  {
-    name: "state-pending-approval-foreground",
-    light: "#78350f",
-    dark: "#fef3c7",
-  },
-  { name: "state-approved", light: "#dcfce7", dark: "#14532d" },
-  { name: "state-approved-foreground", light: "#14532d", dark: "#dcfce7" },
-];
+// AC-2 の17トークン（表 2-1-a 〜 2-1-q）。名前と明色・暗色の値は AC-2 の表の字面から
+// 読む（AC-10-1）。テスト側に書いた写しを期待値にすると、表を書き換えても写しと
+// globals.css が一致したまま緑になり、表と突き合わせたことにならない（10-4 と同じ理由）。
+// 表は AC-2 の節の中だけから読む。0件のとき、および形の合わない `2-1-N` 行を
+// 読み飛ばしたときは失敗とする。
+type TokenRow = { name: string; light: string; dark: string };
+
+const specPath = path.join(appDir, "..", "..", "..", "..", "docs", "specs", "design-system.md");
+
+function parseAc2Tokens(spec: string): TokenRow[] {
+  const hint =
+    `仕様書 ${specPath} の AC-2 の表を読めなかった。条文の体裁（見出し・表の列）を変えたのなら、` +
+    `トークンの増減ではないのでこの抽出側を追随させること（10-1 は抽出手段を仕様で固定していない）。`;
+  const start = spec.indexOf("### AC-2.");
+  if (start < 0) throw new Error(`${hint} AC-2 の節が見つからない。`);
+  const rest = spec.slice(start + 1);
+  const end = rest.indexOf("\n### ");
+  const section = end === -1 ? rest : rest.slice(0, end);
+  const rowLines = section.match(/^\|\s*2-1-[a-z]+\s*\|.*$/gm) ?? [];
+  const rows = rowLines.flatMap((line) => {
+    const m = line.match(
+      /^\|\s*2-1-[a-z]+\s*\|\s*`--([a-z-]+)`\s*\|\s*`(#[0-9a-f]{6})`\s*\|\s*`(#[0-9a-f]{6})`\s*\|[^|]*\|\s*$/,
+    );
+    return m ? [{ name: m[1], light: m[2], dark: m[3] }] : [];
+  });
+  if (rows.length === 0) throw new Error(`${hint} 表の行を1件も読めなかった。`);
+  if (rows.length !== rowLines.length) {
+    throw new Error(`${hint} 表に形の合わない行がある（${rowLines.length} 行中 ${rows.length} 行だけ読めた）。`);
+  }
+  return rows;
+}
+
+const TOKENS: ReadonlyArray<TokenRow> = parseAc2Tokens(readFileSync(specPath, "utf8"));
 
 /** 単純な `--name: value;` の列挙のみを想定したブロック抽出（入れ子なし）。 */
 function extractBlockBody(source: string, headerRegex: RegExp): string | undefined {
@@ -203,6 +208,34 @@ describe("globals.css - AC-1: トークンの定義場所と形式", () => {
 });
 
 describe("globals.css - AC-2: セマンティック色トークンの名称と値", () => {
+  it("10-1: 期待値を AC-2 の表の字面から読める（0件なら失敗）", () => {
+    expect(TOKENS.length).toBeGreaterThan(0);
+    expect(new Set(TOKENS.map((t) => t.name)).size).toBe(TOKENS.length);
+  });
+
+  // 形の合わない行を読み飛ばさない検査は、現行の表では一度も働かないため、実ケースと
+  // 同じ関数へ合成した表を与えて両側を読む（10-2-a / 10-4 と同じ形）。
+  it("10-1: 表の読み取りは形の合う行を読み、崩れた行・0件・節の外の行を読み飛ばさない", () => {
+    const head = "### AC-2. セマンティック色トークン\n\n| # | トークン | 明色 | 暗色 | 用途 |\n|---|---|---|---|---|\n";
+    const good = "| 2-1-a | `--a-b` | `#ffffff` | `#0a0a0a` | 用途 |\n";
+    expect(parseAc2Tokens(`${head}${good}`)).toEqual([{ name: "a-b", light: "#ffffff", dark: "#0a0a0a" }]);
+    // 列の間の空白の揺れは契約ではない。
+    expect(parseAc2Tokens(`${head}|2-1-a|\`--a-b\`|  \`#ffffff\`  |\`#0a0a0a\`|用途|\n`)).toEqual([
+      { name: "a-b", light: "#ffffff", dark: "#0a0a0a" },
+    ]);
+    // 節の外に置いた同じ形の行は読まない。
+    const stray = "| 2-1-z | `--z` | `#000000` | `#111111` | 用途 |\n";
+    expect(parseAc2Tokens(`### AC-1. 前\n\n${stray}\n${head}${good}\n### AC-3. 後\n\n${stray}`)).toHaveLength(1);
+    expect(() => parseAc2Tokens(`${head}`)).toThrow(/1件も読めなかった/);
+    expect(() => parseAc2Tokens(`${good}`)).toThrow(/AC-2 の節が見つからない/);
+    expect(() => parseAc2Tokens(`${head}${good}| 2-1-b | \`--c\` | #ffffff | \`#0a0a0a\` | 用途 |\n`)).toThrow(
+      /形の合わない行/,
+    );
+    expect(() => parseAc2Tokens(`${head}${good}| 2-1-b | \`--c\` | \`#fff\` | \`#0a0a0a\` | 用途 |\n`)).toThrow(
+      /形の合わない行/,
+    );
+  });
+
   it.each(TOKENS)("2-2: --$name は明色 $light / 暗色 $dark を持つ", ({ name, light, dark }) => {
     expect(lightTokens.get(name)).toBe(light);
     expect(darkTokens.get(name)).toBe(dark);
