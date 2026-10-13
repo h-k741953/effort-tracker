@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<link rel="stylesheet" href="et-theme.css">
+<script src="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.js"></script>
+<script src="et-shell.js"></script>
+<style>body{margin:0}a{color:inherit}</style>
+</helmet>
+<div data-et="{{ theme }}" data-shell="" class="min-h-screen bg-background text-foreground" style="display:flex;position:relative">
+  <dc-import name="SideNav" role="{{ navRole }}" current="{{ navCurrent }}" style="flex:none;align-self:stretch" hint-size="232px,100%"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+  <x-import component-from-global-scope="EffortTrackerDS.AppHeader" right="{{ headerRight }}" hint-size="100%,62px"></x-import>
+  <main class="mx-auto flex max-w-5xl flex-col gap-8 p-6">
+    <div class="flex flex-col gap-2">
+      <h1 class="m-0 text-2xl font-semibold tracking-tight">承認担当者一覧</h1>
+      <p class="m-0 text-sm text-muted-foreground">承認を担当している技術者と、勤務月の状態です（閲覧のみ）。</p>
+    </div>
+    <div class="rounded-md shadow-sm">
+      <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,360px">
+        <div class="flex flex-col p-2" role="table" aria-label="承認担当者一覧" data-cols="engineers">
+          <div class="grid items-center gap-4 border-b border-border px-4 pb-3 text-xs font-medium text-muted-foreground" role="row">
+            <span role="columnheader">技術者</span><span role="columnheader">契約</span><span role="columnheader">2026年10月</span><span role="columnheader">2026年9月</span><span role="columnheader"><span class="sr-only">操作</span></span>
+          </div>
+          <sc-for list="{{ rows }}" as="r" hint-placeholder-count="4">
+            <div class="{{ r.cls }}" role="row" onMouseEnter="{{ r.enter }}" onMouseLeave="{{ r.leave }}">
+              <span class="font-medium" role="cell">{{ r.name }}</span>
+              <span role="cell">{{ r.contract }}</span>
+              <span role="cell"><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="{{ r.cur }}" hint-size="64px,24px"></x-import></span>
+              <span role="cell"><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="{{ r.prev }}" hint-size="64px,24px"></x-import></span>
+              <span role="cell">
+                <sc-if value="{{ r.canOpen }}" hint-placeholder-val="{{ false }}">
+                  <x-import component-from-global-scope="EffortTrackerDS.Button" on-click="{{ r.open }}" aria-label="{{ r.aria }}" hint-size="140px,36px">承認待ちを開く</x-import>
+                </sc-if>
+              </span>
+            </div>
+          </sc-for>
+        </div>
+      </x-import>
+    </div>
+  </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const C1 = '株式会社サンプル 基幹システム開発', C2 = '株式会社サンプル 保守運用支援';
+const ENGINEERS = [
+  { name: '鈴木 美咲', contract: C1, cur: 'Draft', prev: 'PendingApproval' },
+  { name: '高橋 翔', contract: C1, cur: 'Draft', prev: 'Approved' },
+  { name: '伊藤 さくら', contract: C2, cur: 'Draft', prev: 'PendingApproval' },
+  { name: '田中 大輔', contract: C2, cur: 'Draft', prev: 'Approved' }
+];
+class Component extends DCLogic {
+  state = { hov: null };
+  componentDidMount() { if (!window.ETShell || !window.EffortTrackerDS) setTimeout(() => this.forceUpdate(), 300); }
+  etShell(role, onRole, navRole, navCurrent, extra) {
+    const theme = this.state.theme || (window.ETShell ? window.ETShell.getTheme() : 'light');
+    const onTheme = t => { if (window.ETShell) window.ETShell.saveTheme(t); this.setState({ theme: t }); };
+    return { theme, navRole, navCurrent, headerRight: window.ETShell ? window.ETShell.headerRight({ theme, onTheme, role, onRole, extra }) : null };
+  }
+  renderVals() {
+    const rows = ENGINEERS.map((x, i) => ({
+      ...x,
+      cls: 'grid items-center gap-4 rounded-md px-4 py-4 ' + (i > 0 ? 'border-t border-border ' : '') + (this.state.hov === i ? 'bg-background' : ''),
+      canOpen: x.prev === 'PendingApproval', aria: x.name + 'さんの 2026年9月の勤務月を開く',
+      open: () => { window.location.href = 'WorkMonthScreen.dc.html?variant=pending-approver&y=2026&m=9&c=' + encodeURIComponent(x.contract); },
+      enter: () => this.setState({ hov: i }), leave: () => this.setState(st => (st.hov === i ? { hov: null } : null))
+    }));
+    return {
+      ...this.etShell('Approver', r => { if (r === 'Engineer') window.location.href = 'My%20Months%20(Engineer).dc.html'; }, 'Approver', 'engineers'),
+      rows
+    };
+  }
+}
+</script>
+</body>
+</html>

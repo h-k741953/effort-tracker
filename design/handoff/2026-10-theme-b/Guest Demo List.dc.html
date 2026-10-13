@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<link rel="stylesheet" href="et-theme.css">
+<script src="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.js"></script>
+<script src="et-shell.js"></script>
+<style>body{margin:0}a{color:inherit}</style>
+</helmet>
+<div data-et="{{ theme }}" data-shell="" class="min-h-screen bg-background text-foreground" style="display:flex;position:relative">
+  <dc-import name="SideNav" role="{{ navRole }}" current="{{ navCurrent }}" style="flex:none;align-self:stretch" hint-size="232px,100%"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+  <x-import component-from-global-scope="EffortTrackerDS.AppHeader" right="{{ headerRight }}" hint-size="100%,62px"></x-import>
+  <main class="mx-auto flex max-w-5xl flex-col gap-8 p-6">
+
+    <div class="flex flex-col gap-1 rounded-md border border-border bg-surface px-4 py-3 text-sm text-surface-foreground shadow-sm" role="note">
+      <span class="font-medium">デモ用のサンプルです（閲覧のみ・毎日リセットされます）</span>
+      <span class="text-muted-foreground">ゲストとして閲覧しています。入力・締め・承認はできません。</span>
+    </div>
+
+    <sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+      <h1 class="m-0 text-2xl font-semibold tracking-tight">サンプル勤務月</h1>
+      <div class="flex flex-col gap-4">
+        <div class="rounded-md shadow-sm">
+          <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,360px">
+            <div class="flex flex-col p-2" role="table" aria-label="サンプル勤務月">
+              <div class="grid items-center gap-4 border-b border-border px-4 pb-3 text-xs font-medium text-muted-foreground" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr) 88px 88px" role="row">
+                <span role="columnheader">契約</span><span role="columnheader">対象年月</span><span role="columnheader">状態</span><span role="columnheader"><span class="sr-only">操作</span></span>
+              </div>
+              <sc-for list="{{ rows }}" as="r" hint-placeholder-count="5">
+                <div class="{{ r.cls }}" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr) 88px 88px" role="row" onMouseEnter="{{ r.enter }}" onMouseLeave="{{ r.leave }}">
+                  <span class="font-medium" role="cell">{{ r.contract }}</span>
+                  <span class="tabular-nums" role="cell">{{ r.ym }}</span>
+                  <span role="cell"><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="{{ r.state }}" hint-size="64px,24px"></x-import></span>
+                  <span class="flex justify-end" role="cell"><x-import component-from-global-scope="EffortTrackerDS.Button" on-click="{{ r.open }}" aria-label="{{ r.aria }}" hint-size="80px,36px">表示する</x-import></span>
+                </div>
+              </sc-for>
+            </div>
+          </x-import>
+        </div>
+        <x-import component-from-global-scope="EffortTrackerDS.Pagination" page="{{ page }}" page-count="{{ pageCount }}" on-page-change="{{ setPage }}" hint-size="100%,40px"></x-import>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isDetail }}" hint-placeholder-val="{{ false }}">
+      <div class="flex">
+        <x-import component-from-global-scope="EffortTrackerDS.Button" on-click="{{ back }}" hint-size="160px,36px">一覧に戻る</x-import>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <h1 class="m-0 text-2xl font-semibold tracking-tight">{{ d.title }}</h1>
+        <x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="{{ d.state }}" hint-size="64px,24px"></x-import>
+      </div>
+      <div class="grid gap-4" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+        <div class="rounded-md shadow-sm" data-lift="">
+          <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,120px">
+            <div class="flex flex-col gap-2 p-2">
+              <span class="text-sm text-muted-foreground">総稼働時間</span>
+              <span class="flex items-end gap-1"><span class="text-3xl font-semibold tabular-nums">{{ d.total }}</span><span class="text-sm text-muted-foreground">時間</span></span>
+            </div>
+          </x-import>
+        </div>
+        <div class="rounded-md shadow-sm" data-lift="">
+          <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,120px">
+            <div class="flex flex-col gap-2 p-2">
+              <span class="text-sm text-muted-foreground">精算幅</span>
+              <span class="flex items-end gap-1"><span class="text-3xl font-semibold tabular-nums">140〜180</span><span class="text-sm text-muted-foreground">時間</span></span>
+            </div>
+          </x-import>
+        </div>
+        <div class="rounded-md shadow-sm" data-lift="">
+          <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,120px">
+            <div class="flex flex-col gap-2 p-2">
+              <span class="text-sm text-muted-foreground">超過／不足</span>
+              <span class="text-xl font-semibold">{{ d.rangeText }}</span>
+            </div>
+          </x-import>
+        </div>
+      </div>
+      <div class="rounded-md shadow-sm">
+        <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,420px">
+          <div class="flex flex-col gap-4 p-2">
+            <h2 class="m-0 text-base font-semibold">日ごとの稼働時間</h2>
+            <div class="grid gap-2 text-xs font-medium text-muted-foreground text-center" style="grid-template-columns:repeat(7,minmax(0,1fr))"><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span data-dow="sat">土</span><span data-dow="sun">日</span></div>
+            <div class="grid gap-2" style="grid-template-columns:repeat(7,minmax(0,1fr))">
+              <sc-for list="{{ dayRows }}" as="day" hint-placeholder-count="35">
+                <sc-if value="{{ day.blank }}" hint-placeholder-val="{{ false }}"><span></span></sc-if>
+                <sc-if value="{{ day.real }}" hint-placeholder-val="{{ true }}">
+                  <div class="flex flex-col justify-between rounded-md border border-border bg-surface p-2" data-dow="{{ day.dow }}" aria-label="{{ day.aria }}" style="min-height:72px">
+                    <span class="text-xs font-semibold tabular-nums" data-daynum="">{{ day.label }}<sc-if value="{{ day.hasTag }}" hint-placeholder-val="{{ false }}"><span data-daytag="">祝</span></sc-if></span>
+                    <sc-if value="{{ day.hasEntry }}" hint-placeholder-val="{{ false }}">
+                      <span class="flex flex-col gap-1">
+                        <span class="text-base font-semibold tabular-nums" style="text-align:right">{{ day.display }}</span>
+                        <span data-range="" class="tabular-nums">{{ day.range }}</span>
+                      </span>
+                    </sc-if>
+                  </div>
+                </sc-if>
+              </sc-for>
+            </div>
+          </div>
+        </x-import>
+      </div>
+    </sc-if>
+  </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const CONTRACT = '株式会社サンプル 基幹システム開発';
+const HOLIDAYS = {'2025-11':[3,24],'2025-12':[29,30,31],'2026-1':[1,2,12],'2026-2':[11,23],'2026-3':[20],'2026-4':[29],'2026-5':[4,5,6],'2026-6':[],'2026-7':[20],'2026-8':[11,13,14],'2026-9':[21,22,23],'2026-10':[12]};
+const WD = ['日','月','火','水','木','金','土'];
+const PAT = [8,8.5,7.75,8,9,8.25,7.5,8,8.75,8,9.5,7.75,8.25];
+const fmt = n => n.toFixed(2);
+
+function makeDays(y, m, seed, filledUntil) {
+  const n = new Date(y, m, 0).getDate(); const hol = HOLIDAYS[y + '-' + m] || []; const out = []; let k = seed;
+  for (let d = 1; d <= n; d++) {
+    const w = new Date(y, m - 1, d).getDay(); const isHol = hol.includes(d); const off = w === 0 || w === 6 || isHol;
+    const v = filledUntil && d > filledUntil ? '' : off ? 0 : PAT[k++ % PAT.length];
+    out.push({ d, w, off, hol: isHol, v });
+  }
+  return out;
+}
+function buildMonths() {
+  const list = []; let y = 2026, m = 10;
+  for (let i = 0; i < 12; i++) {
+    const state = i === 0 ? 'Draft' : i === 1 ? 'PendingApproval' : 'Approved';
+    list.push({ id: y + '-' + m, y, m, state, days: makeDays(y, m, i * 3, i === 0 ? 2 : 0) });
+    m--; if (m === 0) { m = 12; y--; }
+  }
+  return list.sort((a, b) => (b.y * 12 + b.m) - (a.y * 12 + a.m));
+}
+const MONTHS = buildMonths();
+const PER = 5;
+
+class Component extends DCLogic {
+  componentDidMount() { if (!window.ETShell || !window.EffortTrackerDS) setTimeout(() => this.forceUpdate(), 300); }
+  etShell(role, onRole, navRole, navCurrent, extra) {
+    const theme = this.state.theme || (window.ETShell ? window.ETShell.getTheme() : 'light');
+    const onTheme = t => { if (window.ETShell) window.ETShell.saveTheme(t); this.setState({ theme: t }); };
+    return { theme, navRole, navCurrent, headerRight: window.ETShell ? window.ETShell.headerRight({ theme, onTheme, role, onRole, extra }) : null };
+  }
+  state = { page: 1, selId: null, hov: null };
+
+  renderVals() {
+    const s = this.state;
+    const ym = x => x.y + '年' + x.m + '月';
+    const rows = MONTHS.slice((s.page - 1) * PER, s.page * PER).map((x, i) => ({
+      cls: 'grid items-center gap-4 rounded-md px-4 py-4 ' + (i > 0 ? 'border-t border-border ' : '') + (s.hov === i ? 'bg-background' : ''),
+      enter: () => this.setState({ hov: i }), leave: () => this.setState(st => (st.hov === i ? { hov: null } : null)),
+      contract: CONTRACT, ym: ym(x), state: x.state, aria: ym(x) + 'の勤務月を表示する',
+      open: () => { this.setState({ selId: x.id }); window.scrollTo(0, 0); }
+    }));
+    const sel = MONTHS.find(x => x.id === s.selId);
+    let d = {}, dayRows = [];
+    if (sel) {
+      const t = sel.days.reduce((a, x) => a + (x.v === '' ? 0 : x.v), 0);
+      const r = t < 140 ? { text: '精算幅の下限まで あと ' + fmt(140 - t) + ' 時間', cls: 'text-sm text-danger' }
+        : t > 180 ? { text: '精算幅の上限を ' + fmt(t - 180) + ' 時間超えています', cls: 'text-sm text-danger' }
+        : { text: '精算幅の範囲内です', cls: 'text-sm text-muted-foreground' };
+      d = { title: CONTRACT + ' × ' + ym(sel), state: sel.state, total: fmt(t), rangeText: sel.state === 'Draft' ? '締め時に確定します' : t > 180 ? '超過 ' + fmt(t - 180) + ' 時間' : t < 140 ? '不足 ' + fmt(140 - t) + ' 時間' : '精算幅の範囲内', rangeClass: r.cls };
+      dayRows = sel.days.map(x => ({
+        label: x.d, dow: x.hol ? 'hol' : x.w === 0 ? 'sun' : x.w === 6 ? 'sat' : '', hasTag: !!x.hol, hasEntry: !(x.v === '' || (x.off && !x.v)),
+        range: x.v === '' || (x.off && !x.v) ? '' : (() => { const e = 540 + Math.round(x.v * 60) + 60; return '9:00〜' + Math.floor(e / 60) + ':' + String(e % 60).padStart(2, '0'); })(),
+        aria: sel.m + '月' + x.d + '日（' + (x.hol ? '祝日' : ['日','月','火','水','木','金','土'][x.w]) + '）' + (x.v === '' || (x.off && !x.v) ? ' 未入力' : ' ' + fmt(x.v) + ' 時間'),
+        display: x.v === '' || (x.off && !x.v) ? '' : fmt(x.v), labelClass: x.off ? 'text-muted-foreground' : ''
+      }));
+      const lead = (new Date(sel.y, sel.m - 1, 1).getDay() + 6) % 7;
+      const blanks = n => Array.from({ length: n }, () => ({ blank: true, real: false }));
+      dayRows = [...blanks(lead), ...dayRows.map(r => ({ ...r, blank: false, real: true }))];
+      dayRows = [...dayRows, ...blanks((7 - dayRows.length % 7) % 7)];
+    }
+    const headerRight = React.createElement('a', { href: 'Login.dc.html', className: 'rounded-md text-sm font-medium text-primary underline outline-none focus-visible:ring-2 focus-visible:ring-focus-ring' }, 'ログイン');
+    return {
+      ...this.etShell(null, null, 'Guest', 'guest', headerRight), isList: !sel, isDetail: !!sel,
+      rows, page: s.page, pageCount: Math.ceil(MONTHS.length / PER), setPage: p => this.setState({ page: p }),
+      d, dayRows, back: () => this.setState({ selId: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

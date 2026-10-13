@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<link rel="stylesheet" href="et-theme.css">
+<script src="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.js"></script>
+<script src="et-shell.js"></script>
+<style>body{margin:0}a{color:inherit}</style>
+</helmet>
+<div data-et="{{ theme }}" data-shell="" class="min-h-screen bg-background text-foreground" style="display:flex;position:relative">
+  <dc-import name="SideNav" role="{{ navRole }}" current="{{ navCurrent }}" style="flex:none;align-self:stretch" hint-size="232px,100%"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+  <x-import component-from-global-scope="EffortTrackerDS.AppHeader" right="{{ headerRight }}" hint-size="100%,62px"></x-import>
+  <main class="mx-auto flex max-w-5xl flex-col gap-8 p-6">
+    <div class="flex flex-col gap-2">
+      <h1 class="m-0 text-2xl font-semibold tracking-tight">自分の勤務月</h1>
+      <p class="m-0 text-sm text-muted-foreground">担当しているすべての契約の勤務月です。</p>
+    </div>
+
+
+    <sc-if value="{{ isError }}" hint-placeholder-val="{{ false }}">
+      <x-import component-from-global-scope="EffortTrackerDS.ErrorBanner" on-retry="{{ retry }}" hint-size="100%,56px">勤務月を読み込めませんでした。通信状態を確認して、もう一度お試しください。</x-import>
+    </sc-if>
+
+    <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+      <div class="rounded-md bg-surface shadow-sm">
+        <x-import component-from-global-scope="EffortTrackerDS.EmptyState" title="勤務月がまだありません" description="稼働実績を入力すると、その月の勤務月がここに表示されます。" action="{{ emptyAction }}" hint-size="100%,140px"></x-import>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isNormal }}" hint-placeholder-val="{{ true }}">
+      <div class="flex flex-col gap-8">
+        <div class="rounded-md shadow-sm">
+          <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,200px">
+            <div class="flex flex-wrap items-center justify-between gap-6 p-2">
+              <div class="flex flex-col gap-2">
+                <span class="text-sm text-muted-foreground">直近の勤務月</span>
+                <div class="flex items-center gap-3">
+                  <span class="text-2xl font-semibold tracking-tight tabular-nums">{{ latest.ym }}</span>
+                  <span class="text-sm">{{ latest.contract }}</span>
+                  <span><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="{{ latest.state }}" hint-size="64px,24px"></x-import></span>
+                </div>
+                <p class="m-0 text-sm text-muted-foreground">{{ latest.note }}</p>
+              </div>
+              <x-import component-from-global-scope="EffortTrackerDS.Button" variant="primary" on-click="{{ openLatest }}" hint-size="180px,40px">直近の勤務月を開く</x-import>
+            </div>
+          </x-import>
+        </div>
+
+        <div class="flex flex-col gap-4">
+          <div class="flex flex-wrap items-end justify-between gap-4" role="search" aria-label="勤務月の絞り込み">
+            <div class="flex flex-wrap items-end gap-4">
+              <div class="flex flex-col gap-1">
+                <label for="f-contract" class="text-xs font-medium text-muted-foreground">契約</label>
+                <select id="f-contract" data-filter="contract" value="{{ fc }}" onChange="{{ onFc }}">
+                  <sc-for list="{{ contractOpts }}" as="o" hint-placeholder-count="1"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                </select>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label for="f-ym" class="text-xs font-medium text-muted-foreground">対象年月</label>
+                <select id="f-ym" data-filter="ym" value="{{ fym }}" onChange="{{ onFym }}">
+                  <sc-for list="{{ ymOpts }}" as="o" hint-placeholder-count="1"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                </select>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label for="f-state" class="text-xs font-medium text-muted-foreground">状態</label>
+                <select id="f-state" data-filter="state" value="{{ fst }}" onChange="{{ onFst }}">
+                  <sc-for list="{{ stateOpts }}" as="o" hint-placeholder-count="1"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                </select>
+              </div>
+              <sc-if value="{{ filterActive }}" hint-placeholder-val="{{ false }}">
+                <x-import component-from-global-scope="EffortTrackerDS.Button" on-click="{{ clearFilter }}" hint-size="120px,42px">条件をクリア</x-import>
+              </sc-if>
+            </div>
+            <span class="text-sm text-muted-foreground tabular-nums" aria-live="polite">{{ countText }}</span>
+          </div>
+          <sc-if value="{{ noMatch }}" hint-placeholder-val="{{ false }}">
+            <div class="rounded-md bg-surface shadow-sm">
+              <x-import component-from-global-scope="EffortTrackerDS.EmptyState" title="条件に合う勤務月はありません" description="絞り込みの条件を変えるか、クリアしてください。" action="{{ clearAction }}" hint-size="100%,160px"></x-import>
+            </div>
+          </sc-if>
+          <sc-if value="{{ hasMatch }}" hint-placeholder-val="{{ true }}">
+          <div class="rounded-md shadow-sm">
+            <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,400px">
+              <div class="flex flex-col p-2" role="table" aria-label="すべての勤務月">
+                <div class="grid items-center gap-4 border-b border-border px-4 pb-3 text-xs font-medium text-muted-foreground" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr) 88px 72px" role="row">
+                  <span role="columnheader">契約</span><span role="columnheader">対象年月</span><span role="columnheader">状態</span><span role="columnheader"><span class="sr-only">操作</span></span>
+                </div>
+                <sc-for list="{{ rows }}" as="r" hint-placeholder-count="6">
+                  <div class="{{ r.cls }}" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr) 88px 72px" role="row" onMouseEnter="{{ r.enter }}" onMouseLeave="{{ r.leave }}">
+                    <span class="font-medium" role="cell">{{ r.contract }}</span>
+                    <span class="tabular-nums" role="cell">{{ r.ym }}</span>
+                    <span role="cell"><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="{{ r.state }}" hint-size="64px,24px"></x-import></span>
+                    <span class="flex justify-end" role="cell"><x-import component-from-global-scope="EffortTrackerDS.Button" on-click="{{ r.open }}" aria-label="{{ r.aria }}" hint-size="64px,36px">開く</x-import></span>
+                  </div>
+                </sc-for>
+              </div>
+            </x-import>
+          </div>
+          <x-import component-from-global-scope="EffortTrackerDS.Pagination" page="{{ page }}" page-count="{{ pageCount }}" on-page-change="{{ setPage }}" hint-size="100%,40px"></x-import>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+  </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;previewState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;通常&quot;,&quot;0件&quot;,&quot;読み込み失敗&quot;],&quot;default&quot;:&quot;通常&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const C1 = '株式会社サンプル 基幹システム開発';
+const C2 = '株式会社サンプル 保守運用支援';
+const PER = 6;
+const NOTE = { Draft: '稼働実績を入力して、月末に締めてください。', PendingApproval: '締め済です。承認をお待ちください。', Approved: '承認済です。' };
+
+function buildMonths() {
+  const list = []; let y = 2026, m = 10;
+  for (let i = 0; i < 12; i++) {
+    list.push({ contract: C1, y, m, state: i === 0 ? 'Draft' : i === 1 ? 'PendingApproval' : 'Approved' });
+    m--; if (m === 0) { m = 12; y--; }
+  }
+  [[9, 'Draft'], [8, 'Approved'], [7, 'Approved'], [6, 'Approved']].forEach(([mm, st]) => list.push({ contract: C2, y: 2026, m: mm, state: st }));
+  return list.sort((a, b) => (b.y * 12 + b.m) - (a.y * 12 + a.m) || (a.contract === C1 ? -1 : 1));
+}
+const MONTHS = buildMonths();
+const go = (x, scenario) => () => {
+  const variant = !x || x.state === 'Draft' ? 'draft-engineer' : x.state === 'PendingApproval' ? 'pending-engineer' : 'approved';
+  window.location.href = 'WorkMonthScreen.dc.html?variant=' + variant + (x ? '&y=' + x.y + '&m=' + x.m + '&c=' + encodeURIComponent(x.contract) : '') + (scenario ? '&scenario=' + scenario : '');
+};
+
+class Component extends DCLogic {
+  componentDidMount() { if (!window.ETShell || !window.EffortTrackerDS) setTimeout(() => this.forceUpdate(), 300); }
+  etShell(role, onRole, navRole, navCurrent, extra) {
+    const theme = this.state.theme || (window.ETShell ? window.ETShell.getTheme() : 'light');
+    const onTheme = t => { if (window.ETShell) window.ETShell.saveTheme(t); this.setState({ theme: t }); };
+    return { theme, navRole, navCurrent, headerRight: window.ETShell ? window.ETShell.headerRight({ theme, onTheme, role, onRole, extra }) : null };
+  }
+  state = { role: 'Engineer', page: 1, hov: null, view: this.props.previewState ?? '通常', fc: (() => { try { return new URLSearchParams(window.location.search).get('c') || ''; } catch (e) { return ''; } })() };
+
+  componentDidUpdate(prev) {
+    if (prev.previewState !== this.props.previewState) this.setState({ view: this.props.previewState ?? '通常', page: 1 });
+  }
+
+  renderVals() {
+    const s = this.state; const DS = window.EffortTrackerDS;
+    const isApprover = s.role === 'Approver';
+    const ym = x => x.y + '年' + x.m + '月';
+    const title = x => x.contract + ' × ' + ym(x);
+    const roleSwitcher = DS ? React.createElement(DS.RoleSwitcher, { role: s.role, onChange: role => { if (role === 'Approver') window.location.href = 'Pending Approvals (Approver).dc.html'; } }) : null;
+    const emptyAction = DS ? React.createElement(DS.Button, { variant: 'primary', onClick: go(null, 'empty') }, '稼働実績を入力する') : null;
+    const latest = MONTHS[0];
+    const fOpts = [{ value: '', label: 'すべて' }];
+    const contractOpts = fOpts.concat([...new Set(MONTHS.map(x => x.contract))].map(c => ({ value: c, label: c })));
+    const ymOpts = fOpts.concat([...new Set(MONTHS.map(x => x.y * 100 + x.m))].sort((a, b) => b - a).map(k => ({ value: String(k), label: Math.floor(k / 100) + '年' + (k % 100) + '月' })));
+    const stateOpts = fOpts.concat([['Draft', '下書き'], ['PendingApproval', '締め済'], ['Approved', '承認済']].map(([value, label]) => ({ value, label })));
+    const fc = s.fc || '', fym = s.fym || '', fst = s.fst || '';
+    const filtered = MONTHS.filter(x => (!fc || x.contract === fc) && (!fym || String(x.y * 100 + x.m) === fym) && (!fst || x.state === fst));
+    const filterActive = !!(fc || fym || fst);
+    const setFilter = k => ev => this.setState({ [k]: ev.target.value, page: 1, hov: null });
+    const clearFilter = () => this.setState({ fc: '', fym: '', fst: '', page: 1 });
+    const rows = filtered.slice((s.page - 1) * PER, s.page * PER).map((x, i) => ({
+      cls: 'grid items-center gap-4 rounded-md px-4 py-4 ' + (i > 0 ? 'border-t border-border ' : '') + (s.hov === i ? 'bg-background' : ''),
+      contract: x.contract, ym: ym(x), state: x.state, aria: title(x) + 'を開く', open: go(x),
+      enter: () => this.setState({ hov: i }), leave: () => this.setState(st => (st.hov === i ? { hov: null } : null))
+    }));
+    return {
+      ...this.etShell('Engineer', role => { if (role === 'Approver') window.location.href = 'Pending Approvals (Approver).dc.html'; }, 'Engineer', 'mine'), emptyAction, isApprover,
+      isNormal: !isApprover && s.view === '通常',
+      isEmpty: !isApprover && s.view === '0件',
+      isError: !isApprover && s.view === '読み込み失敗',
+      retry: () => this.setState({ view: '通常' }),
+      latest: { ym: ym(latest), contract: latest.contract, state: latest.state, note: NOTE[latest.state] }, openLatest: go(latest),
+      contractOpts, ymOpts, stateOpts, fc, fym, fst, onFc: setFilter('fc'), onFym: setFilter('fym'), onFst: setFilter('fst'),
+      filterActive, clearFilter, noMatch: filtered.length === 0, hasMatch: filtered.length > 0,
+      countText: filterActive ? MONTHS.length + ' 件中 ' + filtered.length + ' 件' : '全 ' + MONTHS.length + ' 件',
+      clearAction: DS ? React.createElement(DS.Button, { onClick: clearFilter }, '条件をクリア') : null,
+      rows, page: s.page, pageCount: Math.max(1, Math.ceil(filtered.length / PER)), setPage: p => this.setState({ page: p })
+    };
+  }
+}
+</script>
+</body>
+</html>
