@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<link rel="stylesheet" href="et-theme.css">
+<script src="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.js"></script>
+<script src="et-shell.js"></script>
+<style>body{margin:0}a{color:inherit}</style>
+</helmet>
+<div data-et="{{ theme }}" data-shell="" class="min-h-screen bg-background text-foreground" style="display:flex;position:relative">
+  <dc-import name="SideNav" role="{{ navRole }}" current="{{ navCurrent }}" style="flex:none;align-self:stretch" hint-size="232px,100%"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+  <x-import component-from-global-scope="EffortTrackerDS.AppHeader" right="{{ headerRight }}" hint-size="100%,62px"></x-import>
+  <main class="mx-auto flex max-w-5xl flex-col gap-8 p-6">
+    <div class="flex flex-col gap-2">
+      <h1 class="m-0 text-2xl font-semibold tracking-tight">契約一覧</h1>
+      <p class="m-0 text-sm text-muted-foreground">担当している契約の精算幅と契約期間です。稼働時間はどの契約も 15 分単位で入力します。</p>
+    </div>
+
+    <div class="rounded-md shadow-sm">
+      <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,240px">
+        <div class="flex flex-col p-2" role="table" aria-label="担当している契約" data-cols="contracts">
+          <div class="grid items-center gap-4 border-b border-border px-4 pb-3 text-xs font-medium text-muted-foreground" role="row">
+            <span role="columnheader">契約</span><span role="columnheader">精算幅</span><span role="columnheader">契約期間</span><span role="columnheader">今月の状態</span><span role="columnheader"><span class="sr-only">操作</span></span>
+          </div>
+          <sc-for list="{{ rows }}" as="r" hint-placeholder-count="2">
+            <div class="{{ r.cls }}" role="row" onMouseEnter="{{ r.enter }}" onMouseLeave="{{ r.leave }}">
+              <span class="font-medium" role="cell">{{ r.contract }}</span>
+              <span class="tabular-nums" role="cell">{{ r.range }}</span>
+              <span class="tabular-nums" role="cell">{{ r.period }}</span>
+              <span role="cell"><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="{{ r.state }}" hint-size="64px,24px"></x-import></span>
+              <span role="cell"><x-import component-from-global-scope="EffortTrackerDS.Button" on-click="{{ r.open }}" aria-label="{{ r.aria }}" hint-size="112px,36px">勤務月を見る</x-import></span>
+            </div>
+          </sc-for>
+        </div>
+      </x-import>
+    </div>
+  </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const CONTRACTS = [
+  { contract: '株式会社サンプル 基幹システム開発', range: '140〜180 時間', period: '2025年4月〜2027年3月', state: 'Draft' },
+  { contract: '株式会社サンプル 保守運用支援', range: '120〜160 時間', period: '2026年6月〜2026年12月', state: 'Draft' }
+];
+class Component extends DCLogic {
+  state = { hov: null };
+  componentDidMount() { if (!window.ETShell || !window.EffortTrackerDS) setTimeout(() => this.forceUpdate(), 300); }
+  etShell(role, onRole, navRole, navCurrent, extra) {
+    const theme = this.state.theme || (window.ETShell ? window.ETShell.getTheme() : 'light');
+    const onTheme = t => { if (window.ETShell) window.ETShell.saveTheme(t); this.setState({ theme: t }); };
+    return { theme, navRole, navCurrent, headerRight: window.ETShell ? window.ETShell.headerRight({ theme, onTheme, role, onRole, extra }) : null };
+  }
+  renderVals() {
+    const rows = CONTRACTS.map((x, i) => ({
+      ...x,
+      cls: 'grid items-center gap-4 rounded-md px-4 py-4 ' + (i > 0 ? 'border-t border-border ' : '') + (this.state.hov === i ? 'bg-background' : ''),
+      aria: x.contract + 'の勤務月を見る',
+      open: () => { window.location.href = 'My%20Months%20(Engineer).dc.html?c=' + encodeURIComponent(x.contract); },
+      enter: () => this.setState({ hov: i }), leave: () => this.setState(st => (st.hov === i ? { hov: null } : null))
+    }));
+    return {
+      ...this.etShell('Engineer', r => { if (r === 'Approver') window.location.href = 'Pending%20Approvals%20(Approver).dc.html'; }, 'Engineer', 'contracts'),
+      rows
+    };
+  }
+}
+</script>
+</body>
+</html>

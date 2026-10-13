@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<link rel="stylesheet" href="et-theme.css">
+<script src="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.js"></script>
+<script src="et-shell.js"></script>
+<style>body{margin:0}a{color:inherit}</style>
+</helmet>
+<div data-et="{{ theme }}" data-shell="" class="min-h-screen bg-background text-foreground" style="display:flex;position:relative">
+  <dc-import name="SideNav" role="{{ navRole }}" current="{{ navCurrent }}" style="flex:none;align-self:stretch" hint-size="232px,100%"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+  <x-import component-from-global-scope="EffortTrackerDS.AppHeader" right="{{ headerRight }}" hint-size="100%,62px"></x-import>
+  <main class="mx-auto flex max-w-5xl flex-col gap-8 p-6">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div class="flex flex-col gap-2">
+        <h1 class="m-0 text-2xl font-semibold tracking-tight">稼働の推移</h1>
+        <p class="m-0 text-sm text-muted-foreground">月ごとの総稼働時間と、契約の精算幅との関係です。</p>
+      </div>
+      <div class="flex flex-wrap items-end gap-4" role="search" aria-label="稼働の推移の絞り込み">
+        <div class="flex flex-col gap-1">
+          <label for="t-contract" class="text-xs font-medium text-muted-foreground">契約</label>
+          <select id="t-contract" data-filter="contract" value="{{ contract }}" onChange="{{ onContract }}">
+            <sc-for list="{{ contractOpts }}" as="o" hint-placeholder-count="2"><option value="{{ o }}">{{ o }}</option></sc-for>
+          </select>
+        </div>
+        <div class="flex items-end gap-2" role="group" aria-label="期間">
+          <div class="flex flex-col gap-1">
+            <label for="t-from" class="text-xs font-medium text-muted-foreground">期間（開始）</label>
+            <select id="t-from" data-filter="ym" value="{{ from }}" onChange="{{ onFrom }}">
+              <sc-for list="{{ ymOpts }}" as="o" hint-placeholder-count="2"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+            </select>
+          </div>
+          <span class="text-sm text-muted-foreground" style="padding-bottom:10px">〜</span>
+          <div class="flex flex-col gap-1">
+            <label for="t-to" class="text-xs font-medium text-muted-foreground">期間（終了）</label>
+            <select id="t-to" data-filter="ym" value="{{ to }}" onChange="{{ onTo }}">
+              <sc-for list="{{ toOpts }}" as="o" hint-placeholder-count="2"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid gap-4" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+      <div class="rounded-md shadow-sm" data-lift="">
+        <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,120px">
+          <div class="flex flex-col gap-2 p-2">
+            <span class="text-sm text-muted-foreground">平均稼働（確定した月）</span>
+            <span class="flex items-end gap-1"><span class="text-3xl font-semibold tabular-nums">{{ avg }}</span><span class="text-sm text-muted-foreground">時間</span></span>
+          </div>
+        </x-import>
+      </div>
+      <div class="rounded-md shadow-sm" data-lift="">
+        <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,120px">
+          <div class="flex flex-col gap-2 p-2">
+            <span class="text-sm text-muted-foreground">精算幅に収まった月</span>
+            <span class="flex items-end gap-1"><span class="text-3xl font-semibold tabular-nums">{{ inRange }}</span><span class="text-sm text-muted-foreground">か月</span></span>
+          </div>
+        </x-import>
+      </div>
+      <div class="rounded-md shadow-sm" data-lift="">
+        <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,120px">
+          <div class="flex flex-col gap-2 p-2">
+            <span class="text-sm text-muted-foreground">精算幅</span>
+            <span class="flex items-end gap-1"><span class="text-3xl font-semibold tabular-nums">{{ rangeText }}</span><span class="text-sm text-muted-foreground">時間</span></span>
+          </div>
+        </x-import>
+      </div>
+    </div>
+
+    <div class="rounded-md shadow-sm">
+      <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,420px">
+        <div class="flex flex-col gap-4 p-2">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <h2 class="m-0 text-base font-semibold">月ごとの総稼働時間</h2>
+            <div class="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+              <span class="flex items-center gap-2"><span data-legend="in"></span>稼働時間</span>
+              <span class="flex items-center gap-2"><span data-legend="out"></span>超過した分</span>
+              <span class="flex items-center gap-2"><span data-legend="short"></span>不足している分</span>
+              <span class="flex items-center gap-2"><span data-legend="draft"></span>入力中（下書き）</span>
+              <span class="flex items-center gap-2"><span data-legend="band"></span>精算幅</span>
+            </div>
+          </div>
+          <div data-chart="" role="img" aria-label="{{ chartAria }}">
+            <div data-plot="">
+              <div data-band="" style="bottom:{{ bandBottom }};height:{{ bandHeight }}"></div>
+              <span data-bandlabel="" style="bottom:{{ bandTop }}">{{ maxLabel }}</span>
+              <span data-bandlabel="" style="bottom:{{ bandBottom }}">{{ minLabel }}</span>
+              <span data-axislabel="" style="bottom:100%">{{ axisHi }}</span>
+              <span data-axislabel="" style="bottom:0">{{ axisLo }}</span>
+              <span data-axisbreak="" aria-hidden="true"></span>
+              <sc-for list="{{ bars }}" as="b" hint-placeholder-count="12">
+                <div data-col="">
+                  <div data-bar="{{ b.kind }}" style="height:{{ b.baseH }}"></div>
+                  <sc-if value="{{ b.isOver }}" hint-placeholder-val="{{ false }}"><div data-over="" style="bottom:{{ b.maxH }};height:{{ b.overH }}"></div></sc-if>
+                  <sc-if value="{{ b.isUnder }}" hint-placeholder-val="{{ false }}"><div data-short="" style="bottom:{{ b.baseH }};height:{{ b.shortH }}"></div></sc-if>
+                  <div data-tip="" style="bottom:{{ b.tipBottom }}">
+                    <sc-if value="{{ b.hasFlag }}" hint-placeholder-val="{{ false }}"><span data-flag="">{{ b.flag }}</span></sc-if>
+                    <span data-val="" class="tabular-nums">{{ b.value }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <div data-axis="">
+              <sc-for list="{{ bars }}" as="b" hint-placeholder-count="12">
+                <span class="tabular-nums">{{ b.label }}</span>
+              </sc-for>
+            </div>
+            <p class="m-0 text-xs text-muted-foreground">{{ axisNote }}</p>
+          </div>
+        </div>
+      </x-import>
+    </div>
+  </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const DATA = {
+  '株式会社サンプル 基幹システム開発': { min: 140, max: 180, months: [
+    [2025, 11, 162.5, 'A'], [2025, 12, 148.75, 'A'], [2026, 1, 171.25, 'A'], [2026, 2, 158, 'A'], [2026, 3, 176.5, 'A'], [2026, 4, 183.25, 'A'],
+    [2026, 5, 165.5, 'A'], [2026, 6, 152, 'A'], [2026, 7, 169.75, 'A'], [2026, 8, 137.5, 'A'], [2026, 9, 185, 'P'], [2026, 10, 19.25, 'D']] },
+  '株式会社サンプル 保守運用支援': { min: 120, max: 160, months: [
+    [2026, 6, 128.5, 'A'], [2026, 7, 141.25, 'A'], [2026, 8, 118.75, 'A'], [2026, 9, 96.5, 'D']] }
+};
+const SCALE = 200;
+const fmt = n => { const s = (Math.round(n * 100) / 100).toFixed(2); return s.endsWith('0') ? s.slice(0, -1) : s; };
+const pct = n => (Math.min(n, SCALE) / SCALE * 100) + '%';
+
+class Component extends DCLogic {
+  state = { contract: Object.keys(DATA)[0], from: '', to: '' };
+  componentDidMount() { if (!window.ETShell || !window.EffortTrackerDS) setTimeout(() => this.forceUpdate(), 300); }
+  etShell(role, onRole, navRole, navCurrent, extra) {
+    const theme = this.state.theme || (window.ETShell ? window.ETShell.getTheme() : 'light');
+    const onTheme = t => { if (window.ETShell) window.ETShell.saveTheme(t); this.setState({ theme: t }); };
+    return { theme, navRole, navCurrent, headerRight: window.ETShell ? window.ETShell.headerRight({ theme, onTheme, role, onRole, extra }) : null };
+  }
+  renderVals() {
+    const c0 = DATA[this.state.contract];
+    const k = x => x[0] * 100 + x[1];
+    const keys = c0.months.map(k);
+    const from = this.state.from && keys.includes(Number(this.state.from)) ? Number(this.state.from) : keys[0];
+    const to0 = this.state.to && keys.includes(Number(this.state.to)) ? Number(this.state.to) : keys[keys.length - 1];
+    const to = Math.max(from, to0);
+    const ymLabel = n => Math.floor(n / 100) + '年' + (n % 100) + '月';
+    const ymOpts = keys.map(n => ({ value: String(n), label: ymLabel(n) }));
+    const c = { ...c0, months: c0.months.filter(x => k(x) >= from && k(x) <= to) };
+    const done = c.months.filter(x => x[3] !== 'D');
+    const vals = done.map(x => x[2]);
+    const lo = Math.max(0, Math.floor((Math.min(c.min, ...vals) - 20) / 10) * 10);
+    const hi = Math.ceil((Math.max(c.max, ...vals) + 10) / 10) * 10;
+    const span = hi - lo;
+    const P = n => (Math.max(0, Math.min(n, hi) - lo) / span * 100) + '%';
+    const L = n => (Math.max(0, n) / span * 100) + '%';
+    const bars = c.months.map(([y, m, h, st], i) => {
+      const draft = st === 'D'; const over = !draft && h > c.max, under = !draft && h < c.min;
+      const stub = draft && h < lo + span * 0.04;
+      return {
+        label: (m === 1 || i === 0 ? y + '年' : '') + m + '月', value: fmt(h) + (draft ? '（入力中）' : ''),
+        kind: draft ? 'draft' : over ? 'capped' : under ? 'out' : 'in',
+        baseH: stub ? '4%' : P(over ? c.max : h), maxH: P(c.max), overH: L(h - c.max), shortH: L(c.min - h),
+        isOver: over, isUnder: under, tipBottom: stub ? '4%' : P(under ? c.min : h),
+        hasFlag: over || under, flag: over ? '超過 ' + fmt(h - c.max) : '不足 ' + fmt(c.min - h)
+      };
+    });
+    const inCount = done.filter(x => x[2] >= c.min && x[2] <= c.max).length;
+    return {
+      ...this.etShell('Engineer', r => { if (r === 'Approver') window.location.href = 'Pending%20Approvals%20(Approver).dc.html'; }, 'Engineer', 'trends'),
+      contract: this.state.contract, contractOpts: Object.keys(DATA), onContract: e => this.setState({ contract: e.target.value, from: '', to: '' }),
+      from: String(from), to: String(to), ymOpts, toOpts: ymOpts.filter(o => Number(o.value) >= from),
+      onFrom: e => this.setState(st => ({ from: e.target.value, to: st.to && Number(st.to) < Number(e.target.value) ? e.target.value : st.to })),
+      onTo: e => this.setState({ to: e.target.value }),
+      avg: done.length ? fmt(done.reduce((a, x) => a + x[2], 0) / done.length) : '—', inRange: inCount + ' / ' + done.length, rangeText: c.min + '〜' + c.max,
+      bars, bandBottom: P(c.min), bandHeight: L(c.max - c.min), bandTop: P(c.max), minLabel: String(c.min), maxLabel: String(c.max),
+      axisLo: String(lo), axisHi: String(hi), axisNote: '縦軸は ' + lo + ' 時間から始まります（入力中の月は下端に表示）。',
+      chartAria: '月ごとの総稼働時間。' + c.months.map(([y, m, h, st]) => m + '月 ' + fmt(h) + ' 時間' + (st === 'D' ? '（入力中）' : h > c.max ? '（超過）' : h < c.min ? '（不足）' : '')).join('、')
+    };
+  }
+}
+</script>
+</body>
+</html>

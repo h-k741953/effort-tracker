@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/styles.css">
+<script src="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.js"></script>
+<style>body{margin:0}a{color:inherit}</style>
+</helmet>
+<section class="flex flex-col gap-6 border-b border-border bg-background p-8 text-foreground">
+  <div class="flex flex-col gap-1">
+    <h1 class="text-2xl font-semibold">締めの確認</h1>
+    <p class="text-sm text-muted-foreground">下書きで「締める」を押したとき。9/29・9/30 が未入力でも警告は出さない。</p>
+  </div>
+  <div class="flex flex-wrap items-start gap-8">
+    <div id="3a" class="flex flex-col gap-3" style="width:1360px">
+      <div class="flex items-center gap-3"><span class="rounded-md bg-primary px-2 py-1 text-sm font-semibold text-primary-foreground">3a</span><span class="font-medium">確認ダイアログ（取消 → 下書きのまま／締める → 締め済）</span></div>
+      <div class="rounded-md border border-border overflow-hidden"><dc-import name="WorkMonthScreen" variant="draft-engineer" scenario="confirm-close" hint-size="1360px,1100px"></dc-import></div>
+    </div>
+    <div id="3b" class="flex flex-col gap-3" style="width:1360px">
+      <div class="flex items-center gap-3"><span class="rounded-md bg-primary px-2 py-1 text-sm font-semibold text-primary-foreground">3b</span><span class="font-medium">締めた直後</span></div>
+      <div class="rounded-md border border-border overflow-hidden"><dc-import name="WorkMonthScreen" variant="draft-engineer" scenario="just-closed" hint-size="1360px,900px"></dc-import></div>
+    </div>
+  </div>
+</section>
+<section class="flex flex-col gap-6 border-b border-border bg-background p-8 text-foreground">
+  <div class="flex flex-col gap-1">
+    <h1 class="text-2xl font-semibold">稼働実績の入力（下書き・技術者本人）</h1>
+    <p class="text-sm text-muted-foreground">カレンダーの日を選んだときの入力欄。項目は対象日・開始・終了・休憩。稼働時間は自動計算。</p>
+  </div>
+  <div class="flex flex-wrap items-start gap-8">
+    <div id="2a" class="flex flex-col gap-3" style="width:1360px">
+      <div class="flex items-center gap-3"><span class="rounded-md bg-primary px-2 py-1 text-sm font-semibold text-primary-foreground">2a</span><span class="font-medium">入力済みの日を選択（上書き・削除）</span></div>
+      <div class="rounded-md border border-border overflow-hidden"><dc-import name="WorkMonthScreen" variant="draft-engineer" scenario="existing" hint-size="1360px,1240px"></dc-import></div>
+    </div>
+    <div id="2b" class="flex flex-col gap-3" style="width:1360px">
+      <div class="flex items-center gap-3"><span class="rounded-md bg-primary px-2 py-1 text-sm font-semibold text-primary-foreground">2b</span><span class="font-medium">エラー: 終了を開始より前に設定</span></div>
+      <div class="rounded-md border border-border overflow-hidden"><dc-import name="WorkMonthScreen" variant="draft-engineer" scenario="hour-error" hint-size="1360px,1240px"></dc-import></div>
+    </div>
+    <div id="2c" class="flex flex-col gap-3" style="width:1360px">
+      <div class="flex items-center gap-3"><span class="rounded-md bg-primary px-2 py-1 text-sm font-semibold text-primary-foreground">2c</span><span class="font-medium">エラー: 未来の日を選択（2026年10月・今日は10月2日）</span></div>
+      <div class="rounded-md border border-border overflow-hidden"><dc-import name="WorkMonthScreen" variant="draft-engineer" scenario="future" hint-size="1360px,1100px"></dc-import></div>
+    </div>
+    <div id="2d" class="flex flex-col gap-3" style="width:1360px">
+      <div class="flex items-center gap-3"><span class="rounded-md bg-primary px-2 py-1 text-sm font-semibold text-primary-foreground">2d</span><span class="font-medium">実績が1件もない勤務月</span></div>
+      <div class="rounded-md border border-border overflow-hidden"><dc-import name="WorkMonthScreen" variant="draft-engineer" scenario="empty" hint-size="1360px,1100px"></dc-import></div>
+    </div>
+  </div>
+</section>
+<section class="flex flex-col gap-6 bg-background p-8 text-foreground">
+  <div class="flex flex-col gap-1">
+    <h1 class="text-2xl font-semibold">勤務月画面 — 状態とロールごとの見え方</h1>
+    <p class="text-sm text-muted-foreground">株式会社サンプル 基幹システム開発 × 2026年9月</p>
+  </div>
+  <div class="flex flex-wrap items-start gap-8">
+    <div id="1a" class="flex flex-col gap-3" style="width:1360px">
+      <div class="flex items-center gap-3"><span class="rounded-md bg-primary px-2 py-1 text-sm font-semibold text-primary-foreground">1a</span><span class="font-medium">(1) 下書き・技術者本人</span></div>
+      <div class="rounded-md border border-border overflow-hidden"><dc-import name="WorkMonthScreen" variant="draft-engineer" hint-size="1360px,1180px"></dc-import></div>
+    </div>
+    <div id="1b" class="flex flex-col gap-3" style="width:1360px">
+      <div class="flex items-center gap-3"><span class="rounded-md bg-primary px-2 py-1 text-sm font-semibold text-primary-foreground">1b</span><span class="font-medium">(2) 締め済・技術者本人</span></div>
+      <div class="rounded-md border border-border overflow-hidden"><dc-import name="WorkMonthScreen" variant="pending-engineer" hint-size="1360px,900px"></dc-import></div>
+    </div>
+    <div id="1c" class="flex flex-col gap-3" style="width:1360px">
+      <div class="flex items-center gap-3"><span class="rounded-md bg-primary px-2 py-1 text-sm font-semibold text-primary-foreground">1c</span><span class="font-medium">(3) 締め済・承認者（本人ではない）</span></div>
+      <div class="rounded-md border border-border overflow-hidden"><dc-import name="WorkMonthScreen" variant="pending-approver" hint-size="1360px,960px"></dc-import></div>
+    </div>
+    <div id="1d" class="flex flex-col gap-3" style="width:1360px">
+      <div class="flex items-center gap-3"><span class="rounded-md bg-primary px-2 py-1 text-sm font-semibold text-primary-foreground">1d</span><span class="font-medium">(4) 締め済・承認者だが技術者本人</span></div>
+      <div class="rounded-md border border-border overflow-hidden"><dc-import name="WorkMonthScreen" variant="pending-self-approver" hint-size="1360px,900px"></dc-import></div>
+    </div>
+    <div id="1e" class="flex flex-col gap-3" style="width:1360px">
+      <div class="flex items-center gap-3"><span class="rounded-md bg-primary px-2 py-1 text-sm font-semibold text-primary-foreground">1e</span><span class="font-medium">(5) 承認済（誰が見ても）</span></div>
+      <div class="rounded-md border border-border overflow-hidden"><dc-import name="WorkMonthScreen" variant="approved" hint-size="1360px,900px"></dc-import></div>
+    </div>
+    <div id="1f" class="flex flex-col gap-3" style="width:1360px">
+      <div class="flex items-center gap-3"><span class="rounded-md bg-primary px-2 py-1 text-sm font-semibold text-primary-foreground">1f</span><span class="font-medium">(5) ゲストの閲覧</span></div>
+      <div class="rounded-md border border-border overflow-hidden"><dc-import name="WorkMonthScreen" variant="guest" hint-size="1360px,960px"></dc-import></div>
+    </div>
+  </div>
+</section>
+</x-dc>
+</body>
+</html>

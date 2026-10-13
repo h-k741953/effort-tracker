@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<link rel="stylesheet" href="et-theme.css">
+<script src="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.js"></script>
+<script src="et-shell.js"></script>
+<style>body{margin:0}a{color:inherit}</style>
+</helmet>
+<div data-et="{{ theme }}" data-shell="" class="min-h-screen bg-background text-foreground" style="display:flex;position:relative">
+  <dc-import name="SideNav" role="{{ navRole }}" current="{{ navCurrent }}" style="flex:none;align-self:stretch" hint-size="232px,100%"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+  <x-import component-from-global-scope="EffortTrackerDS.AppHeader" right="{{ headerRight }}" hint-size="100%,62px"></x-import>
+  <main class="mx-auto flex max-w-5xl flex-col gap-8 p-6">
+    <div class="flex flex-col gap-2">
+      <h1 class="m-0 text-2xl font-semibold tracking-tight">承認待ちの勤務月</h1>
+      <p class="m-0 text-sm text-muted-foreground">勤務月を開いて内容を確認し、承認または差し戻しをしてください。</p>
+    </div>
+
+    <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+      <div class="rounded-md bg-surface shadow-sm">
+        <x-import component-from-global-scope="EffortTrackerDS.EmptyState" title="承認待ちの勤務月はありません" description="技術者が勤務月を締めると、ここに表示されます。" hint-size="100%,120px"></x-import>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isNormal }}" hint-placeholder-val="{{ true }}">
+      <div class="flex flex-col gap-4">
+      <div class="flex flex-wrap items-end justify-between gap-4" role="search" aria-label="勤務月の絞り込み">
+        <div class="flex flex-wrap items-end gap-4">
+          <div class="flex flex-col gap-1">
+            <label for="f-contract" class="text-xs font-medium text-muted-foreground">契約</label>
+            <select id="f-contract" data-filter="contract" value="{{ fc }}" onChange="{{ onFc }}">
+              <sc-for list="{{ contractOpts }}" as="o" hint-placeholder-count="1"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label for="f-ym" class="text-xs font-medium text-muted-foreground">対象年月</label>
+            <select id="f-ym" data-filter="ym" value="{{ fym }}" onChange="{{ onFym }}">
+              <sc-for list="{{ ymOpts }}" as="o" hint-placeholder-count="1"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+            </select>
+          </div>
+          <sc-if value="{{ filterActive }}" hint-placeholder-val="{{ false }}">
+            <x-import component-from-global-scope="EffortTrackerDS.Button" on-click="{{ clearFilter }}" hint-size="120px,42px">条件をクリア</x-import>
+          </sc-if>
+        </div>
+        <span class="text-sm text-muted-foreground tabular-nums" aria-live="polite">{{ countText }}</span>
+      </div>
+      <sc-if value="{{ noMatch }}" hint-placeholder-val="{{ false }}">
+        <div class="rounded-md bg-surface shadow-sm">
+          <x-import component-from-global-scope="EffortTrackerDS.EmptyState" title="条件に合う勤務月はありません" description="絞り込みの条件を変えるか、クリアしてください。" action="{{ clearAction }}" hint-size="100%,160px"></x-import>
+        </div>
+      </sc-if>
+      <sc-if value="{{ hasMatch }}" hint-placeholder-val="{{ true }}">
+      <div class="rounded-md shadow-sm">
+        <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,400px">
+          <div class="flex flex-col p-2" role="table" aria-label="承認待ちの勤務月">
+            <div class="grid items-center gap-4 border-b border-border px-4 pb-3 text-xs font-medium text-muted-foreground" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr) 88px 72px" role="row">
+              <span role="columnheader">契約</span><span role="columnheader">対象年月</span><span role="columnheader">状態</span><span role="columnheader"><span class="sr-only">操作</span></span>
+            </div>
+            <sc-for list="{{ rows }}" as="r" hint-placeholder-count="6">
+              <div class="{{ r.cls }}" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr) 88px 72px" role="row" onMouseEnter="{{ r.enter }}" onMouseLeave="{{ r.leave }}">
+                <span class="font-medium" role="cell">{{ r.contract }}</span>
+                <span class="tabular-nums" role="cell">{{ r.ym }}</span>
+                <span role="cell"><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="PendingApproval" hint-size="64px,24px"></x-import></span>
+                <span class="flex justify-end" role="cell"><x-import component-from-global-scope="EffortTrackerDS.Button" on-click="{{ r.open }}" aria-label="{{ r.aria }}" hint-size="64px,36px">開く</x-import></span>
+              </div>
+            </sc-for>
+          </div>
+        </x-import>
+      </div>
+      <x-import component-from-global-scope="EffortTrackerDS.Pagination" page="{{ page }}" page-count="{{ pageCount }}" on-page-change="{{ setPage }}" hint-size="100%,40px"></x-import>
+      </sc-if>
+      </div>
+    </sc-if>
+  </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;previewState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;通常&quot;,&quot;0件&quot;],&quot;default&quot;:&quot;通常&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const C1 = '株式会社サンプル 基幹システム開発';
+const C2 = '株式会社サンプル 保守運用支援';
+const PER = 6;
+const ALL = [
+  [C1, 2026, 9], [C2, 2026, 9], [C1, 2026, 8], [C2, 2026, 8], [C1, 2026, 7], [C2, 2026, 6], [C1, 2026, 5], [C1, 2026, 4]
+].map(([contract, y, m]) => ({ contract, y, m, state: 'PendingApproval' }))
+ .filter(x => x.state === 'PendingApproval')
+ .sort((a, b) => (b.y * 12 + b.m) - (a.y * 12 + a.m) || (a.contract === C1 ? -1 : 1));
+const go = x => () => { window.location.href = 'WorkMonthScreen.dc.html?variant=pending-approver&y=' + x.y + '&m=' + x.m + '&c=' + encodeURIComponent(x.contract); };
+
+class Component extends DCLogic {
+  componentDidMount() { if (!window.ETShell || !window.EffortTrackerDS) setTimeout(() => this.forceUpdate(), 300); }
+  etShell(role, onRole, navRole, navCurrent, extra) {
+    const theme = this.state.theme || (window.ETShell ? window.ETShell.getTheme() : 'light');
+    const onTheme = t => { if (window.ETShell) window.ETShell.saveTheme(t); this.setState({ theme: t }); };
+    return { theme, navRole, navCurrent, headerRight: window.ETShell ? window.ETShell.headerRight({ theme, onTheme, role, onRole, extra }) : null };
+  }
+  state = { page: 1, hov: null };
+
+  renderVals() {
+    const DS = window.EffortTrackerDS;
+    const items = this.props.previewState === '0件' ? [] : ALL;
+    const roleSwitcher = DS ? React.createElement(DS.RoleSwitcher, {
+      role: 'Approver', onChange: r => { if (r === 'Engineer') window.location.href = 'My Months (Engineer).dc.html'; }
+    }) : null;
+    const fOpts = [{ value: '', label: 'すべて' }];
+    const contractOpts = fOpts.concat([...new Set(items.map(x => x.contract))].map(c => ({ value: c, label: c })));
+    const ymOpts = fOpts.concat([...new Set(items.map(x => x.y * 100 + x.m))].sort((a, b) => b - a).map(k => ({ value: String(k), label: Math.floor(k / 100) + '年' + (k % 100) + '月' })));
+    const fc = this.state.fc || '', fym = this.state.fym || '';
+    const filtered = items.filter(x => (!fc || x.contract === fc) && (!fym || String(x.y * 100 + x.m) === fym));
+    const filterActive = !!(fc || fym);
+    const setFilter = k => ev => this.setState({ [k]: ev.target.value, page: 1, hov: null });
+    const clearFilter = () => this.setState({ fc: '', fym: '', page: 1 });
+    const rows = filtered.slice((this.state.page - 1) * PER, this.state.page * PER).map((x, i) => {
+      const title = x.contract + ' × ' + x.y + '年' + x.m + '月';
+      return {
+        cls: 'grid items-center gap-4 rounded-md px-4 py-4 ' + (i > 0 ? 'border-t border-border ' : '') + (this.state.hov === i ? 'bg-background' : ''),
+        contract: x.contract, ym: x.y + '年' + x.m + '月', aria: title + 'を開く', open: go(x),
+        enter: () => this.setState({ hov: i }), leave: () => this.setState(st => (st.hov === i ? { hov: null } : null))
+      };
+    });
+    return {
+      ...this.etShell('Approver', r => { if (r === 'Engineer') window.location.href = 'My Months (Engineer).dc.html'; }, 'Approver', 'approvals'), rows, isEmpty: items.length === 0, isNormal: items.length > 0,
+      contractOpts, ymOpts, fc, fym, onFc: setFilter('fc'), onFym: setFilter('fym'),
+      filterActive, clearFilter, noMatch: filtered.length === 0, hasMatch: filtered.length > 0,
+      countText: filterActive ? items.length + ' 件中 ' + filtered.length + ' 件' : '全 ' + items.length + ' 件',
+      clearAction: DS ? React.createElement(DS.Button, { onClick: clearFilter }, '条件をクリア') : null,
+      page: this.state.page, pageCount: Math.max(1, Math.ceil(filtered.length / PER)), setPage: p => this.setState({ page: p })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<link rel="stylesheet" href="et-theme.css">
+<script src="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.js"></script>
+<script src="et-shell.js"></script>
+<style>body{margin:0}</style>
+</helmet>
+<div data-et="{{ theme }}" class="min-h-screen bg-background text-foreground">
+  <x-import component-from-global-scope="EffortTrackerDS.AppHeader" right="{{ headerRight }}" hint-size="100%,62px"></x-import>
+  <main class="mx-auto flex max-w-md flex-col gap-4 p-4 pt-8">
+
+    <sc-if value="{{ isEntry }}" hint-placeholder-val="{{ true }}">
+      <div class="flex flex-col gap-1">
+        <h2 class="text-xl font-semibold">{{ heading }}</h2>
+        <p class="text-sm text-muted-foreground">勤怠・工数の入力と承認を行います。</p>
+      </div>
+
+      <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,72px">
+        <div class="flex flex-col gap-2">
+          <x-import component-from-global-scope="EffortTrackerDS.Button" class="w-full" on-click="{{ continueGuest }}" hint-size="100%,40px">ゲストとして続行（閲覧のみ）</x-import>
+          <p class="text-xs text-muted-foreground">入力・締め・承認はできません。</p>
+        </div>
+      </x-import>
+
+      <div class="flex items-center gap-3 text-xs text-muted-foreground">
+        <span class="flex-1 border-t border-border"></span><span>または</span><span class="flex-1 border-t border-border"></span>
+      </div>
+
+      <x-import component-from-global-scope="EffortTrackerDS.Card" title="{{ formTitle }}" hint-size="100%,300px">
+        <form class="flex flex-col gap-4" onSubmit="{{ submit }}" no-validate="{{ true }}">
+          <sc-if value="{{ showFailure }}" hint-placeholder-val="{{ false }}">
+            <x-import component-from-global-scope="EffortTrackerDS.ErrorBanner" hint-size="100%,48px">メールアドレスまたはパスワードが正しくありません</x-import>
+          </sc-if>
+
+          <div class="flex flex-col gap-1">
+            <label for="email" class="text-sm font-medium">メールアドレス</label>
+            <input id="email" type="email" autocomplete="email" value="{{ email }}" onChange="{{ onEmail }}" aria-invalid="{{ emailInvalid }}" aria-describedby="{{ emailErrId }}" class="{{ emailClass }}">
+            <sc-if value="{{ emailInvalid }}" hint-placeholder-val="{{ false }}">
+              <x-import component-from-global-scope="EffortTrackerDS.FieldError" id="email-error" hint-size="100%,20px">{{ emailError }}</x-import>
+            </sc-if>
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label for="password" class="text-sm font-medium">パスワード</label>
+            <input id="password" type="password" autocomplete="{{ pwAutocomplete }}" value="{{ password }}" onChange="{{ onPassword }}" aria-invalid="{{ pwInvalid }}" aria-describedby="{{ pwDescribedBy }}" class="{{ pwClass }}">
+            <sc-if value="{{ isSignup }}" hint-placeholder-val="{{ false }}">
+              <p id="pw-hint" class="text-xs text-muted-foreground">8 文字以上で設定してください。</p>
+            </sc-if>
+            <sc-if value="{{ pwInvalid }}" hint-placeholder-val="{{ false }}">
+              <x-import component-from-global-scope="EffortTrackerDS.FieldError" id="pw-error" hint-size="100%,20px">{{ pwError }}</x-import>
+            </sc-if>
+          </div>
+
+          <sc-if value="{{ isSignup }}" hint-placeholder-val="{{ false }}">
+            <div class="flex flex-col gap-1">
+              <label for="password2" class="text-sm font-medium">パスワード（確認）</label>
+              <input id="password2" type="password" autocomplete="new-password" value="{{ password2 }}" onChange="{{ onPassword2 }}" aria-invalid="{{ pw2Invalid }}" aria-describedby="{{ pw2ErrId }}" class="{{ pw2Class }}">
+              <sc-if value="{{ pw2Invalid }}" hint-placeholder-val="{{ false }}">
+                <x-import component-from-global-scope="EffortTrackerDS.FieldError" id="pw2-error" hint-size="100%,20px">パスワードが一致しません。</x-import>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <x-import component-from-global-scope="EffortTrackerDS.Button" variant="primary" type="submit" class="w-full" hint-size="100%,40px">{{ submitLabel }}</x-import>
+
+          <p class="text-sm text-muted-foreground">{{ switchLead }}<a href="#" onClick="{{ toggleMode }}" class="rounded-md font-medium text-primary underline outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">{{ switchLabel }}</a></p>
+        </form>
+      </x-import>
+
+      <div class="flex items-center gap-3 text-xs text-muted-foreground">
+        <span class="flex-1 border-t border-border"></span><span>または</span><span class="flex-1 border-t border-border"></span>
+      </div>
+
+      <x-import component-from-global-scope="EffortTrackerDS.Button" class="w-full" on-click="{{ google }}" hint-size="100%,40px">Google でログイン</x-import>
+    </sc-if>
+
+    <sc-if value="{{ isTotp }}" hint-placeholder-val="{{ false }}">
+      <div class="flex flex-col gap-1">
+        <h2 class="text-xl font-semibold">2 段階認証</h2>
+        <p class="text-sm text-muted-foreground">{{ email }} でログインしています。</p>
+      </div>
+      <x-import component-from-global-scope="EffortTrackerDS.Card" title="認証アプリのコード" hint-size="100%,220px">
+        <form class="flex flex-col gap-4" onSubmit="{{ submitTotp }}" no-validate="{{ true }}">
+          <p class="text-sm text-muted-foreground">認証アプリに表示されている 6 桁のコードを入力してください。</p>
+          <div class="flex flex-col gap-1">
+            <label for="totp" class="text-sm font-medium">確認コード</label>
+            <input id="totp" type="text" inputmode="numeric" autocomplete="one-time-code" max-length="{{ six }}" value="{{ code }}" onChange="{{ onCode }}" aria-invalid="{{ codeInvalid }}" aria-describedby="{{ codeErrId }}" class="{{ codeClass }}" style="letter-spacing:0.4em;font-variant-numeric:tabular-nums">
+            <sc-if value="{{ codeInvalid }}" hint-placeholder-val="{{ false }}">
+              <x-import component-from-global-scope="EffortTrackerDS.FieldError" id="totp-error" hint-size="100%,20px">{{ codeError }}</x-import>
+            </sc-if>
+          </div>
+          <div class="flex flex-col gap-2">
+            <x-import component-from-global-scope="EffortTrackerDS.Button" variant="primary" type="submit" class="w-full" hint-size="100%,40px">確認する</x-import>
+            <x-import component-from-global-scope="EffortTrackerDS.Button" class="w-full" on-click="{{ backToEntry }}" hint-size="100%,40px">別のアカウントでログイン</x-import>
+          </div>
+        </form>
+      </x-import>
+    </sc-if>
+
+    <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+      <x-import component-from-global-scope="EffortTrackerDS.Card" title="{{ doneTitle }}" hint-size="100%,140px">
+        <div class="flex flex-col gap-4">
+          <p class="text-sm text-muted-foreground">{{ doneText }}</p>
+          <a href="{{ doneHref }}" class="inline-flex items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">勤務月一覧へ進む</a>
+        </div>
+      </x-import>
+    </sc-if>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;previewState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;ログイン&quot;,&quot;新規登録&quot;,&quot;多要素認証&quot;,&quot;ログイン失敗&quot;],&quot;default&quot;:&quot;ログイン&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const INPUT = 'w-full rounded-md border bg-background px-3 py-2 text-base text-foreground outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ';
+const cls = bad => INPUT + (bad ? 'border-danger' : 'border-border');
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PRESETS = {
+  'ログイン': { step: 'entry', mode: 'login' },
+  '新規登録': { step: 'entry', mode: 'signup' },
+  '多要素認証': { step: 'totp', mode: 'login', email: 'kenta.sato@example.co.jp' },
+  'ログイン失敗': { step: 'entry', mode: 'login', failed: true, email: 'kenta.sato@example.co.jp' }
+};
+
+class Component extends DCLogic {
+  componentDidMount() { if (!window.ETShell || !window.EffortTrackerDS) setTimeout(() => this.forceUpdate(), 300); }
+  etShell(role, onRole, navRole, navCurrent, extra) {
+    const theme = this.state.theme || (window.ETShell ? window.ETShell.getTheme() : 'light');
+    const onTheme = t => { if (window.ETShell) window.ETShell.saveTheme(t); this.setState({ theme: t }); };
+    return { theme, navRole, navCurrent, headerRight: window.ETShell ? window.ETShell.headerRight({ theme, onTheme, role, onRole, extra }) : null };
+  }
+  state = this.fromPreset(this.props.previewState ?? 'ログイン');
+
+  fromPreset(name) {
+    const p = PRESETS[name] || PRESETS['ログイン'];
+    return { step: p.step, mode: p.mode, failed: !!p.failed, email: p.email || '', password: '', password2: '', code: '', touched: false, codeTouched: false, done: null, preset: name };
+  }
+  componentDidUpdate(prev) {
+    if (prev.previewState !== this.props.previewState) this.setState(this.fromPreset(this.props.previewState ?? 'ログイン'));
+  }
+
+  renderVals() {
+    const s = this.state; const signup = s.mode === 'signup';
+    const emailError = !s.touched ? null : !s.email ? 'メールアドレスを入力してください。' : !EMAIL_RE.test(s.email) ? 'メールアドレスの形式が正しくありません。' : null;
+    const pwError = !s.touched ? null : !s.password ? 'パスワードを入力してください。' : signup && s.password.length < 8 ? '8 文字以上で入力してください。' : null;
+    const pw2Bad = s.touched && signup && s.password2 !== s.password;
+    const codeError = !s.codeTouched ? null : /^\d{6}$/.test(s.code) ? null : '6 桁の数字を入力してください。';
+    const pwDesc = [signup ? 'pw-hint' : null, pwError ? 'pw-error' : null].filter(Boolean).join(' ') || undefined;
+    const done = s.done || {};
+
+    return {
+      ...this.etShell(null, null, null, null), isEntry: s.step === 'entry', isTotp: s.step === 'totp', isDone: s.step === 'done', isSignup: signup,
+      heading: signup ? 'effort-tracker に新規登録' : 'effort-tracker にログイン',
+      formTitle: signup ? 'メールアドレスで新規登録' : 'メールアドレスでログイン',
+      submitLabel: signup ? '新規登録' : 'ログイン',
+      switchLead: signup ? 'アカウントをお持ちの方は ' : 'アカウントをお持ちでない方は ',
+      switchLabel: signup ? 'ログイン' : '新規登録',
+      showFailure: s.failed && !signup,
+      email: s.email, password: s.password, password2: s.password2, code: s.code, six: 6,
+      pwAutocomplete: signup ? 'new-password' : 'current-password',
+      emailInvalid: !!emailError, emailError, emailErrId: emailError ? 'email-error' : undefined, emailClass: cls(emailError),
+      pwInvalid: !!pwError, pwError, pwDescribedBy: pwDesc, pwClass: cls(pwError),
+      pw2Invalid: pw2Bad, pw2ErrId: pw2Bad ? 'pw2-error' : undefined, pw2Class: cls(pw2Bad),
+      codeInvalid: !!codeError, codeError, codeErrId: codeError ? 'totp-error' : undefined, codeClass: cls(codeError),
+      onEmail: e => this.setState({ email: e.target.value }),
+      onPassword: e => this.setState({ password: e.target.value }),
+      onPassword2: e => this.setState({ password2: e.target.value }),
+      onCode: e => this.setState({ code: e.target.value.replace(/\D/g, '').slice(0, 6) }),
+      toggleMode: e => { e.preventDefault(); this.setState({ mode: signup ? 'login' : 'signup', failed: false, touched: false, password: '', password2: '' }); },
+      submit: e => {
+        e.preventDefault();
+        const okEmail = EMAIL_RE.test(s.email);
+        const okPw = signup ? s.password.length >= 8 && s.password === s.password2 : !!s.password;
+        if (!okEmail || !okPw) { this.setState({ touched: true, failed: false }); return; }
+        if (signup) { this.setState({ step: 'done', password: '', password2: '', done: { title: '登録が完了しました', text: 'アカウントを作成しました。勤務月の入力を始められます。' } }); return; }
+        // デモ: 8 文字未満のパスワードは失敗扱い
+        if (s.password.length < 8) { this.setState({ failed: true, password: '', touched: false }); return; }
+        this.setState({ step: 'totp', failed: false, password: '', code: '', codeTouched: false });
+      },
+      submitTotp: e => {
+        e.preventDefault();
+        if (!/^\d{6}$/.test(s.code)) { this.setState({ codeTouched: true }); return; }
+        this.setState({ step: 'done', code: '', done: { title: 'ログインしました', text: '勤務月の入力と確認ができます。' } });
+      },
+      backToEntry: () => this.setState({ step: 'entry', mode: 'login', code: '', codeTouched: false, failed: false }),
+      continueGuest: () => this.setState({ step: 'done', done: { guest: true, title: 'ゲストとして閲覧します', text: '閲覧のみのモードです。入力・締め・承認はできません。' } }),
+      google: () => this.setState({ step: 'done', done: { title: 'ログインしました', text: 'Google アカウントでログインしました。' } }),
+      doneTitle: done.title, doneText: done.text, doneHref: done.guest ? 'Guest Demo List.dc.html' : 'effort-tracker.dc.html'
+    };
+  }
+}
+</script>
+</body>
+</html>

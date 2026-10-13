@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<link rel="stylesheet" href="et-theme.css">
+<script src="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.js"></script>
+<script src="et-shell.js"></script>
+<style>body{margin:0}a{color:inherit}</style>
+</helmet>
+<div data-et="{{ theme }}" data-shell="" class="min-h-screen bg-background text-foreground" style="display:flex;position:relative">
+  <dc-import name="SideNav" role="{{ navRole }}" current="{{ navCurrent }}" style="flex:none;align-self:stretch" hint-size="232px,100%"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+  <x-import component-from-global-scope="EffortTrackerDS.AppHeader" right="{{ headerRight }}" hint-size="100%,62px"></x-import>
+  <main class="mx-auto flex max-w-5xl flex-col gap-8 p-6">
+    <sc-if value="{{ isGuest }}" hint-placeholder-val="{{ false }}">
+      <div class="rounded-md border border-border bg-surface px-4 py-3 text-sm font-medium text-surface-foreground shadow-sm" role="note">デモ用のサンプルです（閲覧のみ・毎日リセットされます）</div>
+    </sc-if>
+
+    <div class="flex flex-col gap-2">
+      <nav aria-label="現在地" class="text-sm">
+        <ol class="m-0 flex flex-wrap items-center gap-2 p-0" style="list-style:none">
+          <li><a href="{{ crumb.href }}" class="rounded-md font-medium text-primary outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">{{ crumb.label }}</a></li>
+          <li aria-hidden="true" class="text-muted-foreground">＞</li>
+          <li aria-current="page" class="text-muted-foreground">{{ crumbHere }}</li>
+        </ol>
+      </nav>
+      <div class="flex flex-wrap items-center gap-3">
+        <h1 class="m-0 text-2xl font-semibold tracking-tight">{{ title }}</h1>
+        <sc-if value="{{ isDraft }}" hint-placeholder-val="{{ true }}"><span data-pop=""><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="Draft" hint-size="72px,26px"></x-import></span></sc-if>
+        <sc-if value="{{ isPending }}" hint-placeholder-val="{{ false }}"><span data-pop=""><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="PendingApproval" hint-size="72px,26px"></x-import></span></sc-if>
+        <sc-if value="{{ isApproved }}" hint-placeholder-val="{{ false }}"><span data-pop=""><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="Approved" hint-size="72px,26px"></x-import></span></sc-if>
+      </div>
+      <p class="m-0 text-sm text-muted-foreground">{{ note }}</p>
+    </div>
+
+    <div class="grid gap-4" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+      <div class="rounded-md shadow-sm" data-lift="">
+        <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,120px">
+          <div class="flex flex-col gap-2 p-2">
+            <span class="text-sm text-muted-foreground">総稼働時間</span>
+            <span class="flex items-end gap-1"><span class="text-3xl font-semibold tabular-nums">{{ total }}</span><span class="text-sm text-muted-foreground">時間</span></span>
+          </div>
+        </x-import>
+      </div>
+      <div class="rounded-md shadow-sm" data-lift="">
+        <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,120px">
+          <div class="flex flex-col gap-2 p-2">
+            <span class="text-sm text-muted-foreground">精算幅</span>
+            <span class="flex items-end gap-1"><span class="text-3xl font-semibold tabular-nums">140〜180</span><span class="text-sm text-muted-foreground">時間</span></span>
+          </div>
+        </x-import>
+      </div>
+      <sc-if value="{{ isDraft }}" hint-placeholder-val="{{ false }}">
+        <div class="rounded-md shadow-sm" data-lift="">
+          <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,120px">
+            <div class="flex flex-col gap-2 p-2">
+              <span class="text-sm text-muted-foreground">超過／不足</span>
+              <span class="text-xl font-semibold">締め時に確定します</span>
+            </div>
+          </x-import>
+        </div>
+      </sc-if>
+      <sc-if value="{{ showDiff }}" hint-placeholder-val="{{ true }}">
+        <div class="rounded-md shadow-sm" data-lift="">
+          <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,120px">
+            <div class="grid grid-cols-2 gap-4 p-2">
+              <div class="flex flex-col gap-2">
+                <span class="text-sm text-muted-foreground">超過</span>
+                <span class="flex items-end gap-1"><span class="text-3xl font-semibold tabular-nums">{{ excess }}</span><span class="text-sm text-muted-foreground">時間</span></span>
+              </div>
+              <div class="flex flex-col gap-2">
+                <span class="text-sm text-muted-foreground">不足</span>
+                <span class="flex items-end gap-1"><span class="text-3xl font-semibold tabular-nums">{{ shortage }}</span><span class="text-sm text-muted-foreground">時間</span></span>
+              </div>
+            </div>
+          </x-import>
+        </div>
+      </sc-if>
+    </div>
+
+    <div class="flex flex-wrap items-start gap-8">
+      <div class="rounded-md shadow-sm" style="flex:2 1 520px;min-width:0">
+        <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,520px">
+          <div class="flex flex-col gap-4 p-2">
+            <h2 class="m-0 text-base font-semibold">日次の稼働実績</h2>
+            <div class="grid gap-1 text-xs text-muted-foreground text-center" style="grid-template-columns:repeat(7,minmax(0,1fr))">
+              <span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span data-dow="sat">土</span><span data-dow="sun">日</span>
+            </div>
+            <sc-if value="{{ isEditable }}" hint-placeholder-val="{{ false }}">
+              <div class="grid gap-1" style="grid-template-columns:repeat(7,minmax(0,1fr))">
+                <sc-for list="{{ cells }}" as="c" hint-placeholder-count="35">
+                  <sc-if value="{{ c.blank }}" hint-placeholder-val="{{ false }}"><span></span></sc-if>
+                  <sc-if value="{{ c.real }}" hint-placeholder-val="{{ true }}">
+                    <button type="button" onClick="{{ c.select }}" onMouseEnter="{{ c.enter }}" onMouseLeave="{{ c.leave }}" aria-pressed="{{ c.selected }}" data-dow="{{ c.dow }}" aria-label="{{ c.aria }}" class="{{ c.cls }}" style="min-height:76px;font:inherit;cursor:pointer">
+                      <span class="{{ c.dayCls }}" data-daynum="">{{ c.day }}<sc-if value="{{ c.hasTag }}" hint-placeholder-val="{{ false }}"><span data-daytag="">祝</span></sc-if></span>
+                      <sc-if value="{{ c.hasEntry }}" hint-placeholder-val="{{ false }}">
+                        <span class="flex flex-col gap-1" style="align-self:stretch">
+                          <span class="text-sm font-semibold tabular-nums" style="text-align:right">{{ c.hours }}</span>
+                          <span data-range="" class="tabular-nums">{{ c.range }}</span>
+                        </span>
+                      </sc-if>
+                    </button>
+                  </sc-if>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ isReadOnly }}" hint-placeholder-val="{{ true }}">
+              <div class="grid gap-1" style="grid-template-columns:repeat(7,minmax(0,1fr))">
+                <sc-for list="{{ cells }}" as="c" hint-placeholder-count="35">
+                  <sc-if value="{{ c.blank }}" hint-placeholder-val="{{ false }}"><span></span></sc-if>
+                  <sc-if value="{{ c.real }}" hint-placeholder-val="{{ true }}">
+                    <div class="{{ c.cls }}" data-dow="{{ c.dow }}" style="min-height:76px">
+                      <span class="{{ c.dayCls }}" data-daynum="">{{ c.day }}<sc-if value="{{ c.hasTag }}" hint-placeholder-val="{{ false }}"><span data-daytag="">祝</span></sc-if></span>
+                      <sc-if value="{{ c.hasEntry }}" hint-placeholder-val="{{ false }}">
+                        <span class="flex flex-col gap-1" style="align-self:stretch">
+                          <span class="text-sm font-semibold tabular-nums" style="text-align:right">{{ c.hours }}</span>
+                          <span data-range="" class="tabular-nums">{{ c.range }}</span>
+                        </span>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </x-import>
+      </div>
+
+      <sc-if value="{{ showSide }}" hint-placeholder-val="{{ false }}">
+        <div class="flex flex-col gap-4" style="flex:1 1 280px;min-width:0">
+          <sc-if value="{{ showEmpty }}" hint-placeholder-val="{{ false }}">
+            <div class="rounded-md bg-surface shadow-sm">
+              <x-import component-from-global-scope="EffortTrackerDS.EmptyState" title="まだ稼働実績がありません" description="カレンダーの日を選んで、稼働時間を入力してください。最初の入力でこの勤務月が作られます。" action="{{ emptyAction }}" hint-size="100%,180px"></x-import>
+            </div>
+          </sc-if>
+          <sc-if value="{{ showHint }}" hint-placeholder-val="{{ false }}">
+            <div class="rounded-md shadow-sm">
+              <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,96px">
+                <div class="flex flex-col gap-2 p-2">
+                  <h2 class="m-0 text-base font-semibold">稼働実績の入力</h2>
+                  <p class="m-0 text-sm text-muted-foreground">カレンダーの日を選ぶと、ここで稼働時間を入力・編集・削除できます。</p>
+                </div>
+              </x-import>
+            </div>
+          </sc-if>
+          <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ true }}">
+            <div class="rounded-md shadow-sm">
+              <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,320px">
+                <div class="flex flex-col gap-6 p-2">
+                  <h2 class="m-0 text-base font-semibold">稼働実績の入力</h2>
+                  <div class="flex flex-col gap-1">
+                    <span class="text-sm text-muted-foreground" id="{{ dateLabelId }}">対象日</span>
+                    <span class="text-lg font-semibold tabular-nums" aria-labelledby="{{ dateLabelId }}" aria-describedby="{{ futureErrId }}">{{ selLabel }}</span>
+                    <sc-if value="{{ isFuture }}" hint-placeholder-val="{{ false }}">
+                      <x-import component-from-global-scope="EffortTrackerDS.FieldError" id="{{ futureErrId }}" hint-size="100%,20px">未来の日付には入力できません</x-import>
+                    </sc-if>
+                  </div>
+                  <sc-if value="{{ canInput }}" hint-placeholder-val="{{ true }}">
+                    <fieldset class="m-0 flex flex-col gap-3 border-0 p-0">
+                      <legend class="mb-2 p-0 text-sm font-medium">勤務時間</legend>
+                      <div class="flex flex-col gap-3">
+                        <sc-for list="{{ workRows }}" as="r" hint-placeholder-count="2">
+                          <div class="flex min-w-0 flex-col gap-1" role="group" aria-labelledby="{{ r.labId }}">
+                            <span id="{{ r.labId }}" class="text-sm font-medium">{{ r.label }}</span>
+                            <div class="flex items-center gap-2">
+                              <select id="{{ r.hId }}" data-time="" aria-label="{{ r.hAria }}" value="{{ r.hVal }}" onChange="{{ r.onH }}" aria-invalid="{{ r.hInv }}" aria-describedby="{{ r.errRef }}">
+                                <sc-for list="{{ hourOptions }}" as="o" hint-placeholder-count="1"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                              </select>
+                              <span class="text-sm text-muted-foreground">時</span>
+                              <select id="{{ r.mId }}" data-time="" aria-label="{{ r.mAria }}" value="{{ r.mVal }}" onChange="{{ r.onM }}" aria-invalid="{{ r.mInv }}" aria-describedby="{{ r.errRef }}">
+                                <sc-for list="{{ minOptions }}" as="o" hint-placeholder-count="1"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                              </select>
+                              <span class="text-sm text-muted-foreground">分</span>
+                            </div>
+                            <sc-if value="{{ r.hasErr }}" hint-placeholder-val="{{ false }}">
+                              <x-import component-from-global-scope="EffortTrackerDS.FieldError" id="{{ r.errId }}" hint-size="100%,20px">{{ r.err }}</x-import>
+                            </sc-if>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </fieldset>
+                    <fieldset class="m-0 flex flex-col gap-3 border-0 p-0">
+                      <legend class="mb-2 p-0 text-sm font-medium">休憩</legend>
+                      <label class="flex items-center gap-2 text-sm" style="cursor:pointer">
+                        <input type="checkbox" checked="{{ brk }}" onChange="{{ toggleBrk }}" style="width:18px;height:18px;margin:0;accent-color:var(--primary);cursor:pointer">
+                        <span>休憩あり</span>
+                      </label>
+                      <sc-if value="{{ brk }}" hint-placeholder-val="{{ true }}">
+                      <div class="flex flex-col gap-3">
+                        <sc-for list="{{ breakRows }}" as="r" hint-placeholder-count="2">
+                          <div class="flex min-w-0 flex-col gap-1" role="group" aria-labelledby="{{ r.labId }}">
+                            <span id="{{ r.labId }}" class="text-sm font-medium">{{ r.label }}</span>
+                            <div class="flex items-center gap-2">
+                              <select id="{{ r.hId }}" data-time="" aria-label="{{ r.hAria }}" value="{{ r.hVal }}" onChange="{{ r.onH }}" aria-invalid="{{ r.hInv }}" aria-describedby="{{ r.errRef }}">
+                                <sc-for list="{{ hourOptions }}" as="o" hint-placeholder-count="1"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                              </select>
+                              <span class="text-sm text-muted-foreground">時</span>
+                              <select id="{{ r.mId }}" data-time="" aria-label="{{ r.mAria }}" value="{{ r.mVal }}" onChange="{{ r.onM }}" aria-invalid="{{ r.mInv }}" aria-describedby="{{ r.errRef }}">
+                                <sc-for list="{{ minOptions }}" as="o" hint-placeholder-count="1"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                              </select>
+                              <span class="text-sm text-muted-foreground">分</span>
+                            </div>
+                            <sc-if value="{{ r.hasErr }}" hint-placeholder-val="{{ false }}">
+                              <x-import component-from-global-scope="EffortTrackerDS.FieldError" id="{{ r.errId }}" hint-size="100%,20px">{{ r.err }}</x-import>
+                            </sc-if>
+                          </div>
+                        </sc-for>
+                      </div>
+                      </sc-if>
+                    </fieldset>
+                    <div class="flex flex-col gap-1 rounded-md border border-border bg-background p-3" aria-live="polite">
+                      <div class="flex items-baseline justify-between gap-3">
+                        <span class="text-sm text-muted-foreground">稼働時間</span>
+                        <span class="flex items-baseline gap-1"><span class="text-2xl font-semibold tabular-nums">{{ workedText }}</span><span class="text-sm text-muted-foreground">時間</span></span>
+                      </div>
+                      <span class="text-xs text-muted-foreground tabular-nums">{{ workedNote }}</span>
+                    </div>
+                    <span class="text-xs text-muted-foreground">時は 0〜23、分は 15 分単位で選んでください。</span>
+                    <div class="flex flex-wrap gap-2">
+                      <x-import component-from-global-scope="EffortTrackerDS.Button" on-click="{{ saveDay }}" hint-size="72px,36px">保存</x-import>
+                      <sc-if value="{{ selHasEntry }}" hint-placeholder-val="{{ false }}">
+                        <x-import component-from-global-scope="EffortTrackerDS.Button" on-click="{{ deleteDay }}" hint-size="72px,36px">削除</x-import>
+                      </sc-if>
+                      <x-import component-from-global-scope="EffortTrackerDS.Button" on-click="{{ clearSel }}" hint-size="72px,36px">閉じる</x-import>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ isFuture }}" hint-placeholder-val="{{ false }}">
+                    <div class="flex flex-wrap gap-2">
+                      <x-import component-from-global-scope="EffortTrackerDS.Button" on-click="{{ clearSel }}" hint-size="72px,36px">閉じる</x-import>
+                    </div>
+                  </sc-if>
+                </div>
+              </x-import>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ canClose }}" hint-placeholder-val="{{ false }}">
+            <div class="rounded-md shadow-sm">
+              <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,140px">
+                <div class="flex flex-col gap-4 p-2">
+                  <div class="flex flex-col gap-1">
+                    <h2 class="m-0 text-base font-semibold">勤務月を締める</h2>
+                    <p class="m-0 text-sm text-muted-foreground">入力が済んだら締めてください。締めると承認されるまで編集できません。</p>
+                  </div>
+                  <div class="flex justify-end">
+                    <x-import component-from-global-scope="EffortTrackerDS.Button" variant="primary" on-click="{{ askClose }}" hint-size="96px,40px">締める</x-import>
+                  </div>
+                </div>
+              </x-import>
+            </div>
+          </sc-if>
+          <sc-if value="{{ canReview }}" hint-placeholder-val="{{ false }}">
+            <div class="rounded-md shadow-sm">
+              <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,140px">
+                <div class="flex flex-col gap-4 p-2">
+                  <div class="flex flex-col gap-1">
+                    <h2 class="m-0 text-base font-semibold">承認</h2>
+                    <p class="m-0 text-sm text-muted-foreground">内容を確認して、承認または差戻しをしてください。</p>
+                  </div>
+                  <div class="flex justify-end gap-2">
+                    <x-import component-from-global-scope="EffortTrackerDS.Button" variant="danger" on-click="{{ askReject }}" hint-size="96px,40px">差戻し</x-import>
+                    <x-import component-from-global-scope="EffortTrackerDS.Button" variant="primary" on-click="{{ askApprove }}" hint-size="96px,40px">承認</x-import>
+                  </div>
+                </div>
+              </x-import>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+    </div>
+  </main>
+  </div>
+  <sc-if value="{{ dlgOpen }}" hint-placeholder-val="{{ false }}">
+    <div data-overlay="" class="flex items-start justify-center p-6" style="position:absolute;inset:0;z-index:10">
+      <div class="w-full rounded-md shadow" style="position:relative;max-width:480px;margin-top:180px">
+        <x-import component-from-global-scope="EffortTrackerDS.ConfirmDialog" open="{{ dlg.open }}" title="{{ dlg.title }}" description="{{ dlg.description }}" confirm-label="{{ dlg.confirmLabel }}" confirm-variant="{{ dlg.variant }}" on-confirm="{{ dlg.onConfirm }}" on-cancel="{{ closeDialog }}" hint-size="100%,160px"></x-import>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1120,&quot;height&quot;:1100},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;draft-engineer&quot;,&quot;pending-engineer&quot;,&quot;pending-approver&quot;,&quot;pending-self-approver&quot;,&quot;approved&quot;,&quot;guest&quot;],&quot;default&quot;:&quot;draft-engineer&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;scenario&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;existing&quot;,&quot;hour-error&quot;,&quot;future&quot;,&quot;empty&quot;,&quot;confirm-close&quot;,&quot;just-closed&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const CONTRACT = '株式会社サンプル 基幹システム開発';
+const TODAY = { y: 2026, m: 10, d: 2 };
+const HOLIDAYS = { '2026-9': [21, 22, 23], '2026-10': [12] };
+const VALS = [9.5,10,9.75,9,10.25,9.5,9.75,10,9.25,9.75,10,9.5,9.75,10.5,9.25,9.75,9.5,10,10];
+const WD = ['日','月','火','水','木','金','土'];
+const fmt = n => { const s = (Math.round(n * 100) / 100).toFixed(2); return s.endsWith('0') ? s.slice(0, -1) : s; };
+const VARIANTS = {
+  'draft-engineer':        { status: 'Draft',           role: 'Engineer', self: true },
+  'pending-engineer':      { status: 'PendingApproval', role: 'Engineer', self: true },
+  'pending-approver':      { status: 'PendingApproval', role: 'Approver', self: false },
+  'pending-self-approver': { status: 'PendingApproval', role: 'Approver', self: true },
+  'approved':              { status: 'Approved',        role: 'Engineer', self: true },
+  'guest':                 { status: 'Approved',        role: null,       self: false }
+};
+const off = (y, m, d) => { const w = new Date(y, m - 1, d).getDay(); return w === 0 || w === 6 || (HOLIDAYS[y + '-' + m] || []).includes(d); };
+const isFutureDay = (y, m, d) => (y * 10000 + m * 100 + d) > (TODAY.y * 10000 + TODAY.m * 100 + TODAY.d);
+
+function seedMinutes(y, m, draft) {
+  const out = {}; if (y === 2026 && m === 10) { out[1] = 570; out[2] = 585; return out; }
+  let k = 0; const n = new Date(y, m, 0).getDate();
+  for (let d = 1; d <= n; d++) { if (off(y, m, d)) continue; const v = VALS[k++]; if (!(draft && d >= 29)) out[d] = Math.round(v * 60); }
+  return out;
+}
+const NEW_F = { sh: '', sm: '', eh: '', em: '', brk: true, bsh: '12', bsm: '00', beh: '13', bem: '00' };
+const hm = n => Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
+const HOUR_OPTIONS = [{ value: '', label: '--' }].concat(Array.from({ length: 24 }, (_, i) => ({ value: String(i), label: String(i) })));
+const MIN_OPTIONS = [{ value: '', label: '--' }].concat(['00', '15', '30', '45'].map(v => ({ value: v, label: v })));
+const p2 = n => String(n).padStart(2, '0');
+function seedTimes(mins) {
+  const out = {};
+  for (const [d, w] of Object.entries(mins)) { const e = 540 + w + 60; out[d] = { sh: '9', sm: '00', eh: String(Math.floor(e / 60)), em: p2(e % 60), brk: true, bsh: '12', bsm: '00', beh: '13', bem: '00' }; }
+  return out;
+}
+const num = v => { const x = String(v).trim(); return x === '' ? '' : /^\d{1,2}$/.test(x) ? Number(x) : NaN; };
+function part(hs, ms, tried) {
+  const h = num(hs), m = num(ms);
+  if (Number.isNaN(h)) return { v: '', e: { msg: '時は数字で入力してください', h: true, m: false } };
+  if (h !== '' && h > 23) return { v: '', e: { msg: '時は 0〜23 で入力してください', h: true, m: false } };
+  if (Number.isNaN(m)) return { v: '', e: { msg: '分は数字で入力してください', h: false, m: true } };
+  if (m !== '' && m > 59) return { v: '', e: { msg: '分は 0〜59 で入力してください', h: false, m: true } };
+  if (m !== '' && m % 15 !== 0) return { v: '', e: { msg: '分は 15 分単位（00・15・30・45）で入力してください', h: false, m: true } };
+  if (h === '' || m === '') return { v: '', e: tried ? { msg: h === '' && m === '' ? '時刻を選んでください' : (h === '' ? '時' : '分') + 'を選んでください', h: h === '', m: m === '' } : null };
+  return { v: h * 60 + m, e: null };
+}
+function calc(raw, tried) {
+  const ps = part(raw.sh, raw.sm, tried), pe = part(raw.eh, raw.em, tried), pbs = part(raw.bsh, raw.bsm, tried), pbe = part(raw.beh, raw.bem, tried);
+  const f = { s: ps.v, e: pe.v, bs: pbs.v, be: pbe.v, brk: raw.brk };
+  const X = { h: true, m: true };
+  const fe = { s: ps.e, e: pe.e, bs: f.brk ? pbs.e : null, be: f.brk ? pbe.e : null };
+  const filled = f.s !== '' && f.e !== '' && (!f.brk || (f.bs !== '' && f.be !== ''));
+  let worked = null;
+  if (f.s !== '' && f.e !== '' && f.e <= f.s) fe.e = { ...X, msg: '終了は開始より後の時刻にしてください' };
+  else if (f.brk && f.bs !== '' && f.be !== '' && f.be <= f.bs) fe.be = { ...X, msg: '休憩の終了は休憩の開始より後にしてください' };
+  else if (filled && f.brk && (f.bs < f.s || f.be > f.e)) fe.be = { ...X, msg: '休憩は勤務時間（開始〜終了）の中に収めてください' };
+  else if (filled) {
+    const w = f.e - f.s - (f.brk ? f.be - f.bs : 0);
+    if (w <= 0) fe.be = { ...X, msg: '稼働時間が 0 になります。休憩の時刻を見直してください' };
+    else worked = { mins: w, note: hm(f.s) + '〜' + hm(f.e) + (f.brk ? '（休憩 ' + hm(f.be - f.bs) + '）' : '（休憩なし）') };
+  }
+  return { fe, worked, ok: !!worked };
+}
+
+class Component extends DCLogic {
+  componentDidMount() { if (!window.ETShell || !window.EffortTrackerDS) setTimeout(() => this.forceUpdate(), 300); }
+  etShell(role, onRole, navRole, navCurrent, extra) {
+    const theme = this.state.theme || (window.ETShell ? window.ETShell.getTheme() : 'light');
+    const onTheme = t => { if (window.ETShell) window.ETShell.saveTheme(t); this.setState({ theme: t }); };
+    return { theme, navRole, navCurrent, headerRight: window.ETShell ? window.ETShell.headerRight({ theme, onTheme, role, onRole, extra }) : null };
+  }
+  constructor(p) {
+    super(p);
+    let q = {};
+    try { q = Object.fromEntries(new URLSearchParams(window.location.search)); } catch (e) {}
+    this.fromQuery = !!VARIANTS[q.variant];
+    this.vk = this.fromQuery ? q.variant : (VARIANTS[p.variant] ? p.variant : 'draft-engineer');
+    this.contract = q.c || CONTRACT;
+    this.nav = q.nav === 'current' ? 'current' : 'mine';
+    const v = VARIANTS[this.vk];
+    const draft = v.status === 'Draft';
+    const sc = draft ? ((this.fromQuery ? q.scenario : p.scenario) || 'default') : 'default';
+    const qy = Number(q.y), qm = Number(q.m);
+    const [y, m] = qy && qm ? [qy, qm] : sc === 'future' ? [2026, 10] : [2026, 9];
+    const mins = sc === 'empty' ? {} : seedMinutes(y, m, draft);
+    const times = seedTimes(mins);
+    let sel = null, f = { ...NEW_F };
+    if (draft && sc === 'default') sel = 29;
+    if (sc === 'existing') { sel = 15; f = { ...times[15] }; }
+    if (sc === 'hour-error') { sel = 29; f = { ...NEW_F, sh: '18', sm: '00', eh: '9', em: '00' }; }
+    if (sc === 'future') sel = 15;
+    if (sc === 'confirm-close' || sc === 'just-closed') sel = null;
+    this.state = { y, m, status: sc === 'just-closed' ? 'PendingApproval' : v.status, mins, times, sel, f, tried: false, hov: null,
+      dlg: sc === 'confirm-close' ? 'close' : null, justClosed: sc === 'just-closed' };
+  }
+
+  pick(d) { const t = this.state.times[d]; this.setState({ sel: d, f: t ? { ...t } : { ...NEW_F }, tried: false }); }
+
+  renderVals() {
+    const s = this.state; const DS = window.EffortTrackerDS; const { y, m } = s;
+    const vk = this.fromQuery ? this.vk : (this.props.variant || this.vk);
+    const v0 = VARIANTS[vk] || VARIANTS['draft-engineer'];
+    const v = { ...v0, role: v0.role && s.role ? s.role : v0.role };
+    const key = vk + '-' + (this.props.scenario || 'd');
+    const isDraft = s.status === 'Draft';
+    const isGuest = !v.role;
+    const isEditable = isDraft && v.role === 'Engineer' && v.self;
+    const canReview = s.status === 'PendingApproval' && v.role === 'Approver' && !v.self;
+    const entries = Object.keys(s.mins).length;
+    const total = Object.values(s.mins).reduce((a, b) => a + b, 0) / 60;
+    const label = d => m + '月' + d + '日（' + ((HOLIDAYS[y + '-' + m] || []).includes(d) ? '祝' : WD[new Date(y, m - 1, d).getDay()]) + '）';
+
+    const cells = []; const n = new Date(y, m, 0).getDate();
+    const lead = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+    for (let i = 0; i < lead; i++) cells.push({ blank: true, real: false });
+    for (let d = 1; d <= n; d++) {
+      const has = s.mins[d] !== undefined; const selected = isEditable && s.sel === d; const fut = isFutureDay(y, m, d);
+      const hovered = isEditable && s.hov === d && !selected;
+      cells.push({
+        blank: false, real: true, day: d, hours: has ? fmt(s.mins[d] / 60) : '', selected,
+        aria: label(d) + (has ? ' ' + fmt(s.mins[d] / 60) + ' 時間' + (s.times[d] ? '（' + hm(Number(s.times[d].sh) * 60 + Number(s.times[d].sm)) + '〜' + hm(Number(s.times[d].eh) * 60 + Number(s.times[d].em)) + '）' : '') : ' 未入力') + (fut ? '（未来の日付）' : ''),
+        dow: (HOLIDAYS[y + '-' + m] || []).includes(d) ? 'hol' : [ 'sun', '', '', '', '', '', 'sat' ][new Date(y, m - 1, d).getDay()],
+        hasTag: (HOLIDAYS[y + '-' + m] || []).includes(d), hasEntry: has,
+        range: s.times[d] ? hm(Number(s.times[d].sh) * 60 + Number(s.times[d].sm)) + '〜' + hm(Number(s.times[d].eh) * 60 + Number(s.times[d].em)) : '',
+        dayCls: 'text-xs font-semibold ' + (fut ? 'text-muted-foreground' : ''),
+        cls: 'flex flex-col items-start justify-between rounded-md p-2 text-left text-surface-foreground outline-none focus-visible:ring-2 focus-visible:ring-focus-ring '
+          + (hovered || fut ? 'bg-background ' : 'bg-surface ') + (selected ? 'border-2 border-primary' : 'border border-border'),
+        select: () => this.pick(d),
+        enter: () => this.setState({ hov: d }),
+        leave: () => this.setState(st => (st.hov === d ? { hov: null } : null))
+      });
+    }
+    while (cells.length % 7) cells.push({ blank: true, real: false });
+
+    const isFuture = isEditable && !!s.sel && isFutureDay(y, m, s.sel);
+    const cr = calc(s.f, s.tried);
+    const pick1 = k => ev => { const v = ev.target.value; this.setState(st => ({ f: { ...st.f, [k]: v }, tried: false })); };
+    const row = (id, lab, hk, mk, e) => ({
+      labId: id + '-lab-' + key, hId: id + '-h-' + key, mId: id + '-m-' + key, label: lab, hAria: lab + '（時）', mAria: lab + '（分）',
+      hVal: String(s.f[hk]), mVal: String(s.f[mk]), onH: pick1(hk), onM: pick1(mk),
+      hInv: !!(e && e.h), mInv: !!(e && e.m), hasErr: !!e, err: e ? e.msg : '', errId: id + '-err-' + key, errRef: e ? id + '-err-' + key : undefined
+    });
+
+    const note = isEditable ? '下書きの勤務月です。カレンダーの日を選んで、開始・終了・休憩を入力してください。'
+      : s.justClosed && s.status === 'PendingApproval' ? '締めました。承認されるまで稼働実績は編集できません。'
+      : isGuest ? 'ゲストとして閲覧しています。'
+      : s.status === 'Approved' ? '承認済の勤務月です。'
+      : canReview ? '技術者が締めた勤務月です。'
+      : v.role === 'Approver' && v.self ? 'ご自身の勤務月のため、承認・差戻しはできません。'
+      : s.status === 'PendingApproval' ? '締め済のため編集できません。' : '下書きの勤務月です。';
+
+    const p = t => React.createElement('p', { className: 'text-sm' }, t);
+    const defs = {
+      close: { title: y + '年' + m + '月の勤務月を締めますか？', description: React.createElement('div', { className: 'flex flex-col gap-2 pt-2 text-sm' },
+        React.createElement('p', { className: 'm-0' }, '締めると稼働実績は編集できなくなり、ご自身で取り消すことはできません。'),
+        React.createElement('p', { className: 'm-0' }, '下書きに戻す方法は、承認者による差戻しだけです。')),
+        confirmLabel: '締める', variant: 'primary', onConfirm: () => this.setState({ status: 'PendingApproval', sel: null, dlg: null, justClosed: true }) },
+      approve: { title: 'この勤務月を承認しますか？', description: p('承認すると、この勤務月の稼働実績が確定します。'), confirmLabel: '承認', variant: 'primary', onConfirm: () => this.setState({ status: 'Approved', dlg: null }) },
+      reject: { title: 'この勤務月を差し戻しますか？', description: p('差し戻すと、技術者が稼働実績を修正できる下書きの状態に戻ります。'), confirmLabel: '差戻し', variant: 'danger', onConfirm: () => this.setState({ status: 'Draft', dlg: null }) }
+    };
+    const dd = s.dlg && defs[s.dlg];
+    const dlg = dd ? { open: true, ...dd } : { open: false, title: '', description: '', confirmLabel: '', variant: 'primary', onConfirm: () => {} };
+
+    const loginLink = isGuest ? React.createElement('a', { href: 'Login.dc.html', className: 'text-sm font-medium underline' }, 'ログイン') : null;
+    const firstPast = (() => { for (let d = 1; d <= n; d++) if (!off(y, m, d) && !isFutureDay(y, m, d)) return d; return 1; })();
+    const emptyAction = DS ? React.createElement(DS.Button, { variant: 'primary', onClick: () => this.pick(firstPast) }, '稼働実績を入力する') : null;
+
+    return {
+      ...this.etShell(isGuest ? null : v.role, role => this.setState({ role, sel: null }), isGuest ? 'Guest' : v.role, isGuest ? 'guest' : v.role === 'Approver' ? 'approvals' : this.nav, loginLink),
+      crumb: isGuest ? { label: 'サンプル勤務月', href: 'Guest%20Demo%20List.dc.html' }
+        : v.role === 'Approver' ? { label: '承認待ち', href: 'Pending%20Approvals%20(Approver).dc.html' }
+        : { label: '自分の勤務月', href: 'My%20Months%20(Engineer).dc.html' },
+      crumbHere: y + '年' + m + '月', isGuest, status: s.status, isPending: s.status === 'PendingApproval', isApproved: s.status === 'Approved', isDraft, showDiff: !isDraft,
+      title: this.contract + ' × ' + y + '年' + m + '月',
+      total: fmt(total), excess: fmt(Math.max(0, total - 180)), shortage: fmt(Math.max(0, 140 - total)),
+      note, cells, isEditable, isReadOnly: !isEditable, showSide: isEditable || canReview,
+      showEmpty: isEditable && entries === 0 && !s.sel, emptyAction,
+      hasSel: isEditable && !!s.sel, showHint: isEditable && !s.sel && entries > 0,
+      selLabel: s.sel ? label(s.sel) : '', isFuture, canInput: isEditable && !!s.sel && !isFuture,
+      dateLabelId: 'date-' + key, futureErrId: isFuture ? 'future-err-' + key : undefined,
+      selHasEntry: !!s.sel && s.mins[s.sel] !== undefined,
+      hourOptions: HOUR_OPTIONS, minOptions: MIN_OPTIONS,
+      workRows: [row('ws', '開始', 'sh', 'sm', cr.fe.s), row('we', '終了', 'eh', 'em', cr.fe.e)],
+      breakRows: [row('bs', '休憩開始', 'bsh', 'bsm', cr.fe.bs), row('be', '休憩終了', 'beh', 'bem', cr.fe.be)],
+      brk: !!s.f.brk, toggleBrk: e => { const on = e.target.checked; this.setState(st => ({ f: { ...st.f, brk: on }, tried: false })); },
+      workedText: cr.ok ? fmt(cr.worked.mins / 60) : '—',
+      workedNote: cr.ok ? cr.worked.note : '開始・終了・休憩から自動で計算します',
+      saveDay: () => {
+        const c = calc(s.f, true);
+        if (!c.ok) { this.setState({ tried: true }); return; }
+        this.setState({ mins: { ...s.mins, [s.sel]: c.worked.mins }, times: { ...s.times, [s.sel]: { ...s.f } }, tried: false });
+      },
+      deleteDay: () => { const x = { ...s.mins }, tt = { ...s.times }; delete x[s.sel]; delete tt[s.sel]; this.setState({ mins: x, times: tt, f: { ...NEW_F }, tried: false }); },
+      clearSel: () => this.setState({ sel: null, tried: false }),
+      canClose: isEditable && entries > 0, canReview,
+      askClose: () => this.setState({ dlg: 'close' }),
+      askApprove: () => this.setState({ dlg: 'approve' }),
+      askReject: () => this.setState({ dlg: 'reject' }),
+      dlg, dlgOpen: !!dd, closeDialog: () => this.setState({ dlg: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

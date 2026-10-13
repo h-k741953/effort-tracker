@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<link rel="stylesheet" href="et-theme.css">
+<script src="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.js"></script>
+<script src="et-shell.js"></script>
+<style>body{margin:0}a{color:inherit}</style>
+</helmet>
+<div data-et="{{ theme }}" data-shell="" class="min-h-screen bg-background text-foreground" style="display:flex;position:relative">
+  <dc-import name="SideNav" role="{{ navRole }}" current="{{ navCurrent }}" style="flex:none;align-self:stretch" hint-size="232px,100%"></dc-import>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+  <x-import component-from-global-scope="EffortTrackerDS.AppHeader" right="{{ headerRight }}" hint-size="100%,62px"></x-import>
+  <main class="mx-auto flex max-w-5xl flex-col gap-8 p-6">
+    <div class="flex flex-col gap-2">
+      <h1 class="m-0 text-2xl font-semibold tracking-tight">ヘルプ</h1>
+      <p class="m-0 text-sm text-muted-foreground">勤務月の流れと、稼働実績の入力の決まりです。</p>
+    </div>
+
+    <div class="rounded-md shadow-sm">
+      <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,220px">
+        <div class="flex flex-col gap-6 p-2">
+          <h2 class="m-0 text-base font-semibold">勤務月の流れ</h2>
+          <ol class="m-0 grid gap-4 p-0" style="list-style:none;grid-template-columns:repeat(3,minmax(0,1fr))">
+            <li class="flex flex-col gap-2">
+              <span><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="Draft" hint-size="64px,24px"></x-import></span>
+              <span class="text-sm">技術者が日ごとの稼働実績を入力します。入力が済んだら「締める」を押します。</span>
+            </li>
+            <li class="flex flex-col gap-2">
+              <span><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="PendingApproval" hint-size="64px,24px"></x-import></span>
+              <span class="text-sm">承認者が内容を確認し、「承認」または「差戻し」を選びます。この間、技術者は編集できません。</span>
+            </li>
+            <li class="flex flex-col gap-2">
+              <span><x-import component-from-global-scope="EffortTrackerDS.StatusBadge" state="Approved" hint-size="64px,24px"></x-import></span>
+              <span class="text-sm">稼働実績が確定します。以降は誰も編集できません。</span>
+            </li>
+          </ol>
+          <p class="m-0 text-sm text-muted-foreground">締めは技術者が自分で取り消せません。下書きに戻す方法は、承認者による差戻しだけです。ご自身の勤務月を自分で承認することはできません。</p>
+        </div>
+      </x-import>
+    </div>
+
+    <div class="rounded-md shadow-sm">
+      <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,260px">
+        <div class="flex flex-col gap-4 p-2">
+          <h2 class="m-0 text-base font-semibold">稼働実績の入力</h2>
+          <dl class="m-0 grid gap-x-6 gap-y-3 text-sm" style="grid-template-columns:160px minmax(0,1fr)">
+            <dt class="font-medium">入力する項目</dt><dd class="m-0">開始・終了の時刻と休憩です。稼働時間は自動で計算されます。</dd>
+            <dt class="font-medium">時刻の単位</dt><dd class="m-0">時は 0〜23、分は 15 分単位（00・15・30・45）で選びます。</dd>
+            <dt class="font-medium">休憩</dt><dd class="m-0">最初は 12:00〜13:00 が選ばれています。休憩がない日は「休憩あり」のチェックを外します。</dd>
+            <dt class="font-medium">入力できない日</dt><dd class="m-0">今日より先の日付には入力できません。</dd>
+            <dt class="font-medium">稼働をなくす</dt><dd class="m-0">入力済みの日を選び、「削除」を押すと未入力に戻ります。</dd>
+          </dl>
+        </div>
+      </x-import>
+    </div>
+
+    <div class="rounded-md shadow-sm">
+      <x-import component-from-global-scope="EffortTrackerDS.Card" hint-size="100%,200px">
+        <div class="flex flex-col gap-4 p-2">
+          <h2 class="m-0 text-base font-semibold">精算幅と超過／不足</h2>
+          <p class="m-0 text-sm">精算幅は契約ごとに決まった、月の稼働時間の目安の範囲です（例: 140〜180 時間）。総稼働時間が上限を超えた分が「超過」、下限に届かない分が「不足」です。</p>
+          <p class="m-0 text-sm text-muted-foreground">下書きの間は「締め時に確定します」と表示され、締めた時点の総稼働時間で確定します。</p>
+        </div>
+      </x-import>
+    </div>
+  </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(p) {
+    super(p);
+    let r = '';
+    try { r = new URLSearchParams(window.location.search).get('role') || ''; } catch (e) {}
+    this.state = { role: ['Engineer', 'Approver', 'Guest'].includes(r) ? r : 'Engineer' };
+  }
+  componentDidMount() { if (!window.ETShell || !window.EffortTrackerDS) setTimeout(() => this.forceUpdate(), 300); }
+  etShell(role, onRole, navRole, navCurrent, extra) {
+    const theme = this.state.theme || (window.ETShell ? window.ETShell.getTheme() : 'light');
+    const onTheme = t => { if (window.ETShell) window.ETShell.saveTheme(t); this.setState({ theme: t }); };
+    return { theme, navRole, navCurrent, headerRight: window.ETShell ? window.ETShell.headerRight({ theme, onTheme, role, onRole, extra }) : null };
+  }
+  renderVals() {
+    const role = this.state.role; const guest = role === 'Guest';
+    const login = guest ? React.createElement('a', { href: 'Login.dc.html', className: 'text-sm font-medium underline' }, 'ログイン') : null;
+    return this.etShell(guest ? null : role, r => this.setState({ role: r }), role, 'help', login);
+  }
+}
+</script>
+</body>
+</html>

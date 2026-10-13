@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.css">
+<link rel="stylesheet" href="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/styles.css">
+<link rel="stylesheet" href="et-theme.css">
+<script src="_ds/effort-tracker-design-system-e78b9dba-eda0-46e0-9bdd-581218064f0b/_ds_bundle.js"></script>
+</helmet>
+<aside data-sidebar="" aria-label="サイドバー">
+  <span data-navlabel="" style="padding:4px 12px 6px;font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--et-sidebar-muted)">メニュー</span>
+  <nav aria-label="メインメニュー" style="display:flex;flex-direction:column;gap:4px">
+    <sc-for list="{{ items }}" as="n" hint-placeholder-count="2">
+      <a data-nav="" href="{{ n.href }}" aria-current="{{ n.current }}">{{ n.label }}</a>
+    </sc-for>
+  </nav>
+  <nav aria-label="サポート" data-navbottom="" style="display:flex;flex-direction:column;gap:4px;margin-top:auto;padding-top:12px;border-top:1px solid var(--et-sidebar-active)">
+    <a data-nav="" href="{{ help.href }}" aria-current="{{ help.current }}">ヘルプ</a>
+  </nav>
+</aside>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:232,&quot;height&quot;:480},&quot;role&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Engineer&quot;,&quot;Approver&quot;,&quot;Guest&quot;],&quot;default&quot;:&quot;Engineer&quot;,&quot;tsType&quot;:&quot;\&quot;Engineer\&quot; | \&quot;Approver\&quot; | \&quot;Guest\&quot;&quot;},&quot;current&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;current&quot;,&quot;mine&quot;,&quot;contracts&quot;,&quot;trends&quot;,&quot;approvals&quot;,&quot;engineers&quot;,&quot;guest&quot;,&quot;help&quot;],&quot;default&quot;:&quot;mine&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const ITEMS = {
+  Engineer: [
+    { key: 'current', label: '今月の入力', href: 'WorkMonthScreen.dc.html?variant=draft-engineer&y=2026&m=10&c=' + encodeURIComponent('株式会社サンプル 基幹システム開発') + '&nav=current' },
+    { key: 'mine', label: '自分の勤務月', href: 'My%20Months%20(Engineer).dc.html' },
+    { key: 'contracts', label: '契約一覧', href: 'Contracts.dc.html' },
+    { key: 'trends', label: '稼働の推移', href: 'Trends.dc.html' }
+  ],
+  Approver: [
+    { key: 'approvals', label: '承認待ち', href: 'Pending%20Approvals%20(Approver).dc.html' },
+    { key: 'engineers', label: '承認担当者一覧', href: 'Engineers.dc.html' }
+  ],
+  Guest: [
+    { key: 'guest', label: 'サンプル勤務月', href: 'Guest%20Demo%20List.dc.html' }
+  ]
+};
+class Component extends DCLogic {
+  renderVals() {
+    const list = ITEMS[this.props.role] || ITEMS.Engineer;
+    const role = ITEMS[this.props.role] ? this.props.role : 'Engineer';
+    return {
+      items: list.map(i => ({ ...i, current: i.key === this.props.current ? 'page' : undefined })),
+      help: { href: 'Help.dc.html?role=' + role, current: this.props.current === 'help' ? 'page' : undefined }
+    };
+  }
+}
+</script>
+</body>
+</html>
