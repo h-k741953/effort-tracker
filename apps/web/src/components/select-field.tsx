@@ -7,16 +7,11 @@
 
 import type { ChangeEvent } from "react";
 
-export interface SelectFieldOption {
-  value: string;
-  label: string;
-}
-
 export interface SelectFieldProps {
   id: string;
   label: string;
   value: string;
-  options: readonly SelectFieldOption[];
+  options: readonly { value: string; label: string }[];
   onChange: (value: string) => void;
   placeholder?: string;
   hideLabel?: boolean;
