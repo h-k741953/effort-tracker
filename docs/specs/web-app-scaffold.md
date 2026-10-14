@@ -653,7 +653,7 @@ tester 工程の時点では **Vitest 自体が未導入**であり、テスト�
 | # | 要求 |
 |---|---|
 | 2-a | 判定は `layout.tsx` の**ソースを TypeScript の構文木で読んで**行う。既存の `apps/web/src/app/layout-theme.test.ts`（同じ `<html>` 要素の `data-theme` を構文木で読む）に倣ってよい。テストファイルの名前と置き場所は tester が決めてよい |
-| 2-b | 判定関数は**テキストを受け取って単体で呼び出せる形**にし、13-3 の 3-a〜3-u をすべて fixture として通す。**合格側（3-a〜3-d）と不合格側（3-e〜3-u）の両方**を持たせる。不合格側だけ・合格側だけでは、判定が恒真・恒偽に潰れても緑のまま残る |
+| 2-b | 判定関数は**テキストを受け取って単体で呼び出せる形**にし、13-3 の 3-a〜3-u と 3-x〜3-aa をすべて fixture として通す。**合格側（3-a〜3-d）と不合格側（3-e〜3-u・3-x〜3-aa）の両方**を持たせる。不合格側だけ・合格側だけでは、判定が恒真・恒偽に潰れても緑のまま残る |
 | 2-c | そのうえで、判定関数を**実ファイルの `layout.tsx`** に適用し、合格であること（3-v） |
 | 2-d | **構文として読めないテキストは合格にしない**（投げるか不合格を返す。3-w）。読めない入力を読み飛ばして「`lang` に違反が無い」と判定しない |
 
@@ -686,6 +686,10 @@ fixture は `<html>` 要素の形を示す。特記の無い行は、`RootLayout
 | 3-u | `<html lang="ja">` が `RootLayout` 以外の関数にだけあり、`RootLayout` は `<html>` を返さない | 不合格 | 1-a |
 | 3-v | 実ファイルの `apps/web/src/app/layout.tsx` | 合格 | 1-a〜1-f / 2-c |
 | 3-w | 構文として読めないテキスト | 合格にしない（投げるか不合格） | 2-d |
+| 3-x | `export function RootLayout` の本体に `<html lang="ja">`（named export で、default export でない） | 不合格 | 1-a |
+| 3-y | `function RootLayout` の本体に `<html lang="ja">`（export していない） | 不合格 | 1-a |
+| 3-z | `export default function Layout` の本体に `<html lang="ja">`（名前が `RootLayout` でない） | 不合格 | 1-a |
+| 3-aa | `<html lang={c ? "ja" : "ja"}>`（条件式。両方の枝が `ja`） | 不合格 | 1-d |
 
 #### 13-4. 値を変えるには人間の決定が要る
 
