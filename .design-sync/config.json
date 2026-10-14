@@ -8,7 +8,19 @@
   "cssEntry": "ds.css",
   "srcDir": "../src/components",
   "dtsPropsFor": {
-    "RoleSwitcher": "role: \"Engineer\" | \"Approver\"; onChange: (role: \"Engineer\" | \"Approver\") => void;"
+    "RoleSwitcher": "role: \"Engineer\" | \"Approver\"; onChange: (role: \"Engineer\" | \"Approver\") => void;",
+    "ThemeToggle": "theme: \"light\" | \"dark\"; onChange: (theme: \"light\" | \"dark\") => void;"
   },
-  "readmeHeader": ".design-sync/conventions.md"
+  "readmeHeader": ".design-sync/conventions.md",
+  "extraFonts": [
+    "fonts.css"
+  ],
+  "extraEntries": [
+    "../../../.design-sync/process-shim.mjs"
+  ],
+  "overrides": {
+    "ConfirmDialog": {
+      "cardMode": "column"
+    }
+  }
 }

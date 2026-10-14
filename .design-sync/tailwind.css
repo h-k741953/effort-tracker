@@ -3,7 +3,7 @@
  * apps/web/src/app/globals.css（AC-1 のトークンと @theme inline）をそのまま取り込み、
  * コンポーネントとプレビューが使うクラスに加えて、デザインエージェントが画面を組むための
  * トークンの色クラスと基本の配置クラスを明示的に生成する。
- * パレット色（AC-2-4 で禁止）と rounded-md 以外の角丸（AC-4-4）は含めない。
+ * パレット色（AC-2-4 で禁止）と、角丸トークン（AC-4-4・4-9）以外の角丸は含めない。
  */
 @import "../apps/web/src/app/globals.css";
 
@@ -13,7 +13,12 @@
 @source "./previews";
 
 /* トークンの色クラス（AC-1-3 のマッピング） */
-@source inline("{bg,text,border,ring}-{background,foreground,surface,surface-foreground,muted-foreground,border,primary,primary-foreground,danger,danger-foreground,focus-ring,state-draft,state-draft-foreground,state-pending-approval,state-pending-approval-foreground,state-approved,state-approved-foreground}");
+@source inline("{bg,text,border,ring}-{background,foreground,surface,surface-foreground,muted-foreground,border,primary,primary-foreground,danger,danger-foreground,focus-ring,state-draft,state-draft-foreground,state-pending-approval,state-pending-approval-foreground,state-approved,state-approved-foreground,et-input-border,et-danger-soft,et-hover,et-soft,et-primary-hover,et-grad-to,et-sat,et-sat-bg,et-sun,et-sun-bg,et-sun-chip,et-sidebar,et-sidebar-foreground,et-sidebar-muted,et-sidebar-active}");
+
+/* 角丸・影のトークン（AC-4-4・4-9）と数字の書体（AC-4-2） */
+@source inline("rounded-(--et-radius-{card,control,badge,chip})");
+@source inline("shadow-(--et-shadow{,-hover,-dialog})");
+@source inline("{font-sans,font-numeric}");
 
 /* 基本の配置クラス */
 @source inline("{block,inline-block,inline,flex,inline-flex,grid,hidden,contents}");
@@ -27,5 +32,5 @@
 @source inline("{grid-cols,col-span}-{1,2,3,4,6,12}");
 @source inline("text-{xs,sm,base,lg,xl,2xl,3xl,left,center,right}");
 @source inline("font-{normal,medium,semibold,bold}");
-@source inline("{border,border-t,border-b,border-l,border-r,border-0,border-2,rounded-md,divide-y,shadow-sm,shadow}");
+@source inline("{border,border-t,border-b,border-l,border-r,border-0,border-2,divide-y}");
 @source inline("{truncate,whitespace-nowrap,overflow-auto,overflow-hidden,sr-only,tabular-nums,leading-tight,leading-normal,tracking-tight,underline}");
