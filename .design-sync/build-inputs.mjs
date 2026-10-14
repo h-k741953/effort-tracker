@@ -37,3 +37,25 @@ writeFileSync(
   JSON.stringify({ name: appPkg.name, version: appPkg.version, private: true, types: "types/index.d.ts" }, null, 2) + "\n",
 );
 console.log(`wrote ${typesDir} (${componentFiles.length} components) and ${resolve(outDir, "package.json")}`);
+
+// フォント: アプリは next/font/local（apps/web/src/app/layout.tsx）で同梱フォントを読むため、
+// CSS に @font-face が無い。Claude Design のデザインでも同じ書体で描かれるよう、layout.tsx の
+// localFont 呼び出し（src の path・weight と declarations の font-family・unicode-range）から
+// @font-face を生成し、apps/web/.ds-css/fonts.css に書き出す。config.json の extraFonts がこれを指す。
+// layout.tsx から機械的に作るので、範囲やウェイトを変えても手で直す箇所は無い。
+const layoutSrc = readFileSync(resolve(root, "apps/web/src/app/layout.tsx"), "utf8");
+const fontFaces = [];
+for (const call of layoutSrc.split("localFont({").slice(1)) {
+  const body = call.slice(0, call.indexOf("});"));
+  const family = /prop:\s*"font-family",\s*value:\s*"([^"]+)"/.exec(body)?.[1];
+  const range = /prop:\s*"unicode-range",\s*value:\s*"([^"]+)"/.exec(body)?.[1];
+  const srcs = [...body.matchAll(/path:\s*"\.\/([^"]+)",\s*weight:\s*"(\d+)"/g)];
+  if (!family || !range || srcs.length === 0) throw new Error(`layout.tsx の localFont 呼び出しを読めない: ${body.slice(0, 120)}`);
+  for (const [, path, weight] of srcs) {
+    fontFaces.push(
+      `@font-face {\n  font-family: "${family}";\n  src: url("../src/app/${path}") format("woff2");\n  font-weight: ${weight};\n  font-style: normal;\n  font-display: swap;\n  unicode-range: ${range};\n}\n`,
+    );
+  }
+}
+writeFileSync(resolve(outDir, "fonts.css"), fontFaces.join(""));
+console.log(`wrote ${resolve(outDir, "fonts.css")} (${fontFaces.length} @font-face)`);

@@ -1,6 +1,6 @@
 import { FieldError } from "web";
 
-export const Default = () => <FieldError id="field-error-default">0〜24 の範囲で入力してください。</FieldError>;
+export const Default = () => <FieldError id="field-error-default">終了は開始より後の時刻にしてください。</FieldError>;
 
 export const LongMessage = () => (
   <FieldError id="field-error-long">
