@@ -36,16 +36,23 @@ export function RoleSwitcher({ role, onChange }: RoleSwitcherProps) {
   };
 
   return (
-    <div role="radiogroup" aria-label="ロール切替" className="flex items-center gap-3">
+    <div
+      role="radiogroup"
+      aria-label="ロール切替"
+      className="inline-flex items-center gap-1 rounded-(--et-radius-control) border border-border bg-et-hover p-1"
+    >
       {OPTIONS.map((option) => (
-        <label key={option.value} className="flex items-center gap-1 text-sm text-foreground">
+        <label
+          key={option.value}
+          className="inline-flex cursor-pointer items-center rounded-(--et-radius-control) px-3 py-1 text-sm text-muted-foreground has-checked:bg-surface has-checked:text-foreground has-checked:shadow-(--et-shadow) has-focus-visible:ring-2 has-focus-visible:ring-offset-2 has-focus-visible:ring-focus-ring has-focus-visible:ring-offset-background"
+        >
           <input
             type="radio"
             name={name}
             value={option.value}
             checked={role === option.value}
             onChange={handleChange}
-            className="focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className="sr-only focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-focus-ring focus-visible:ring-offset-background"
           />
           {option.label}
         </label>

@@ -1,23 +1,102 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --surface: #f8fafc;
-  --surface-foreground: #171717;
-  --muted-foreground: #52525b;
-  --border: #71717a;
-  --primary: #1d4ed8;
+  --background: #eef1f7;
+  --foreground: #0f172a;
+  --surface: #ffffff;
+  --surface-foreground: #0f172a;
+  --muted-foreground: #475569;
+  --border: #dfe4ee;
+  --primary: #4338ca;
   --primary-foreground: #ffffff;
-  --danger: #b91c1c;
+  --danger: #be123c;
   --danger-foreground: #ffffff;
-  --focus-ring: #1d4ed8;
-  --state-draft: #e4e4e7;
-  --state-draft-foreground: #27272a;
+  --focus-ring: #4338ca;
+  --state-draft: #e2e8f0;
+  --state-draft-foreground: #334155;
   --state-pending-approval: #fef3c7;
-  --state-pending-approval-foreground: #78350f;
-  --state-approved: #dcfce7;
-  --state-approved-foreground: #14532d;
+  --state-pending-approval-foreground: #92400e;
+  --state-approved: #d1fae5;
+  --state-approved-foreground: #065f46;
+  --et-input-border: #7c8799;
+  --et-danger-soft: #fff1f2;
+  --et-hover: #f1f4fb;
+  --et-soft: #eef2ff;
+  --et-primary-hover: #3730a3;
+  --et-grad-to: #0369a1;
+  --et-sat: #1d4ed8;
+  --et-sat-bg: #eff4ff;
+  --et-sun: #be123c;
+  --et-sun-bg: #fff1f2;
+  --et-sun-chip: #ffe4e8;
+  --et-sidebar: #0f172a;
+  --et-sidebar-foreground: #e2e8f0;
+  --et-sidebar-muted: #94a3b8;
+  --et-sidebar-active: #1e293b;
+  color-scheme: light;
+  --et-radius-card: 16px;
+  --et-radius-control: 10px;
+  --et-radius-badge: 8px;
+  --et-radius-chip: 6px;
+  --et-shadow: 0 1px 3px rgba(15,23,42,.06), 0 12px 32px -14px rgba(15,23,42,.22);
+  --et-shadow-hover: 0 2px 6px rgba(15,23,42,.08), 0 28px 48px -18px rgba(67,56,202,.40);
+  --et-shadow-dialog: 0 32px 80px -20px rgba(15,23,42,.45);
+  --et-overlay: rgba(15,23,42,.45);
+  --et-overlay-blur: 6px;
+  --et-dur: 220ms;
+  --et-dur-enter: 420ms;
+  --et-dur-theme: 240ms;
+  --et-stagger: 70ms;
+  --et-ease: cubic-bezier(.16,1,.3,1);
+  --et-ease-theme: ease;
+  --et-btn-lift: -1px;
+  --et-lift: -4px;
+  --et-nav-shift: 2px;
+  --et-press: 0.97;
+  --et-rise: 14px;
+  --et-dialog-rise: 10px;
+  --et-dialog-scale: 0.95;
+  --et-pop-scale: 0.7;
+}
+
+:root[data-theme="dark"] {
+  --background: #0b1020;
+  --foreground: #e6e9f2;
+  --surface: #131a2e;
+  --surface-foreground: #e6e9f2;
+  --muted-foreground: #9aa4bd;
+  --border: #243049;
+  --primary: #818cf8;
+  --primary-foreground: #0b1020;
+  --danger: #fb7185;
+  --danger-foreground: #0b1020;
+  --focus-ring: #a5b4fc;
+  --state-draft: #2a3350;
+  --state-draft-foreground: #dbe1ef;
+  --state-pending-approval: #3d2a0a;
+  --state-pending-approval-foreground: #fcd34d;
+  --state-approved: #0c3324;
+  --state-approved-foreground: #6ee7b7;
+  --et-input-border: #6b7799;
+  --et-danger-soft: #2a1424;
+  --et-hover: #1a2340;
+  --et-soft: #1b2442;
+  --et-primary-hover: #a5b4fc;
+  --et-grad-to: #38bdf8;
+  --et-sat: #93c5fd;
+  --et-sat-bg: #141e38;
+  --et-sun: #fda4af;
+  --et-sun-bg: #241526;
+  --et-sun-chip: #3a1a2c;
+  --et-sidebar: #070b16;
+  --et-sidebar-foreground: #e6e9f2;
+  --et-sidebar-muted: #9aa4bd;
+  --et-sidebar-active: #131a2e;
+  color-scheme: dark;
+  --et-shadow: 0 1px 3px rgba(0,0,0,.4), 0 16px 40px -16px rgba(0,0,0,.75);
+  --et-shadow-hover: 0 2px 6px rgba(0,0,0,.5), 0 28px 56px -18px rgba(129,140,248,.40);
+  --et-shadow-dialog: 0 32px 80px -16px rgba(0,0,0,.85);
+  --et-overlay: rgba(2,6,18,.7);
 }
 
 @theme inline {
@@ -38,31 +117,49 @@
   --color-state-pending-approval-foreground: var(--state-pending-approval-foreground);
   --color-state-approved: var(--state-approved);
   --color-state-approved-foreground: var(--state-approved-foreground);
+  --color-et-input-border: var(--et-input-border);
+  --color-et-danger-soft: var(--et-danger-soft);
+  --color-et-hover: var(--et-hover);
+  --color-et-soft: var(--et-soft);
+  --color-et-primary-hover: var(--et-primary-hover);
+  --color-et-grad-to: var(--et-grad-to);
+  --color-et-sat: var(--et-sat);
+  --color-et-sat-bg: var(--et-sat-bg);
+  --color-et-sun: var(--et-sun);
+  --color-et-sun-bg: var(--et-sun-bg);
+  --color-et-sun-chip: var(--et-sun-chip);
+  --color-et-sidebar: var(--et-sidebar);
+  --color-et-sidebar-foreground: var(--et-sidebar-foreground);
+  --color-et-sidebar-muted: var(--et-sidebar-muted);
+  --color-et-sidebar-active: var(--et-sidebar-active);
+  --font-sans: "Zen Kaku Gothic New", system-ui, sans-serif;
+  --font-numeric: "Space Grotesk", "Zen Kaku Gothic New", system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --surface: #171717;
-    --surface-foreground: #ededed;
-    --muted-foreground: #a1a1aa;
-    --border: #a1a1aa;
-    --primary: #93c5fd;
-    --primary-foreground: #0a0a0a;
-    --danger: #fca5a5;
-    --danger-foreground: #0a0a0a;
-    --focus-ring: #93c5fd;
-    --state-draft: #3f3f46;
-    --state-draft-foreground: #f4f4f5;
-    --state-pending-approval: #78350f;
-    --state-pending-approval-foreground: #fef3c7;
-    --state-approved: #14532d;
-    --state-approved-foreground: #dcfce7;
+@keyframes et-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--et-dialog-rise)) scale(var(--et-dialog-scale));
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  transition:
+    background-color var(--et-dur-theme) var(--et-ease-theme),
+    color var(--et-dur-theme) var(--et-ease-theme);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

@@ -23,7 +23,7 @@ const TOKEN_CLASSES: Record<StatusBadgeState, string> = {
 
 export function StatusBadge({ state }: StatusBadgeProps) {
   return (
-    <span className={`inline-flex items-center rounded-md px-2 py-1 text-sm ${TOKEN_CLASSES[state]}`}>
+    <span className={`inline-flex items-center rounded-(--et-radius-badge) px-2 py-1 text-sm ${TOKEN_CLASSES[state]}`}>
       {LABELS[state]}
     </span>
   );

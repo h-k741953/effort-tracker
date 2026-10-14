@@ -18,9 +18,12 @@ export interface ErrorBannerProps {
 
 export function ErrorBanner({ children, onRetry }: ErrorBannerProps) {
   return (
-    <div role="alert" className="rounded-md border border-danger bg-background p-3 text-danger">
-      <p className="font-semibold">エラー</p>
-      <p>{children}</p>
+    <div
+      role="alert"
+      className="rounded-(--et-radius-control) border border-danger bg-et-danger-soft p-3 text-foreground"
+    >
+      <p className="font-semibold text-danger">エラー</p>
+      <p className="text-foreground">{children}</p>
       {onRetry !== undefined ? (
         <Button variant="danger" onClick={onRetry}>
           再試行
