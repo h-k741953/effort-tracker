@@ -92,6 +92,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 `;
 
+// 宣言の形（default / export / 名前）だけを変える fixture 用。実ファイルに揃えて async とし、
+// 戻り値の形は合格側の fixture（3-a）と同じにする（3-x〜3-z）。
+const declare = (head: string, html: string): string => `
+${head}({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies();
+  return (
+    ${html}
+  );
+}
+`;
+
 describe("layout.tsx の <html lang> - AC-13", () => {
   it("3-v: 実ファイルの layout.tsx の <html> は lang=\"ja\" である", () => {
     const text = readFileSync(path.join(process.cwd(), "src", "app", "layout.tsx"), "utf8");
@@ -155,6 +166,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return <body>{children}</body>;
 }
 `,
+      false,
+    ],
+    [
+      "3-x: named export の RootLayout（default export でない）",
+      declare("export async function RootLayout", `<html lang="ja"><body>{children}</body></html>`),
+      false,
+    ],
+    [
+      "3-y: export していない RootLayout",
+      declare("async function RootLayout", `<html lang="ja"><body>{children}</body></html>`),
+      false,
+    ],
+    [
+      "3-z: 名前が RootLayout でない default export",
+      declare("export default async function Layout", `<html lang="ja"><body>{children}</body></html>`),
+      false,
+    ],
+    [
+      "3-aa: lang={c ? \"ja\" : \"ja\"}（条件式。両方の枝が ja）",
+      wrap(`<html lang={c ? "ja" : "ja"}><body>{children}</body></html>`),
       false,
     ],
   ])("fixture %s", (_name, text, expected) => {
