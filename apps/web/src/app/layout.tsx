@@ -1731,7 +1731,7 @@ export default async function RootLayout({
   const cookieStore = await cookies();
   return (
     <html
-      lang="en"
+      lang="ja"
       data-theme={resolveTheme(cookieStore.get(THEME_COOKIE_NAME)?.value)}
       className="h-full antialiased"
     >
