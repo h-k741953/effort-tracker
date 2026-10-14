@@ -10,10 +10,12 @@ import { ConfirmDialog } from "./confirm-dialog";
 import { EmptyState } from "./empty-state";
 import { ErrorBanner } from "./error-banner";
 import { FieldError } from "./field-error";
-import { NumberField } from "./number-field";
 import { Pagination } from "./pagination";
 import { RoleSwitcher } from "./role-switcher";
+import { SelectField } from "./select-field";
+import { SideNav } from "./side-nav";
 import { StatusBadge } from "./status-badge";
+import { ThemeToggle } from "./theme-toggle";
 import {
   CSS_LENGTH_UNITS,
   RING_WIDTH_UNIT_CANDIDATES,
@@ -32,7 +34,7 @@ import {
 // AC-10-3-a の母集団: 「対話要素を出力するもの」を手書きで列挙し、その列挙
 // だけを描画すると、列挙に無いコンポーネントが対話要素を出し始めても誰も
 // 読まない（10-3-h が 10-3 について是正したのと同型の穴）。したがって
-// **11本すべてを描画**し、出力に現れた対話要素をすべて読む。あわせて、
+// **13本すべてを描画**し、出力に現れた対話要素をすべて読む。あわせて、
 // 母集団が components/ 直下の実装 *.tsx の集合と一致することと、対話要素を
 // 出力するコンポーネントの集合が期待と一致することを読む。
 
@@ -99,6 +101,14 @@ function givesFocusVisibleRingWidth(className: string): boolean {
   return FOCUS_VISIBLE_RING_WIDTH.test(className);
 }
 
+// AC-10-3-l: AC-4-5-a のリングの値 —— 幅 2px（focus-visible:ring-2）とオフセット 2px
+// （focus-visible:ring-offset-2）の2語を、いずれも1語の全体として読む（別のバリアントを
+// 前置した語は数えない。10-3-a (i) と同じ理由）。
+function givesFocusVisibleRingValue(className: string): boolean {
+  const classes = className.split(/\s+/).filter(Boolean);
+  return classes.includes("focus-visible:ring-2") && classes.includes("focus-visible:ring-offset-2");
+}
+
 // AC-10-3-j: AC-4-6（`outline-none` を書くなら代替のリングを伴う）の判定を
 // **要素単位**で読む。実装ファイルのテキストを1ファイル単位で読む形（10-3 が
 // 持つ検査）では、`outline-none` を或る要素へ、リング指定を別の要素へ置いた
@@ -117,8 +127,9 @@ function outlineNoneViolations(container: HTMLElement): HTMLElement[] {
   );
 }
 
-// AC-5-1 の共通コンポーネント11本。対話要素が出る条件（ConfirmDialog は open を
-// 真に、ErrorBanner は onRetry を与える）で描画する。props は AC-6 の表の範囲。
+// AC-5-1 の共通コンポーネント13本。対話要素が出る条件（ConfirmDialog は open を
+// 真に、ErrorBanner は onRetry を与え、SideNav は項目を1つ以上与える）で描画する。
+// props は AC-6 の表の範囲。
 const ALL_CASES: Array<{
   name: string;
   file: string;
@@ -138,10 +149,21 @@ const ALL_CASES: Array<{
   { name: "Button", file: "button.tsx", render: () => render(<Button>送信</Button>) },
   { name: "Card", file: "card.tsx", render: () => render(<Card title="工数">本文</Card>) },
   {
-    name: "NumberField",
-    file: "number-field.tsx",
+    name: "SelectField",
+    file: "select-field.tsx",
     render: () =>
-      render(<NumberField id="hours" label="時間" value={5} onChange={vi.fn()} />),
+      render(
+        <SelectField
+          id="start-hour"
+          label="開始（時）"
+          value="9"
+          options={[
+            { value: "9", label: "9" },
+            { value: "10", label: "10" },
+          ]}
+          onChange={vi.fn()}
+        />,
+      ),
   },
   {
     name: "FieldError",
@@ -178,6 +200,25 @@ const ALL_CASES: Array<{
     file: "pagination.tsx",
     render: () => render(<Pagination page={2} pageCount={5} onPageChange={vi.fn()} />),
   },
+  {
+    name: "SideNav",
+    file: "side-nav.tsx",
+    render: () =>
+      render(
+        <SideNav
+          items={[
+            { label: "勤務月", href: "/work-months", current: true },
+            { label: "契約", href: "/contracts", current: false },
+          ]}
+          footerItems={[{ label: "ヘルプ", href: "/help", current: false }]}
+        />,
+      ),
+  },
+  {
+    name: "ThemeToggle",
+    file: "theme-toggle.tsx",
+    render: () => render(<ThemeToggle theme="light" onChange={vi.fn()} />),
+  },
 ];
 
 // 上記の props で描画したときに対話要素（button / input / リンク）が現れる
@@ -187,9 +228,11 @@ const INTERACTIVE_COMPONENTS = [
   "Button",
   "ConfirmDialog",
   "ErrorBanner",
-  "NumberField",
   "Pagination",
   "RoleSwitcher",
+  "SelectField",
+  "SideNav",
+  "ThemeToggle",
 ];
 
 describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
@@ -279,6 +322,40 @@ describe("フォーカスリング - AC-4-5（AC-10-3-a）", () => {
       "tabbable",
       "text-input",
     ]);
+  });
+
+  // AC-4-5-a（検証手段は AC-10-3-l）: リングの値を字面でピン留めする。10-3-a と同じ母集団
+  // （13本すべてを対話要素が出る条件で描画し、出力に現れた対話要素のすべて。列挙は上の
+  // ALL_CASES を共有し、書き写さない）の各要素の class に、focus-visible:ring-2 と
+  // focus-visible:ring-offset-2 の2語が、いずれも1語の全体として現れることを読む。同じ見えを
+  // 与える別の書き方（ring-[2px] 等）も落ちる —— 4-5-a が書き方まで定めたためである。
+  it.each(ALL_CASES)(
+    "$name: 出力される対話要素のすべてが focus-visible:ring-2 と focus-visible:ring-offset-2 を持つ（4-5-a）",
+    ({ render: renderCase }) => {
+      const { container } = renderCase();
+      for (const element of Array.from(container.querySelectorAll<HTMLElement>(INTERACTIVE_SELECTOR))) {
+        expect(
+          givesFocusVisibleRingValue(element.className),
+          `対話要素 <${element.tagName.toLowerCase()}> が focus-visible:ring-2 と focus-visible:ring-offset-2 の両方を持たない（AC-4-5-a）。class: ${element.className}`,
+        ).toBe(true);
+      }
+    },
+  );
+
+  // 10-3-l の判定の両側（10-3-g と同じ形）。
+  it.each([
+    ["2語を持つ形", "p-2 focus-visible:ring-2 focus-visible:ring-offset-2 ring-focus-ring", true],
+    ["順序が逆の形", "focus-visible:ring-offset-2 focus-visible:ring-2", true],
+    ["幅だけの形", "focus-visible:ring-2 ring-focus-ring", false],
+    ["オフセットだけの形", "focus-visible:ring-offset-2 ring-focus-ring", false],
+    ["幅が ring-1 の形", "focus-visible:ring-1 focus-visible:ring-offset-2", false],
+    ["オフセットが offset-1 の形", "focus-visible:ring-2 focus-visible:ring-offset-1", false],
+    ["前置のバリアントが付いた形", "group-focus-visible:ring-2 group-focus-visible:ring-offset-2", false],
+    ["一方だけ前置のバリアントが付いた形", "focus-visible:ring-2 dark:focus-visible:ring-offset-2", false],
+    ["同じ見えの別の書き方", "focus-visible:ring-[2px] focus-visible:ring-offset-[2px]", false],
+    ["語が後ろへ続く形", "focus-visible:ring-2x focus-visible:ring-offset-2x", false],
+  ])("4-5-a のリングの値の判定: %s", (_name, className, expected) => {
+    expect(givesFocusVisibleRingValue(className as string), `対象: ${className}`).toBe(expected);
   });
 
   // AC-10-3-j: outline-none を持つ要素は、同じ要素でリングを与えること。

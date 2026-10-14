@@ -18,14 +18,16 @@ import type { ConfirmDialog } from "./confirm-dialog";
 import type { EmptyState } from "./empty-state";
 import type { ErrorBanner } from "./error-banner";
 import type { FieldError } from "./field-error";
-import type { NumberField, NumberFieldProps } from "./number-field";
 import type { Pagination } from "./pagination";
 import type { RoleSwitcher } from "./role-switcher";
+import type { SelectField } from "./select-field";
+import type { SideNav } from "./side-nav";
 import type { StatusBadge, StatusBadgeProps } from "./status-badge";
+import type { ThemeToggle } from "./theme-toggle";
 
 // docs/specs/design-system.md AC-6 / AC-10-5（限界は AC-11-7）。
 //
-// AC-5-1 の台帳の11本それぞれについて、公開する props 型の独自のキーの集合（ネイティブ属性の
+// AC-5-1 の台帳の13本それぞれについて、公開する props 型の独自のキーの集合（ネイティブ属性の
 // 型を継承している場合は、継承した分を除いたもの）が AC-6 の表の「公開 props」欄に挙がる
 // 名前の集合と一致することを、tsc（`npx tsc --noEmit`）が型レベルで読む。キーが足りなくても
 // 余っても型エラーになる。vitest は型を読まないため、この検査の本体は型検査の側にある。
@@ -57,7 +59,16 @@ interface ButtonOmitStyle extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
   variant?: Variant;
 }
 type ButtonWithoutRef = ComponentPropsWithoutRef<"button"> & { variant?: Variant };
-type NumberFieldForwardRef = ComponentProps<ForwardRefExoticComponent<NumberFieldProps & RefAttributes<HTMLInputElement>>>;
+// forwardRef で包んだ形（`ref` は継承の有無によらず除く）。台帳から NumberField が外れたため、
+// 判別用の型は表の props に近い形をテスト側に持つ（SelectField の props の写しではなく、述語の確認用）。
+interface SampleFieldProps {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  invalid?: boolean;
+}
+type SampleFieldForwardRef = ComponentProps<ForwardRefExoticComponent<SampleFieldProps & RefAttributes<HTMLSelectElement>>>;
 interface CardPick extends Pick<HTMLAttributes<HTMLDivElement>, "className"> {
   children: ReactNode;
   title?: ReactNode;
@@ -74,7 +85,7 @@ const _predTrue = [
   true satisfies Matches<ButtonExtends, "variant" | "children", "button">,
   true satisfies Matches<ButtonOmitStyle, "variant" | "children", "button">,
   true satisfies Matches<ButtonWithoutRef, "variant" | "children", "button">,
-  true satisfies Matches<NumberFieldForwardRef, "id" | "label" | "value" | "onChange" | "min" | "max" | "step" | "errorId" | "invalid", null>,
+  true satisfies Matches<SampleFieldForwardRef, "id" | "label" | "value" | "onChange" | "invalid", null>,
   true satisfies Matches<CardPick, "children" | "title", "div">,
   true satisfies Matches<FieldErrorOmit, "id" | "children", "p">,
   true satisfies Matches<StatusBadgeProps & RefAttributes<HTMLSpanElement>, "state", null>,
@@ -108,8 +119,8 @@ void _predFalse;
 // 比べる型はコンポーネントの引数型 `ComponentProps<typeof X>`（エクスポートした XxxProps ではない。
 // 引数へインラインで足した形をすり抜けないため）。
 // 継承先の要素は AC-6 の表に合わせる。標準属性の透過を挙げるのは 6-2 の Button（`button`）だけで、
-// 他の10本は null（継承しない）。
-// キーはファイル名であり、台帳の11本（= components/ 直下の実装 *.tsx）と過不足なく対応することを
+// 他の12本は null（継承しない）。
+// キーはファイル名であり、台帳の13本（= components/ 直下の実装 *.tsx）と過不足なく対応することを
 // 下の it が読む。1本を落とすと、その props の検査が消えるため。
 const CHECKS = {
   "app-header.tsx": true satisfies Matches<ComponentProps<typeof AppHeader>, "right", null>,
@@ -123,14 +134,19 @@ const CHECKS = {
   "empty-state.tsx": true satisfies Matches<ComponentProps<typeof EmptyState>, "title" | "description" | "action", null>,
   "error-banner.tsx": true satisfies Matches<ComponentProps<typeof ErrorBanner>, "children" | "onRetry", null>,
   "field-error.tsx": true satisfies Matches<ComponentProps<typeof FieldError>, "id" | "children", null>,
-  "number-field.tsx": true satisfies Matches<
-    ComponentProps<typeof NumberField>,
-    "id" | "label" | "value" | "onChange" | "min" | "max" | "step" | "errorId" | "invalid",
-    null
-  >,
   "pagination.tsx": true satisfies Matches<ComponentProps<typeof Pagination>, "page" | "pageCount" | "onPageChange", null>,
   "role-switcher.tsx": true satisfies Matches<ComponentProps<typeof RoleSwitcher>, "role" | "onChange", null>,
+  // 6-12: SelectField は標準属性を継承しない（10-5 が「継承しない」と明示する）。
+  "select-field.tsx": true satisfies Matches<
+    ComponentProps<typeof SelectField>,
+    "id" | "label" | "value" | "options" | "onChange" | "placeholder" | "hideLabel" | "errorId" | "invalid",
+    null
+  >,
+  // 6-13: SideNav も継承しない。
+  "side-nav.tsx": true satisfies Matches<ComponentProps<typeof SideNav>, "items" | "footerItems", null>,
   "status-badge.tsx": true satisfies Matches<ComponentProps<typeof StatusBadge>, "state", null>,
+  // 6-14: ThemeToggle も継承しない。
+  "theme-toggle.tsx": true satisfies Matches<ComponentProps<typeof ThemeToggle>, "theme" | "onChange", null>,
 };
 
 const componentsDir = fileURLToPath(new URL(".", import.meta.url));

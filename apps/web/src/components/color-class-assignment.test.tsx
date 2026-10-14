@@ -2,15 +2,17 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, within } from "@testing-library/react";
 import { Button, type ButtonVariant } from "./button";
 import { StatusBadge, type StatusBadgeState } from "./status-badge";
 import { Card } from "./card";
 import { FieldError } from "./field-error";
 import { ErrorBanner } from "./error-banner";
+import { SelectField } from "./select-field";
+import { SideNav } from "./side-nav";
 
 // docs/specs/design-system.md AC-6 の表が名指しする色トークンの割当
-// （6-1 / 6-2 / 6-4 / 6-6。検証手段は AC-10-3-b）。
+// （6-1 / 6-2 / 6-4 / 6-6 / 6-7 / 6-12 / 6-13。検証手段は AC-10-3-b）。
 //
 // 各コンポーネントを描画し、表が名指しした対象要素の class に、該当
 // トークン --X を指すユーティリティ（bg-X / text-X / border-X）が現れる
@@ -29,9 +31,12 @@ function classesOf(element: Element): string[] {
 describe("色トークンの割当 - AC-6（AC-10-3-b）", () => {
   describe("Button（6-2）", () => {
     const VARIANT_TOKEN_CLASSES: Record<ButtonVariant, string[]> = {
-      primary: ["bg-primary", "text-primary-foreground"],
+      // 6-2: primary は地色 --primary に、--primary（始点）から --et-grad-to（終点）への
+      // グラデーションを重ねる（from-primary / to-et-grad-to）。
+      primary: ["bg-primary", "text-primary-foreground", "from-primary", "to-et-grad-to"],
       danger: ["bg-danger", "text-danger-foreground"],
-      secondary: ["bg-surface", "text-surface-foreground", "border-border"],
+      // 6-2: secondary のホバーの地色は --et-hover。
+      secondary: ["bg-surface", "text-surface-foreground", "border-border", "hover:bg-et-hover"],
     };
     const ALL_TOKEN_CLASSES = Array.from(
       new Set(Object.values(VARIANT_TOKEN_CLASSES).flat()),
@@ -144,13 +149,93 @@ describe("色トークンの割当 - AC-6（AC-10-3-b）", () => {
     expect(classes).toContain("text-danger");
   });
 
-  it("ErrorBanner（6-7）は role='alert' の要素に --danger を指すユーティリティが少なくとも1つ現れる（10-3-b・AC-11-21）", () => {
-    // AC-6 の表の 6-7 は「--danger を用い」としか書かず、どの CSS
-    // プロパティ（地色・文字色・境界線）へ当てるかを名指ししていない
-    // ため、いずれか1つが現れることだけを読む（プロパティを名指ししない）。
-    render(<ErrorBanner>失敗しました</ErrorBanner>);
-    const classes = classesOf(screen.getByRole("alert"));
-    const dangerClasses = ["bg-danger", "text-danger", "border-danger"];
-    expect(classes.some((c) => dangerClasses.includes(c))).toBe(true);
+  // 10-3-b: ErrorBanner（6-7）は、role="alert" で問い合わせられる要素の class に bg-et-danger-soft と
+  // border-danger が現れ、テキストが `エラー` と完全に一致する要素（6-7-i）の class に text-danger が
+  // 現れる。2026-10-10 に承認したテーマ B の改定（3-6-b・3-6-c）。
+  describe("ErrorBanner（6-7）", () => {
+    it("role='alert' の要素の地色は --et-danger-soft、境界線は --danger", () => {
+      render(<ErrorBanner>失敗しました</ErrorBanner>);
+      const classes = classesOf(screen.getByRole("alert"));
+      expect(classes).toContain("bg-et-danger-soft");
+      expect(classes).toContain("border-danger");
+    });
+
+    it("種別表示（テキストが `エラー` と完全に一致する要素）の文字色は --danger", () => {
+      render(<ErrorBanner>失敗しました</ErrorBanner>);
+      const kind = within(screen.getByRole("alert")).getByText("エラー");
+      expect(classesOf(kind)).toContain("text-danger");
+    });
+
+    // 6-7: 理由文の文字色は --foreground（3-6-c の組）。理由文を含む要素から role="alert" の
+    // 要素までのどこかに text-foreground が当たっていること（どの要素に当てるかは固定しない）。
+    it("理由文の文字色は --foreground（理由文の要素から alert の要素までのいずれかに当たる）", () => {
+      render(<ErrorBanner>失敗しました</ErrorBanner>);
+      const alert = screen.getByRole("alert");
+      const chain: Element[] = [];
+      for (let el: Element | null = screen.getByText("失敗しました"); el !== null; el = el.parentElement) {
+        chain.push(el);
+        if (el === alert) break;
+      }
+      expect(chain[chain.length - 1]).toBe(alert);
+      expect(chain.some((el) => classesOf(el).includes("text-foreground"))).toBe(true);
+    });
+  });
+
+  // 10-3-b: SelectField（6-12）は、選択の要素の class に、invalid が偽のとき border-et-input-border が
+  // 現れ border-danger が現れないこと、真のとき border-danger が現れることを読む。
+  describe("SelectField（6-12）", () => {
+    const options = [{ value: "9", label: "9" }];
+
+    it("invalid が偽のとき --et-input-border を指し、--danger を指さない", () => {
+      render(<SelectField id="h" label="時" value="9" options={options} onChange={() => {}} />);
+      const classes = classesOf(screen.getByRole("combobox"));
+      expect(classes).toContain("border-et-input-border");
+      expect(classes).not.toContain("border-danger");
+    });
+
+    it("invalid が真のとき --danger を指す", () => {
+      render(<SelectField id="h" label="時" value="9" options={options} onChange={() => {}} invalid />);
+      expect(classesOf(screen.getByRole("combobox"))).toContain("border-danger");
+    });
+  });
+
+  // 10-3-b: SideNav（6-13）は、navigation のロールの要素か部品の出力の最も外側の要素のいずれかの
+  // class に bg-et-sidebar が現れ、current が真の項目の class に bg-et-sidebar-active が現れ、
+  // 偽の項目には（hover: を伴わない形で）現れないことを読む。
+  describe("SideNav（6-13）", () => {
+    function renderNav() {
+      return render(
+        <SideNav
+          items={[
+            { label: "勤務月", href: "/work-months", current: true },
+            { label: "契約", href: "/contracts", current: false },
+          ]}
+          footerItems={[{ label: "ヘルプ", href: "/help", current: false }]}
+        />,
+      );
+    }
+    /** 項目の要素（リンク、またはそれを包む li）の class 群。 */
+    function itemClasses(name: string): string[][] {
+      const link = screen.getByRole("link", { name });
+      const item = link.closest("li");
+      return [classesOf(link), ...(item !== null ? [classesOf(item)] : [])];
+    }
+
+    it("navigation の要素か出力の最も外側の要素の地色は --et-sidebar", () => {
+      const { container } = renderNav();
+      const nav = screen.getByRole("navigation");
+      const outermost = container.firstElementChild as Element;
+      expect([...classesOf(nav), ...classesOf(outermost)]).toContain("bg-et-sidebar");
+    });
+
+    it("current が真の項目の地色は --et-sidebar-active", () => {
+      renderNav();
+      expect(itemClasses("勤務月").some((classes) => classes.includes("bg-et-sidebar-active"))).toBe(true);
+    });
+
+    it.each(["契約", "ヘルプ"])("current が偽の項目（%s）には bg-et-sidebar-active が現れない（hover: を伴う形は可）", (name) => {
+      renderNav();
+      expect(itemClasses(name).some((classes) => classes.includes("bg-et-sidebar-active"))).toBe(false);
+    });
   });
 });

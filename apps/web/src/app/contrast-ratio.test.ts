@@ -14,16 +14,6 @@ const appDir = fileURLToPath(new URL(".", import.meta.url));
 const cssPath = path.join(appDir, "globals.css");
 const css = readFileSync(cssPath, "utf8");
 
-function extractBlockBody(source: string, headerRegex: RegExp): string | undefined {
-  const match = headerRegex.exec(source);
-  if (!match) return undefined;
-  const openIndex = source.indexOf("{", match.index + match[0].length - 1);
-  if (openIndex === -1) return undefined;
-  const closeIndex = source.indexOf("}", openIndex);
-  if (closeIndex === -1) return undefined;
-  return source.slice(openIndex + 1, closeIndex);
-}
-
 function parseCustomProps(block: string | undefined): Map<string, string> {
   const map = new Map<string, string>();
   if (!block) return map;
@@ -35,16 +25,26 @@ function parseCustomProps(block: string | undefined): Map<string, string> {
   return map;
 }
 
-const darkMediaHeader = /@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{\s*:root\s*/;
-const darkBlockBody = extractBlockBody(css, darkMediaHeader);
-const darkTokens = parseCustomProps(darkBlockBody);
+// AC-1-2: 暗色は `:root[data-theme="dark"]` の1ブロックで同名のトークンを上書きする。
+// 同じヘッダに一致するブロックはすべて取り、出現順に連結して読む（AC-10-1-a。後に
+// 書かれたものが勝つ）。
+function extractBlockBodies(source: string, headerRegex: RegExp): string[] {
+  const re = new RegExp(headerRegex.source, "g");
+  const bodies: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(source))) {
+    const openIndex = source.indexOf("{", match.index + match[0].length - 1);
+    if (openIndex === -1) break;
+    const closeIndex = source.indexOf("}", openIndex);
+    if (closeIndex === -1) break;
+    bodies.push(source.slice(openIndex + 1, closeIndex));
+    re.lastIndex = closeIndex + 1;
+  }
+  return bodies;
+}
 
-const cssWithoutDarkBlock = darkBlockBody
-  ? css.replace(new RegExp(darkMediaHeader.source + "\\{[^}]*\\}\\s*\\}"), "")
-  : css;
-
-const lightBlockBody = extractBlockBody(cssWithoutDarkBlock, /:root\s*/);
-const lightTokens = parseCustomProps(lightBlockBody);
+const darkTokens = parseCustomProps(extractBlockBodies(css, /:root\[data-theme="dark"\]\s*\{/).join("\n"));
+const lightTokens = parseCustomProps(extractBlockBodies(css, /:root\s*\{/).join("\n"));
 
 // WCAG 2.1 の相対輝度・コントラスト比の定義。
 function srgbChannelToLinear(c: number): number {
@@ -77,9 +77,14 @@ const PAIRS: ReadonlyArray<{ id: string; fg: string; bg: string; min: number }> 
   { id: "3-1", fg: "foreground", bg: "background", min: 4.5 },
   { id: "3-2", fg: "surface-foreground", bg: "surface", min: 4.5 },
   { id: "3-3", fg: "muted-foreground", bg: "background", min: 4.5 },
+  { id: "3-3-b", fg: "muted-foreground", bg: "surface", min: 4.5 },
   { id: "3-4", fg: "primary-foreground", bg: "primary", min: 4.5 },
+  { id: "3-4-b", fg: "primary-foreground", bg: "et-grad-to", min: 4.5 },
   { id: "3-5", fg: "danger-foreground", bg: "danger", min: 4.5 },
   { id: "3-6", fg: "danger", bg: "background", min: 4.5 },
+  { id: "3-6-b", fg: "danger", bg: "et-danger-soft", min: 4.5 },
+  { id: "3-6-c", fg: "foreground", bg: "et-danger-soft", min: 4.5 },
+  { id: "3-6-d", fg: "danger", bg: "surface", min: 4.5 },
   { id: "3-7 (draft)", fg: "state-draft-foreground", bg: "state-draft", min: 4.5 },
   {
     id: "3-7 (pending-approval)",
@@ -88,8 +93,24 @@ const PAIRS: ReadonlyArray<{ id: string; fg: string; bg: string; min: number }> 
     min: 4.5,
   },
   { id: "3-7 (approved)", fg: "state-approved-foreground", bg: "state-approved", min: 4.5 },
-  { id: "3-8", fg: "border", bg: "background", min: 3 },
+  { id: "3-8", fg: "et-input-border", bg: "background", min: 3 },
+  { id: "3-8-b", fg: "et-input-border", bg: "surface", min: 3 },
   { id: "3-9", fg: "focus-ring", bg: "background", min: 3 },
+  { id: "3-9-b", fg: "focus-ring", bg: "surface", min: 3 },
+  { id: "3-11", fg: "primary", bg: "background", min: 4.5 },
+  { id: "3-11-b", fg: "primary", bg: "surface", min: 4.5 },
+  { id: "3-12", fg: "et-primary-hover", bg: "background", min: 4.5 },
+  { id: "3-13", fg: "foreground", bg: "et-hover", min: 4.5 },
+  { id: "3-14", fg: "et-sat", bg: "et-sat-bg", min: 4.5 },
+  { id: "3-14-b", fg: "foreground", bg: "et-sat-bg", min: 4.5 },
+  { id: "3-14-c", fg: "muted-foreground", bg: "et-sat-bg", min: 4.5 },
+  { id: "3-15", fg: "et-sun", bg: "et-sun-bg", min: 4.5 },
+  { id: "3-15-b", fg: "foreground", bg: "et-sun-bg", min: 4.5 },
+  { id: "3-15-c", fg: "muted-foreground", bg: "et-sun-bg", min: 4.5 },
+  { id: "3-16", fg: "et-sun", bg: "et-sun-chip", min: 4.5 },
+  { id: "3-17", fg: "et-sidebar-foreground", bg: "et-sidebar", min: 4.5 },
+  { id: "3-18", fg: "et-sidebar-muted", bg: "et-sidebar", min: 4.5 },
+  { id: "3-19", fg: "et-sidebar-foreground", bg: "et-sidebar-active", min: 4.5 },
 ];
 
 describe("contrast-ratio - AC-3: コントラスト比の下限", () => {
@@ -104,7 +125,7 @@ describe("contrast-ratio - AC-3: コントラスト比の下限", () => {
     });
   });
 
-  describe("暗色（prefers-color-scheme: dark）", () => {
+  describe("暗色（:root[data-theme=\"dark\"]）", () => {
     it.each(PAIRS)("$id: --$fg / --$bg は $min:1 以上", ({ fg, bg, min }) => {
       const fgValue = darkTokens.get(fg);
       const bgValue = darkTokens.get(bg);
@@ -141,7 +162,7 @@ function parseAc3Rows(spec: string): SpecPairRow[] {
   const section = end === -1 ? rest : rest.slice(0, end);
   const rows: SpecPairRow[] = [];
   for (const match of section.matchAll(
-    /^\|\s*(3-\d+)\s*\|([^|]*)\|\s*\*\*([\d.]+):1\*\*\s*\|\s*$/gm,
+    /^\|\s*(3-\d+(?:-[a-z])?)\s*\|([^|]*)\|\s*\*\*([\d.]+):1\*\*\s*\|\s*$/gm,
   )) {
     const tokens = [...match[2].matchAll(/`--([^`]+)`/g)].map((token) => token[1]);
     if (tokens.length !== 2) {
@@ -153,7 +174,7 @@ function parseAc3Rows(spec: string): SpecPairRow[] {
   // 形の合わない `3-N` 行を黙って読み飛ばすと、その組のコントラストは誰も測らない
   // まま緑になる（上の一覧を条文へ結んだ理由そのもの）。節の中の `3-N` 行の数と、
   // 読めた行の数が一致することを読む（AC-10-2-a）。
-  const rowLines = section.match(/^\|\s*3-\d+\s*\|.*$/gm) ?? [];
+  const rowLines = section.match(/^\|\s*3-[\w-]*\s*\|.*$/gm) ?? [];
   if (rowLines.length !== rows.length) {
     const readIds = new Set(rows.map((row) => row.id));
     const unread = rowLines.filter((line) => !readIds.has(line.split("|")[1].trim()));
@@ -201,6 +222,24 @@ describe("contrast-ratio - AC-10-2-a: 検査ペアが AC-3 の表の字面と一
         `${SECTION_HEAD}| 3-1 | \`--a\` / \`--b\` | **4.5:1** |\n| 3-2 | \`--c\` / \`--d\` | 4.5:1 |\n`,
       ),
     ).toThrow(/形の合わない行/);
+  });
+
+  // 行の # は `3-3-b` のように後ろに `-` と英小文字1文字が続く形を含む（AC-10-2-a）。
+  // この形を読み飛ばす抽出は、`-b` の行の組のコントラストを誰も測らないまま緑にする。
+  it("AC-3 の表の読み取り: 後ろに英小文字1文字が続く # の行を読む", () => {
+    expect(
+      parseAc3Rows(
+        `${SECTION_HEAD}| 3-3 | \`--a\` / \`--b\` | **4.5:1** |\n| 3-3-b | \`--a\` / \`--c\` | **3:1** |\n`,
+      ).map((row) => `${row.id}:${row.bg}:${row.min}`),
+    ).toEqual(["3-3:b:4.5", "3-3-b:c:3"]);
+  });
+  it("AC-3 の表の読み取り: # の形が合わない行（3-3-bb）を読み飛ばさずに投げる", () => {
+    expect(() =>
+      parseAc3Rows(`${SECTION_HEAD}| 3-1 | \`--a\` / \`--b\` | **4.5:1** |\n| 3-3-bb | \`--a\` / \`--c\` | **3:1** |\n`),
+    ).toThrow(/形の合わない行/);
+  });
+  it("条文から読んだ AC-3 の行に、後ろに英小文字が続く # の行が含まれる（読み飛ばしていない）", () => {
+    expect(AC3_ROWS.map((row) => row.id)).toEqual(expect.arrayContaining(["3-3-b", "3-4-b", "3-6-d"]));
   });
 
   it("検査ペアの # の集合が AC-3 の表の行と一致する", () => {

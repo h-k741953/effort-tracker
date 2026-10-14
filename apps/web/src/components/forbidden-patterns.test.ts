@@ -6,34 +6,63 @@ import { describe, expect, it } from "vitest";
 import {
   CSS_LENGTH_UNITS,
   RING_WIDTH_UNIT_CANDIDATES,
+  classWords,
+  parseLedgerEntries,
+  parseRoundedRules,
   readAc5Section,
+  readDesignSystemSpec,
+  splitVariants,
   tailwindTreatsAsRingWidth,
 } from "../test-support/design-system";
 
-// docs/specs/design-system.md AC-2-4 / AC-4-4 / AC-4-6 / AC-5-5（検証手段は AC-10-3）。
+// docs/specs/design-system.md AC-2-4 / AC-4-4 / AC-4-6 / AC-4-7 / AC-5-5 / AC-12-1
+// （検証手段は AC-10-3・10-3-n・10-3-o）。
 //
 // 「apps/web/src/components/ 配下の実装ファイル（*.test.tsx を除く）を読み、
-// 禁じた表現（生の色・rounded-md 以外の角丸・代替なしの outline-none・fetch）
+// 禁じた表現（生の色・4-4 の表がその部品に許さない角丸・代替なしの outline-none・fetch）
 // の不在を検査する」を満たす。対象は AC-5-1 の表が挙げるファイルであり、
 // ファイルが無い現時点では「存在しない」ことそのものが Red になる
 // （コンポーネント未実装のため）。
 
 const componentsDir = fileURLToPath(new URL(".", import.meta.url));
 
-// AC-5-1 の表（ファイル名列）。
+// AC-5-1 の表（ファイル名列）。台帳は13本（NumberField を外し、SelectField・SideNav・
+// ThemeToggle を加えた。D-2-13）。逐語列挙の母集団が実ディレクトリと一致することは
+// 10-3-h が本ファイルの中で読む。
 const EXPECTED_FILES = [
   "app-header.tsx",
   "role-switcher.tsx",
   "status-badge.tsx",
   "button.tsx",
   "card.tsx",
-  "number-field.tsx",
+  "select-field.tsx",
   "field-error.tsx",
   "error-banner.tsx",
   "empty-state.tsx",
   "confirm-dialog.tsx",
   "pagination.tsx",
+  "side-nav.tsx",
+  "theme-toggle.tsx",
 ];
+
+// AC-4-4: 部品ごとに許す角丸ユーティリティは、AC-4 の節の表の字面から取る（テスト側に
+// 書いた写しを期待値にすると、表を書き換えても写しと実装が一致したまま緑になる。10-4 と
+// 同じ理由）。部品はファイル名から AC-5-1 の台帳で引く。
+const SPEC_TEXT = readDesignSystemSpec();
+const SPEC_HINT =
+  "仕様書 docs/specs/design-system.md の表を読めなかった。条文の体裁を変えたのなら、要求の変更ではないので" +
+  "この抽出側を追随させること（10-3 は抽出手段を仕様で固定していない）。";
+const LEDGER = parseLedgerEntries(SPEC_TEXT, SPEC_HINT);
+const ROUNDED_RULES = parseRoundedRules(SPEC_TEXT, SPEC_HINT);
+
+/** ファイル名から、その部品に許す角丸ユーティリティを引く。台帳か表に無ければ投げる。 */
+function allowedRoundedForFile(fileName: string): readonly string[] {
+  const entry = LEDGER.find((row) => row.file === fileName);
+  if (entry === undefined) throw new Error(`${fileName} が AC-5-1 の台帳に無い（AC-10-3）。`);
+  const rule = ROUNDED_RULES.find((row) => row.component === entry.component);
+  if (rule === undefined) throw new Error(`${entry.component} が AC-4-4 の表に無い（AC-10-3）。`);
+  return rule.allowed;
+}
 
 // シェードを持つ色（bg-red-500 のように末尾に数値シェードを伴う）。
 const TAILWIND_SHADED_PALETTE_COLORS = [
@@ -102,8 +131,6 @@ const paletteUtilityPattern = new RegExp(
 );
 const hexColorPattern = /#[0-9a-fA-F]{3,8}\b/;
 const rgbOrHslFunctionPattern = /\b(?:rgb|rgba|hsl|hsla)\(/;
-// AC-4-4: 角丸ユーティリティは rounded-md のみ。rounded-md 以外の rounded* を拾う。
-const nonMdRoundedPattern = /\brounded(?!-md\b)(?:-[\w-]+)?\b/;
 const fetchCallPattern = /\bfetch\s*\(/;
 // AC-2-4（10-3）: `style` 属性に色に関わるプロパティを書くこと自体を違反とする。値は読まない
 // （名前付きの色の一覧は持たない）。色に関わるプロパティは、名前に `color`（大文字小文字を
@@ -159,14 +186,31 @@ function violatesOutlineNoneRule(text: string): boolean {
 const HEX_COLOR_LABEL = "16進の色";
 const RGB_OR_HSL_LABEL = "rgb() / hsl() の関数記法";
 const PALETTE_UTILITY_LABEL = "パレットユーティリティ";
-const NON_MD_ROUNDED_LABEL = "rounded-md 以外の角丸";
+const NON_MD_ROUNDED_LABEL = "4-4 の表が許さない角丸";
 const FETCH_CALL_LABEL = "fetch の呼び出し";
 const STYLE_COLOR_LABEL = "style 属性の色に関わるプロパティ";
 
 const SVG_COLOR_ATTRIBUTE_LABEL = "SVG の色属性への値";
 
+/** 走査の文脈。角丸は部品ごとに許すものが違う（4-4）ため、その部品に許す角丸を渡す。 */
+interface ScanContext {
+  allowedRounded: readonly string[];
+}
+const NO_ROUNDED_ALLOWED: ScanContext = { allowedRounded: [] };
+
+// AC-4-4 / AC-10-3: 語を `:` で区切ったときの最後の部分（バリアントを除いた本体）が `rounded` で
+// 始まる語を角丸ユーティリティとして取り、その本体が、その部品に許すユーティリティのいずれかと
+// 字面で一致しなければ違反とする。
+function locateDisallowedRounded(text: string, ctx: ScanContext): Span | null {
+  for (const { word, start, end } of classWords(text)) {
+    const { body } = splitVariants(word);
+    if (body.startsWith("rounded") && !ctx.allowedRounded.includes(body)) return { start, end };
+  }
+  return null;
+}
+
 /** 正規表現で読む禁止表現の検出器。 */
-function locateByPattern(pattern: RegExp): (text: string) => Span | null {
+function locateByPattern(pattern: RegExp): (text: string, ctx: ScanContext) => Span | null {
   return (text) => {
     const matched = pattern.exec(text);
     return matched === null ? null : { start: matched.index, end: matched.index + matched[0].length };
@@ -176,19 +220,19 @@ function locateByPattern(pattern: RegExp): (text: string) => Span | null {
 // 各行は「テキストから最初の違反の位置を返す」検出器を持つ。実ファイルの走査・陽性対照・
 // 述語の両側の表が、いずれもこの検出器を通る（10-3-f）。構文木で読む2行は構文として
 // 読めないテキストに対して投げる（読み進めずに失敗とする）。
-const FORBIDDEN_EXPRESSIONS: { label: string; locate: (text: string) => Span | null }[] = [
+const FORBIDDEN_EXPRESSIONS: { label: string; locate: (text: string, ctx: ScanContext) => Span | null }[] = [
   { label: HEX_COLOR_LABEL, locate: locateByPattern(hexColorPattern) },
   { label: RGB_OR_HSL_LABEL, locate: locateByPattern(rgbOrHslFunctionPattern) },
   { label: PALETTE_UTILITY_LABEL, locate: locateByPattern(paletteUtilityPattern) },
-  { label: NON_MD_ROUNDED_LABEL, locate: locateByPattern(nonMdRoundedPattern) },
+  { label: NON_MD_ROUNDED_LABEL, locate: locateDisallowedRounded },
   { label: FETCH_CALL_LABEL, locate: locateByPattern(fetchCallPattern) },
   { label: STYLE_COLOR_LABEL, locate: (text) => locateStyleColorProperty(text) },
   { label: SVG_COLOR_ATTRIBUTE_LABEL, locate: (text) => locateSvgColorAttribute(text) },
 ];
 
 /** テキストに現れた禁止表現のラベルを、表の順序で返す。 */
-function findForbiddenExpressions(text: string): string[] {
-  return FORBIDDEN_EXPRESSIONS.filter(({ locate }) => locate(text) !== null).map(({ label }) => label);
+function findForbiddenExpressions(text: string, ctx: ScanContext = NO_ROUNDED_ALLOWED): string[] {
+  return FORBIDDEN_EXPRESSIONS.filter(({ locate }) => locate(text, ctx) !== null).map(({ label }) => label);
 }
 
 // AC-10-3 / AC-2-4: `style` の色・SVG の色属性の判定を述語として切り出す（10-3-g と同じ形）。
@@ -230,6 +274,8 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
     expect(existsSync(filePath)).toBe(true);
 
     const content = readFileSync(filePath, "utf8");
+    // AC-4-4: その部品に許す角丸（表の字面から取る）。
+    const ctx: ScanContext = { allowedRounded: allowedRoundedForFile(fileName) };
 
     // AC-10-3-f: 読んだテキストが0文字なら失敗とする。不在の主張は走査対象が
     // 空になると空虚に真になるため（10-3 の「1件も読めなかったときは失敗と
@@ -269,7 +315,7 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
     // 担い手は AC-2-4 の2つの形（16進 / rgb() hsl() の関数記法）から選ぶ
     // （AC-10-3-f）。担い手に選んだ形の不在は「自身の引数を切る変異では落ちない」側
     // （AC-11-29 (a)）へ移るため、その形が当該 AC の唯一の機械的な足場である場合、
-    // AC がまるごと無検査になる —— fetch（AC-5-5）と rounded-md 以外の角丸（AC-4-4）
+    // AC がまるごと無検査になる —— fetch（AC-5-5）と 4-4 の表が許さない角丸（AC-4-4）
     // はこのファイルが唯一の足場なので担い手にしない。AC-2-4 は3つの形を持つため、
     // 2つを担い手にしても残る1つ（パレットユーティリティ）が統合した主張の側に残る。
     const controlled =
@@ -296,7 +342,7 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
     // 表を並べ替えただけで Red になる。I8-1 と同型の偽 Red）。sort は要素を
     // 減らさないため、走査結果が欠ける変異はこの形でも落ちる。
     expect(
-      [...findForbiddenExpressions(controlled)].sort(),
+      [...findForbiddenExpressions(controlled, ctx)].sort(),
       `${fileName} の走査結果が「${HEX_COLOR_LABEL}と${RGB_OR_HSL_LABEL}だけ」に` +
         `ならない。どちらかが出ていないなら走査対象が切り落とされており、不在の主張が` +
         `空虚に真になっている。他の種類が出ているならそのファイルが禁じた表現を含む` +
@@ -311,7 +357,7 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
     // 重ならないため、対にすると単一の変異ではどちらかが必ず落ちる。統合した主張を
     // 置き換えるのではなく、相互に守らせるために足す。
     expect(
-      [...findForbiddenExpressions(content)],
+      [...findForbiddenExpressions(content, ctx)],
       `${fileName} が禁止表現を含む（AC-2-4 / AC-4-4 / AC-5-5）。`,
     ).toEqual([]);
 
@@ -320,7 +366,7 @@ describe("components 実装 - 禁止表現の不在（AC-2-4 / AC-4-4 / AC-4-6 /
     // この2本と (iv) は担い手の2形について互いの足場になるので、どちらか一方の引数を
     // 切る変異はもう一方が落とす。担い手でない3形は (iv) と統合した主張が対になる。
     // どちらも AC-2-4 の形であり、同 AC には残る1つ（パレットユーティリティ）が
-    // 統合した主張の側に足場として残る。rounded-md 以外の角丸（AC-4-4）と fetch
+    // 統合した主張の側に足場として残る。4-4 の表が許さない角丸（AC-4-4）と fetch
     // （AC-5-5）はこちらではなく上の2本が読む。
     expect(
       hexColorPattern.test(content),
@@ -731,7 +777,7 @@ describe("AC-10-3-e: paletteUtilityPattern の判別力（色名・シェード�
 // なお、これが示すのは「パターンを当てる経路」までである。正しいファイルを
 // 読めていることは示さない（限界は AC-11-28。そちらは 10-3 の0件失敗と 10-4
 // が担保する）。
-const POSITIVE_CONTROL_TEXTS = [
+const POSITIVE_CONTROL_TEXTS: { label: string; text: string; ctx?: ScanContext }[] = [
   {
     label: HEX_COLOR_LABEL,
     text: 'export function Sample() {\n  const color = "#ff0000";\n  return color;\n}\n',
@@ -747,6 +793,9 @@ const POSITIVE_CONTROL_TEXTS = [
   {
     label: NON_MD_ROUNDED_LABEL,
     text: 'export function Sample() {\n  return <div className="rounded-full p-4" />;\n}\n',
+    // 4-4 の表は部品ごとに許すものが違う。許すのが `rounded-(--et-radius-card)` だけの部品の
+    // 文脈で、表が許さない角丸を検出できることを読む。
+    ctx: { allowedRounded: ["rounded-(--et-radius-card)"] },
   },
   {
     label: FETCH_CALL_LABEL,
@@ -775,7 +824,7 @@ describe("AC-10-3-f: 走査経路の陽性対照（不在の主張が空虚に�
 
   it.each(POSITIVE_CONTROL_TEXTS)(
     "$label を含む複数行テキストを、実ファイルと同じ経路で検出できる",
-    ({ label, text }) => {
+    ({ label, text, ctx = NO_ROUNDED_ALLOWED }) => {
       expect(
         text.split("\n").length,
         `${label} の対照が複数行でない。行をまたぐ走査であることを示せない（AC-10-3-f）。`,
@@ -783,7 +832,7 @@ describe("AC-10-3-f: 走査経路の陽性対照（不在の主張が空虚に�
 
       // 実ファイルの走査と同じ関数を通す。
       expect(
-        findForbiddenExpressions(text),
+        findForbiddenExpressions(text, ctx),
         `${label} を含むテキストを検出できていない。走査経路が空洞化している` +
           `（パターンをテキスト全体に係るアンカーへ差し替えた／決して一致しない形へ` +
           `差し替えた等）可能性がある。不在の主張はこの経路が壊れると空虚に真になる（AC-10-3-f）。`,
@@ -793,7 +842,7 @@ describe("AC-10-3-f: 走査経路の陽性対照（不在の主張が空虚に�
       // ここを満たさない対照は、アンカーを付ける変異を判別できない。
       const entry = FORBIDDEN_EXPRESSIONS.find((p) => p.label === label);
       expect(entry, `${label} に対応する検出器が表に無い。`).not.toBeUndefined();
-      const matched = entry!.locate(text);
+      const matched = entry!.locate(text, ctx);
       expect(matched, `${label} の対照から一致位置を取れなかった。`).not.toBeNull();
       expect(
         matched!.start,
@@ -912,14 +961,14 @@ function locateSvgColorAttribute(text: string): Span | null {
 }
 
 /** テキストのどこかで `<namespaceName>.Role` を型として使っているか。 */
-function usesQualifiedRoleType(source: ts.SourceFile, namespaceName: string): boolean {
+function usesQualifiedRoleType(source: ts.SourceFile, namespaceName: string, typeName: string = ROLE_TYPE_NAME): boolean {
   let found = false;
   const visit = (node: ts.Node): void => {
     if (
       ts.isQualifiedName(node) &&
       ts.isIdentifier(node.left) &&
       node.left.text === namespaceName &&
-      node.right.text === ROLE_TYPE_NAME
+      node.right.text === typeName
     ) {
       found = true;
     }
@@ -935,12 +984,12 @@ function usesQualifiedRoleType(source: ts.SourceFile, namespaceName: string): bo
  * 輸入・再輸出の中の `type Role`（`import { type Role }`）とコメント中の語は
  * 数えない —— 数えると条文どおりの輸入が落ちる（AC-10-3-i）。
  */
-function declaresLocalRoleType(text: string): boolean {
+function declaresLocalRoleType(text: string, typeName: string = ROLE_TYPE_NAME): boolean {
   let found = false;
   const visit = (node: ts.Node): void => {
     if (
       (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node) || ts.isEnumDeclaration(node)) &&
-      node.name.text === ROLE_TYPE_NAME
+      node.name.text === typeName
     ) {
       found = true;
     }
@@ -951,7 +1000,7 @@ function declaresLocalRoleType(text: string): boolean {
 }
 
 /** テキストのどこかで `import("<…/moduleBase>").Role` を型として使っているか。 */
-function usesImportTypeOfRole(source: ts.SourceFile, moduleBase: string): boolean {
+function usesImportTypeOfRole(source: ts.SourceFile, moduleBase: string, typeName: string = ROLE_TYPE_NAME): boolean {
   let found = false;
   const visit = (node: ts.Node): void => {
     if (
@@ -961,7 +1010,7 @@ function usesImportTypeOfRole(source: ts.SourceFile, moduleBase: string): boolea
       node.argument.literal.text.endsWith(`/${moduleBase}`) &&
       node.qualifier !== undefined &&
       ts.isIdentifier(node.qualifier) &&
-      node.qualifier.text === ROLE_TYPE_NAME
+      node.qualifier.text === typeName
     ) {
       found = true;
     }
@@ -977,16 +1026,16 @@ function usesImportTypeOfRole(source: ts.SourceFile, moduleBase: string): boolea
  * 型として使う形、同じモジュールを指す import 型 `import("…").Role` を数える
  * （AC-10-3-i (i)）。いずれも使う型の名が Role であることまで読む。
  */
-function importsRoleTypeFrom(text: string, moduleBase: string): boolean {
+function importsRoleTypeFrom(text: string, moduleBase: string, typeName: string = ROLE_TYPE_NAME): boolean {
   const source = parseSource(text);
-  if (usesImportTypeOfRole(source, moduleBase)) return true;
+  if (usesImportTypeOfRole(source, moduleBase, typeName)) return true;
   return source.statements.some((statement) => {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) return false;
     if (!statement.moduleSpecifier.text.endsWith(`/${moduleBase}`)) return false;
     const bindings = statement.importClause?.namedBindings;
     if (bindings === undefined) return false;
-    if (ts.isNamespaceImport(bindings)) return usesQualifiedRoleType(source, bindings.name.text);
-    return bindings.elements.some((element) => (element.propertyName ?? element.name).text === ROLE_TYPE_NAME);
+    if (ts.isNamespaceImport(bindings)) return usesQualifiedRoleType(source, bindings.name.text, typeName);
+    return bindings.elements.some((element) => (element.propertyName ?? element.name).text === typeName);
   });
 }
 
@@ -1138,5 +1187,271 @@ describe("AC-10-3-i: 型 Role は条文が名指す既存の型を輸入する�
     const broken = 'const f = <T>(x: T) => x;\ntype Role = "Engineer" | "Approver";';
     expect(() => declaresLocalRoleType(broken)).toThrow(/構文として読めない/);
     expect(() => importsRoleTypeFrom(broken, "role-cookie")).toThrow(/構文として読めない/);
+  });
+});
+
+// docs/specs/design-system.md AC-6 の表の 6-14（ThemeToggle）が求める「型 Theme は
+// apps/web/src/lib/theme-cookie.ts の型を輸入して使う（リテラル union を再定義しない）」
+// （検証手段は AC-10-3-i）。本欄の RoleSwitcher / Role / role-cookie.ts をそれぞれ
+// ThemeToggle / Theme / theme-cookie.ts に置き換えて、同じ手段・同じ述語で読む。
+// (ii) は Theme についても 10-3-h の母集団の全体で読む。
+describe("AC-10-3-i: 型 Theme は条文が名指す既存の型を輸入する（6-14）", () => {
+  const THEME_TYPE_NAME = "Theme";
+  const hint =
+    "仕様書の字面から 6-14 / AC-5-1 の記述を読めなかった。条文の体裁を変えたのなら、要求の変更ではない" +
+    "のでこの抽出側を追随させること（10-3-i は抽出手段を仕様で固定していない）。";
+
+  /** AC-6 の表の 6-14 行から、輸入元のモジュール名（拡張子なしのファイル名）を読む。 */
+  function readThemeModuleBase(spec: string): string {
+    const row = spec.match(/^\|\s*6-14\s*\|.*$/m);
+    expect(row, hint).not.toBeNull();
+    const pathMatch = row![0].match(/`(apps\/web\/src\/lib\/[\w./-]+)\.ts`/);
+    expect(pathMatch, `${hint} 6-14 行から lib 配下のファイルパスを切り出せなかった。`).not.toBeNull();
+    const base = pathMatch![1].split("/").pop() as string;
+    expect(base.length, `${hint} 読み取ったモジュール名が空である。`).toBeGreaterThan(0);
+    return base;
+  }
+
+  /** AC-5-1 の台帳から ThemeToggle の実装ファイル名を読む。 */
+  function readThemeToggleFile(spec: string): string {
+    const row = readAc5Section(spec, hint).match(/^\|\s*5-1-[a-z]+\s*\|\s*`ThemeToggle`\s*\|\s*`([^`]+)`/m);
+    expect(row, `${hint} AC-5-1 の台帳から ThemeToggle の行を切り出せなかった。`).not.toBeNull();
+    expect(EXPECTED_FILES, `${hint} 台帳の ${row![1]} が走査する母集団に無い。`).toContain(row![1]);
+    return row![1];
+  }
+
+  it("条文から輸入元のモジュール名と対象ファイル名を読める（0件なら失敗）", () => {
+    expect(readThemeModuleBase(SPEC_TEXT)).toBe("theme-cookie");
+    expect(readThemeToggleFile(SPEC_TEXT).length).toBeGreaterThan(0);
+  });
+
+  it("ThemeToggle の実装は Theme を条文が名指すモジュールから輸入する", () => {
+    const moduleBase = readThemeModuleBase(SPEC_TEXT);
+    const fileName = readThemeToggleFile(SPEC_TEXT);
+    const source = readFileSync(path.join(componentsDir, fileName), "utf8");
+    expect(source.length, `${fileName} から読み取ったテキストが0文字である。`).toBeGreaterThan(0);
+    expect(
+      importsRoleTypeFrom(source, moduleBase, THEME_TYPE_NAME),
+      `${fileName} が型 ${THEME_TYPE_NAME} を ${moduleBase} から輸入していない（AC-6-14 / AC-10-3-i）。`,
+    ).toBe(true);
+  });
+
+  it.each(EXPECTED_FILES)("%s は型 Theme をローカルに宣言しない（リテラル union の再定義）", (fileName) => {
+    const source = readFileSync(path.join(componentsDir, fileName), "utf8");
+    expect(source.length, `${fileName} から読み取ったテキストが0文字である。`).toBeGreaterThan(0);
+    expect(
+      declaresLocalRoleType(source, THEME_TYPE_NAME),
+      `${fileName} が型 ${THEME_TYPE_NAME} をローカルに宣言している（AC-6-14 は既存の型の輸入を求める / AC-10-3-i）。`,
+    ).toBe(false);
+  });
+
+  // 判定の両側を実ケースと同じ述語で読む（10-3-g と同じ形）。
+  it.each([
+    ["リテラル union を再定義する", 'type Theme = "light" | "dark";', true],
+    ["interface で再定義する", "interface Theme { name: string }", true],
+    ["enum で再定義する", "enum Theme { Light }", true],
+    ["輸入だけを行う", 'import type { Theme } from "@/lib/theme-cookie";', false],
+    ["type 節つきで輸入する", 'import { type Theme } from "@/lib/theme-cookie";', false],
+    ["型として参照するだけ", 'const theme: Theme = "light";', false],
+    ["コメントで型の名に触れる", "// type Theme = を再定義しない", false],
+    ["URL を含む文字列の後ろで再定義する", 'const docs = "https://example.com"; type Theme = "light";', true],
+    ["関数の本体で再定義する", 'export function F() { type Theme = "a"; return null; }', true],
+    ["別の型 Role の宣言は Theme の宣言でない", 'type Role = "Engineer";', false],
+  ])("ローカル宣言の判定（Theme）: %s", (_name, text, expected) => {
+    expect(declaresLocalRoleType(text as string, THEME_TYPE_NAME), `対象: ${text}`).toBe(expected);
+  });
+
+  it.each([
+    ["名指すモジュールから輸入する", 'import type { Theme } from "@/lib/theme-cookie";', true],
+    ["型として輸入する（type 節つき）", 'import { type Theme } from "@/lib/theme-cookie";', true],
+    ["別名を付けて輸入する", 'import type { Theme as T } from "@/lib/theme-cookie";', true],
+    ["別のモジュールから輸入する", 'import type { Theme } from "./local-theme";', false],
+    ["別の型だけを輸入する", 'import type { Role } from "@/lib/theme-cookie";', false],
+    ["輸入せずに宣言する", 'type Theme = "light";', false],
+    ["コメントの中にだけ輸入を書く", '// import type { Theme } from "@/lib/theme-cookie";', false],
+    [
+      "名前空間として輸入して Theme を型として使う",
+      'import * as tc from "@/lib/theme-cookie";\nlet theme: tc.Theme;',
+      true,
+    ],
+    ["名前空間として輸入するが Theme を使わない", 'import * as tc from "@/lib/theme-cookie";\nvoid tc;', false],
+    ["import 型で Theme を使う", 'let t: import("@/lib/theme-cookie").Theme;', true],
+    ["import 型で別のモジュールの Theme を使う", 'let t: import("./other").Theme;', false],
+  ])("輸入の判定（Theme）: %s", (_name, text, expected) => {
+    expect(importsRoleTypeFrom(text as string, "theme-cookie", THEME_TYPE_NAME), `対象: ${text}`).toBe(expected);
+  });
+
+  it("構文として読めないテキストは、宣言・輸入のどちらの判定でも投げる", () => {
+    const broken = 'const f = <T>(x: T) => x;\ntype Theme = "light" | "dark";';
+    expect(() => declaresLocalRoleType(broken, THEME_TYPE_NAME)).toThrow(/構文として読めない/);
+    expect(() => importsRoleTypeFrom(broken, "theme-cookie", THEME_TYPE_NAME)).toThrow(/構文として読めない/);
+  });
+});
+
+// docs/specs/design-system.md AC-4-4（検証手段は AC-10-3）。
+//
+// 部品ごとに許す角丸の表（AC-4 の節の中）を読む。表の部品の集合が AC-5-1 の台帳の部品の
+// 集合と一致することを読み（台帳にあって表に無い部品が、何でも許される形にならないように
+// する）、抽出が0件のとき・形の合わない行は失敗とする。判定は述語として切り出して、条文の
+// 例を実ケースと同じ手段（実際の表）で読む（10-3-g と同じ形）。
+describe("AC-4-4: 部品ごとに許す角丸（AC-10-3）", () => {
+  function violatesRoundedRule(component: string, text: string): boolean {
+    const rule = ROUNDED_RULES.find((row) => row.component === component);
+    if (rule === undefined) throw new Error(`${component} が AC-4-4 の表に無い。`);
+    // 実ファイルの走査（FORBIDDEN_EXPRESSIONS の表）と同じ検出器を通す。表全体を通すと、構文木で読む
+    // 他の検出器が、ここで与える断片（クラス名だけのテキスト）を構文として読めず投げるため、角丸の
+    // 検出器だけを呼ぶ。
+    const entry = FORBIDDEN_EXPRESSIONS.find((row) => row.label === NON_MD_ROUNDED_LABEL);
+    return entry!.locate(text, { allowedRounded: rule.allowed }) !== null;
+  }
+
+  it("表の部品の集合が AC-5-1 の台帳の部品の集合と一致する（0件なら失敗）", () => {
+    expect(ROUNDED_RULES.length).toBeGreaterThan(0);
+    expect(LEDGER.length).toBeGreaterThan(0);
+    expect(ROUNDED_RULES.map((row) => row.component).sort()).toEqual(LEDGER.map((row) => row.component).sort());
+  });
+
+  it("台帳のファイル名の集合が、走査する母集団（逐語列挙）と一致する", () => {
+    expect(LEDGER.map((row) => row.file).sort()).toEqual([...EXPECTED_FILES].sort());
+  });
+
+  it("表の読み取りは形の合う行を読み、崩れた行・0件・節の外の行を読み飛ばさない", () => {
+    const head = "### AC-4. タイポグラフィ\n\n| # | 部品 | 許す角丸ユーティリティ |\n|---|---|---|\n";
+    const good = "| 4-4-a | `Card` | `rounded-(--et-radius-card)` |\n";
+    const two = "| 4-4-b | `ConfirmDialog` | `rounded-(--et-radius-card)`（ダイアログ）・`rounded-(--et-radius-control)`（ボタン） |\n";
+    const none = "| 4-4-m | `FieldError` | なし（角丸を書かない） |\n";
+    expect(parseRoundedRules(`${head}${good}${two}${none}`, "").map((row) => [row.component, row.allowed])).toEqual([
+      ["Card", ["rounded-(--et-radius-card)"]],
+      ["ConfirmDialog", ["rounded-(--et-radius-card)", "rounded-(--et-radius-control)"]],
+      ["FieldError", []],
+    ]);
+    const stray = "| 4-4-z | `Panel` | `rounded-full` |\n";
+    expect(parseRoundedRules(`### AC-3. 前\n\n${stray}\n${head}${good}\n### AC-5. 後\n\n${stray}`, "")).toHaveLength(1);
+    expect(() => parseRoundedRules(head, "")).toThrow(/1件も読めなかった/);
+    expect(() => parseRoundedRules(good, "")).toThrow(/AC-4 の節が見つからない/);
+    expect(() => parseRoundedRules(`${head}${good}| 4-4-b | Card | rounded-md |\n`, "")).toThrow(/形の合わない行/);
+  });
+
+  it.each([
+    ["Card", "rounded-(--et-radius-card)", false],
+    ["Card", "rounded-md", true],
+    ["Button", "rounded-(--et-radius-card)", true],
+    ["Button", "rounded-(--et-radius-control)", false],
+    ["StatusBadge", "rounded-full", false],
+    ["StatusBadge", "rounded-(--et-radius-badge)", false],
+    ["Button", "rounded-full", true],
+    ["Card", "rounded-t-(--et-radius-card)", true],
+    ["FieldError", "rounded-(--et-radius-control)", true],
+    ["FieldError", "px-2 text-danger", false],
+    ["SideNav", "rounded-full", false],
+    ["SideNav", "rounded-(--et-radius-control)", false],
+    ["ConfirmDialog", "rounded-(--et-radius-control)", false],
+    ["EmptyState", "rounded-(--et-radius-control)", true],
+    // バリアントは本体だけを読む。
+    ["Card", "hover:rounded-(--et-radius-card)", false],
+    ["Card", "hover:rounded-md", true],
+    ["Card", "md:rounded-lg", true],
+    // 属性の書き方（引用符・テンプレート・複数行）によらず語として取る。
+    ["Card", 'className="p-4 rounded-md"', true],
+    ["Card", "className={`p-4 rounded-(--et-radius-card) ${extra}`}", false],
+    ["Card", 'className={cn(\n  "p-4",\n  "rounded-lg",\n)}', true],
+  ])("角丸の判定: %s の %s は違反=%s", (component, text, expected) => {
+    expect(violatesRoundedRule(component as string, text as string), `対象: ${component} ${text}`).toBe(expected);
+  });
+});
+
+// docs/specs/design-system.md AC-4-7（検証手段は AC-10-3-n）。
+//
+// 10-3 と同じ対象ファイルのテキストを語に分け、(i) 状態のバリアント（hover: / active: /
+// focus: / focus-visible: / group-hover: / peer-hover: 等）を伴い、本体が translate- / -translate-
+// / scale- / -scale- / rotate- / -rotate- / skew- / -skew- で始まる語、(ii) 本体が animate- で始まる語、
+// のいずれも、バリアントの連なりに motion-safe: を含むことを読む。状態のバリアントを伴わない配置の
+// ための変形（中央寄せの -translate-x-1/2 等）は対象外。読む状態のバリアントの具体的な列挙は
+// 本仕様で固定しない。本体が空の語（コメントの中の `hover:` など）は、クラスの語でないため読まない。
+const STATE_VARIANT = /^(?:group-|peer-)?(?:hover|focus|focus-visible|focus-within|active)(?:\/[\w-]+)?$/;
+const TRANSFORM_BODY = /^-?(?:translate|scale|rotate|skew)-/;
+
+function violatesMotionSafeRule(text: string): boolean {
+  return classWords(text).some(({ word }) => {
+    const { variants, body } = splitVariants(word);
+    if (body.length === 0) return false;
+    const motionSafe = variants.includes("motion-safe");
+    if (body.startsWith("animate-")) return !motionSafe;
+    return TRANSFORM_BODY.test(body) && variants.some((v) => STATE_VARIANT.test(v)) && !motionSafe;
+  });
+}
+
+// docs/specs/design-system.md AC-12-1（検証手段は AC-10-3-o）。
+//
+// 10-3 と同じ対象ファイルのテキストに、バリアントの連なりに dark: を含む語が現れないことを読む
+// （トークンが属性で入れ替わるため、部品側の分岐は要らない）。
+function violatesDarkVariantRule(text: string): boolean {
+  return classWords(text).some(({ word }) => {
+    const { variants, body } = splitVariants(word);
+    return body.length > 0 && variants.includes("dark");
+  });
+}
+
+describe("AC-4-7: 変形とアニメーションは motion-safe: の下でだけ与える（AC-10-3-n）", () => {
+  it.each([
+    ["motion-safe:hover:-translate-y-px", false],
+    ["hover:-translate-y-px", true],
+    ["active:scale-97", true],
+    ["motion-safe:active:scale-(--et-press)", false],
+    ["animate-pulse", true],
+    ["motion-safe:animate-pulse", false],
+    ["-translate-x-1/2", false],
+    ["translate-x-1/2", false],
+    ["group-hover:translate-x-1", true],
+    ["peer-hover:rotate-3", true],
+    ["focus-visible:-skew-x-3", true],
+    ["motion-safe:group-hover:translate-x-1", false],
+    ["md:hover:scale-105", true],
+    ["md:motion-safe:hover:scale-105", false],
+    ["hover:bg-et-hover", false],
+    ["transition-colors", false],
+    ['className="p-2 hover:scale-105"', true],
+    ["{/* hover: の変形は motion-safe で包む */}", false],
+  ])("4-7 の判定: %s は違反=%s", (text, expected) => {
+    expect(violatesMotionSafeRule(text as string), `対象: ${text}`).toBe(expected);
+  });
+
+  it.each(EXPECTED_FILES)("%s は変形・アニメーションを motion-safe: の外で与えない", (fileName) => {
+    const content = readFileSync(path.join(componentsDir, fileName), "utf8");
+    expect(content.length).toBeGreaterThan(0);
+    expect(violatesMotionSafeRule(content), `${fileName} が状態に応じた変形・animate-* を motion-safe: の外で与えている（AC-4-7）。`).toBe(
+      false,
+    );
+    // 陽性対照: 実ファイルのテキストの両端に違反を足すと、どちらも検出される（走査対象を
+    // 切り落とす変異が不在の主張を空虚に真にしない。10-3-f と同じ理由）。
+    expect(violatesMotionSafeRule(`hover:-translate-y-px ${content}`)).toBe(true);
+    expect(violatesMotionSafeRule(`${content}\n// animate-spin`)).toBe(true);
+  });
+});
+
+describe("AC-12-1: 共通コンポーネントに dark: バリアントを書かない（AC-10-3-o）", () => {
+  it.each([
+    ["dark:text-foreground", true],
+    ["md:dark:bg-surface", true],
+    ["dark:bg-surface", true],
+    ["text-foreground", false],
+    ["bg-surface", false],
+    ["data-theme", false],
+    ['theme === "dark"', false],
+    ['className="p-2 dark:border-border"', true],
+  ])("12-1 の判定: %s は違反=%s", (text, expected) => {
+    expect(violatesDarkVariantRule(text as string), `対象: ${text}`).toBe(expected);
+  });
+
+  it("対象ファイルは0件ではない", () => {
+    expect(EXPECTED_FILES.length).toBeGreaterThan(0);
+  });
+
+  it.each(EXPECTED_FILES)("%s は dark: バリアントを含まない", (fileName) => {
+    const content = readFileSync(path.join(componentsDir, fileName), "utf8");
+    expect(content.length).toBeGreaterThan(0);
+    expect(violatesDarkVariantRule(content), `${fileName} が dark: バリアントを書いている（AC-12-1）。`).toBe(false);
+    expect(violatesDarkVariantRule(`dark:bg-surface ${content}`)).toBe(true);
+    expect(violatesDarkVariantRule(`${content}\n// dark:text-foreground`)).toBe(true);
   });
 });
