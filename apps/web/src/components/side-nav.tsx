@@ -2,7 +2,7 @@
 //
 // どの項目を出すかを判定しない（ロール・認証状態・勤務月の状態を受け取らない。AC-7-2）。
 // 項目は呼び出し側が渡す。footerItems は区切り線の後ろ、最下部に置く。
-// 角丸は 4-4-j（項目は control、項目の丸印は全円）、フォーカスリングは 4-5 / 4-5-a、
+// 角丸は 4-4-j（項目は control、項目の丸印は全円）、丸印の塗りは 6-13-iv、フォーカスリングは 4-5 / 4-5-a、
 // 動きは 4-7（motion-safe の下でだけ）。
 
 import Link from "next/link";
@@ -30,7 +30,10 @@ function NavList({ items }: { items: readonly SideNavItem[] }) {
               item.current ? "bg-et-sidebar-active text-et-sidebar-foreground" : "text-et-sidebar-muted"
             }`}
           >
-            <span aria-hidden="true" className="size-2 rounded-full border border-current" />
+            <span
+              aria-hidden="true"
+              className={`size-2 rounded-full ${item.current ? "bg-primary" : "bg-et-sidebar-muted"}`}
+            />
             {item.label}
           </Link>
         </li>
