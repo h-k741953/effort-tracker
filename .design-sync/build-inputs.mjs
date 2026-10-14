@@ -1,6 +1,6 @@
 // design-sync 用: .design-sync/tailwind.css を Tailwind v4（apps/web の devDependency）で
 // コンパイルし、apps/web/.ds-css/ds.css に書き出す。config.json の cssEntry がこれを指す。
-// 実行: node .design-sync/build-css.mjs（リポジトリのルートから）
+// 実行: node .design-sync/build-inputs.mjs（リポジトリのルートから）
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";

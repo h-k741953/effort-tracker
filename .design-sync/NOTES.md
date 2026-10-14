@@ -20,14 +20,14 @@
 
 - `srcDir` を指定しないと `src/` 全体（`app/layout.tsx` → `globals.css` の `@import "tailwindcss"`）を取り込もうとして esbuild が失敗する。`srcDir` は `../src/components`。
 - 型宣言を生成しないと `<Name>.d.ts` の props が `[key: string]: unknown` になる。変換ツールはドットで始まるディレクトリを走査しないので、`package.json` の `types` で場所を示している。
-- `@source` で `components/` を走査すると、テストファイル（禁止表現を例として持つ）から `rounded-full` などが CSS に混ざる。`@source not` でテストを外している。
+- `@source` で `components/` を走査すると、テストファイル（禁止表現を例として持つ）から、全円の角丸のクラスなどが CSS に混ざる。`@source not` でテストを外している。
 - `lib/role-cookie.ts` の Node の型を解決するため、`tsconfig.dts.json` で `typeRoots` を `apps/web/node_modules/@types` に向けている。
 
 ## はまりどころ（2026-10-14 の再同期で解決）
 
 - `SideNav` が使う `next/link` は、読み込みの時点で `process.env.__NEXT_*` を参照する。変換ツールのバンドルは `process.env.NODE_ENV` しか置き換えないため、ブラウザで `_ds_bundle.js` が「process is not defined」で止まり、**全カードが「no PascalCase exports」になる**。`.design-sync/process-shim.mjs` を `extraEntries` に入れ、部品より先に空の `process.env` を用意して解決した。
 - フォントはアプリが `next/font/local`（`layout.tsx`）で読むため CSS に `@font-face` が無い。`build-inputs.mjs` が `layout.tsx` の `localFont` 呼び出しから `apps/web/.ds-css/fonts.css` を生成し、`extraFonts` で渡す（366件。同期先の `fonts/` に woff2 が入る）。
-- Tailwind v4 は `.design-sync/` 配下の文書（`conventions.md` など）も自動で走査する。文中にクラス名を書くと CSS に生成される（「`rounded-md` は無い」と書いて `rounded-md` が生成されたことがある）。CSS に入れたくない名前は字面で書かない。
+- Tailwind v4 は `.design-sync/` 配下の文書（`conventions.md` など）も自動で走査する。文中にクラス名を書くと CSS に生成される（既定の角丸の段階名（md など）を「無い」と書いた注意書きから、その角丸のクラスが生成されたことがある）。CSS に入れたくない名前は、クラス名として切り出せない書き方にする（字面で書かない）。
 - chromium が無くても、`apps/web/node_modules/jsdom` で `_vendor/react*.js` → `_ds_bundle.js` → `_preview/<Name>.js` を順に評価し、各 export を描画すれば、読み込みと実行時のエラーは検出できる（見た目の確認にはならない）。
 
 ## 表示の確認
@@ -45,7 +45,7 @@
 ## Re-sync risks（次回の同期で古くなりうるもの）
 
 - `config.json` の `dtsPropsFor.RoleSwitcher` は `Role` の union（`"Engineer" | "Approver"`）の写し。`apps/web/src/lib/role-cookie.ts` の `Role` を変えたら合わせて直す。
-- `.design-sync/tailwind.css` の `@source inline(...)` は、トークン（AC-2 の32個のうち色のもの）・角丸と影のトークンと、デザインエージェント向けの配置クラスの手書きの一覧。トークンを増減したら直す。`conventions.md` の表も同じ。
+- `.design-sync/tailwind.css` の `@source inline(...)` は、トークン（AC-2 の色のトークン32個）・角丸と影のトークンと、デザインエージェント向けの配置クラスの手書きの一覧。トークンを増減したら直す。`conventions.md` の表も同じ。
 - `.design-sync/previews/*.tsx` は AC-6 の props に依存する。props を変えたらプレビューも直す。
 - プレビューは機械で採点していない（上記）。ブラウザが使えるようになったら、`package-capture.mjs` で採点し直す。
 - `.design-sync/process-shim.mjs` は `next/link` の実装に依存する。Next.js を上げてバンドルが別の Node 専用の値を参照し始めたら、jsdom で `_ds_bundle.js` を評価し直して確かめる。
