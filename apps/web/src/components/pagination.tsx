@@ -9,6 +9,9 @@ export interface PaginationProps {
   onPageChange: (page: number) => void;
 }
 
+const BUTTON_CLASSES =
+  "rounded-(--et-radius-control) border border-border bg-surface px-2 py-1 text-surface-foreground hover:bg-et-hover disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-focus-ring focus-visible:ring-offset-background";
+
 export function Pagination({ page, pageCount, onPageChange }: PaginationProps) {
   return (
     <nav aria-label="ページ送り">
@@ -16,7 +19,7 @@ export function Pagination({ page, pageCount, onPageChange }: PaginationProps) {
         type="button"
         disabled={page <= 1}
         onClick={() => onPageChange(page - 1)}
-        className="rounded-md px-2 py-1 focus-visible:ring-2 focus-visible:ring-focus-ring"
+        className={BUTTON_CLASSES}
       >
         前へ
       </button>
@@ -24,7 +27,7 @@ export function Pagination({ page, pageCount, onPageChange }: PaginationProps) {
         type="button"
         disabled={page >= pageCount}
         onClick={() => onPageChange(page + 1)}
-        className="rounded-md px-2 py-1 focus-visible:ring-2 focus-visible:ring-focus-ring"
+        className={BUTTON_CLASSES}
       >
         次へ
       </button>

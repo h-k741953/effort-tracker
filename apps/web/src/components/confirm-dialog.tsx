@@ -48,26 +48,28 @@ export function ConfirmDialog({
   };
 
   return (
-    <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      tabIndex={-1}
-      onKeyDown={handleKeyDown}
-      className="rounded-md border border-border bg-surface p-4 text-surface-foreground outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-    >
-      <h2 id={titleId} className="text-base font-semibold">
-        {title}
-      </h2>
-      <div>{description}</div>
-      <div className="mt-4 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onCancel}>
-          取消
-        </Button>
-        <Button variant={confirmVariant} onClick={onConfirm}>
-          {confirmLabel}
-        </Button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-(--et-overlay) backdrop-blur-(--et-overlay-blur)">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onKeyDown={handleKeyDown}
+        className="rounded-(--et-radius-card) border border-border bg-surface p-4 text-surface-foreground shadow-(--et-shadow-dialog) outline-none motion-safe:animate-[et-dialog-in_var(--et-dur-enter)_var(--et-ease)_both] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-focus-ring focus-visible:ring-offset-background"
+      >
+        <h2 id={titleId} className="text-base font-semibold">
+          {title}
+        </h2>
+        <div>{description}</div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onCancel}>
+            取消
+          </Button>
+          <Button variant={confirmVariant} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </div>
       </div>
     </div>
   );
