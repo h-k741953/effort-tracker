@@ -58,8 +58,9 @@ describe("SideNav の丸印の色 - AC-6-13-iv（AC-10-3-p）", () => {
     const items = ITEMS.map((i, idx) => ({ ...i, current: idx === currentIndex }));
     const footerItems = FOOTER.map((i) => ({ ...i, current: false }));
     const expected = [...items, ...footerItems];
-    const { container } = render(<SideNav items={items} footerItems={footerItems} />);
-    const links = [...container.querySelectorAll("a")];
+    // 10-3-p: 項目は link のロールの要素として集める（タグ名では集めない）。0件でも投げない queryAll で読み、(iii) で落とす。
+    const { queryAllByRole } = render(<SideNav items={items} footerItems={footerItems} />);
+    const links = queryAllByRole("link");
 
     // (iii) 読んだ link の数が和と一致（0件は失敗）。
     expect(links.length).toBeGreaterThan(0);
@@ -77,10 +78,10 @@ describe("SideNav の丸印の色 - AC-6-13-iv（AC-10-3-p）", () => {
   });
 
   it("すべて偽で与えたとき、bg-primary を持つ丸印が無い", () => {
-    const { container } = render(
+    const { queryAllByRole } = render(
       <SideNav items={ITEMS.map((i) => ({ ...i, current: false }))} footerItems={FOOTER.map((i) => ({ ...i, current: false }))} />,
     );
-    const markers = [...container.querySelectorAll('a [aria-hidden="true"]')];
+    const markers = queryAllByRole("link").flatMap((link) => [...link.querySelectorAll('[aria-hidden="true"]')]);
     expect(markers.length).toBeGreaterThan(0);
     expect(markers.filter((m) => countWholeWord(m.getAttribute("class") ?? "", "bg-primary") > 0)).toHaveLength(0);
   });
