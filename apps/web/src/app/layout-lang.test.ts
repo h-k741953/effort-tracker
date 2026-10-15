@@ -7,8 +7,8 @@ import { describe, expect, it } from "vitest";
 //
 // layout.tsx を TypeScript の構文木で読み、default export の RootLayout が返す <html> 要素が
 // lang="ja" で画面の言語を示すことを読む。layout-theme.test.ts（同じ <html> の data-theme を読む）に倣う。
-// 判定は述語として切り出し、テキストを受け取って単体で呼べる形にする（13-2-b）。合格側 3-a〜3-d と
-// 不合格側 3-e〜3-u を fixture として通し、実ファイルへ適用し（3-v）、構文として読めない入力は投げる（3-w）。
+// 判定は述語として切り出し、テキストを受け取って単体で呼べる形にする（13-2-b）。合格側 3-a〜3-d・3-ag・3-ah と
+// 不合格側 3-e〜3-u・3-x〜3-af を fixture として通し、実ファイルへ適用し（3-v）、構文として読めない入力は投げる（3-w）。
 // 描画された HTML・実ブラウザは読まない（13-L3）。
 
 function parseSource(text: string): ts.SourceFile {
@@ -103,6 +103,14 @@ ${head}({ children }: { children: React.ReactNode }) {
 }
 `;
 
+// RootLayout の本体と return 文を差し替える fixture 用（3-ab〜3-ah）。1行に並べた形は別の fixture にする（13-2-b）。
+const layoutBody = (body: string): string => `
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+${body}
+}
+`;
+const H = `<html lang="ja"><body>{children}</body></html>`;
+
 describe("layout.tsx の <html lang> - AC-13", () => {
   it("3-v: 実ファイルの layout.tsx の <html> は lang=\"ja\" である", () => {
     const text = readFileSync(path.join(process.cwd(), "src", "app", "layout.tsx"), "utf8");
@@ -188,7 +196,128 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       wrap(`<html lang={c ? "ja" : "ja"}><body>{children}</body></html>`),
       false,
     ],
+    [
+      "3-ab: 入れ子: 式本体のアロー関数",
+      layoutBody(`  const inner = () => ${H};
+  return <body>{children}</body>;`),
+      false,
+    ],
+    [
+      "3-ab: 入れ子: ブロック本体のアロー関数",
+      layoutBody(`  const inner = () => { return ${H}; };
+  return <body>{children}</body>;`),
+      false,
+    ],
+    [
+      "3-ab: 入れ子: 関数式",
+      layoutBody(`  const inner = function () { return ${H}; };
+  return <body>{children}</body>;`),
+      false,
+    ],
+    [
+      "3-ab: 入れ子: 関数宣言",
+      layoutBody(`  function Inner() { return ${H}; }
+  return <body>{children}</body>;`),
+      false,
+    ],
+    [
+      "3-ab: 入れ子: オブジェクトリテラルのメソッド",
+      layoutBody(`  const o = { render() { return ${H}; } };
+  return <body>{children}</body>;`),
+      false,
+    ],
+    [
+      "3-ab: 入れ子: クラスのメソッド",
+      layoutBody(`  class C { render() { return ${H}; } }
+  return <body>{children}</body>;`),
+      false,
+    ],
+    [
+      "3-ac: 入れ子の関数を呼び出して返す return inner()",
+      layoutBody(`  const inner = () => ${H};
+  return inner();`),
+      false,
+    ],
+    [
+      "3-ac: 入れ子の関数を JSX として描く return <Inner />",
+      layoutBody(`  function Inner() { return ${H}; }
+  return <Inner />;`),
+      false,
+    ],
+    [
+      "3-ad: 変数を経て返す const el = ...; return el",
+      layoutBody(`  const el = ${H};
+  return el;`),
+      false,
+    ],
+    [
+      "3-ad: 変数に入れるだけで返さない",
+      layoutBody(`  const el = ${H};
+  return <body>{children}</body>;`),
+      false,
+    ],
+    [
+      "3-ae: 他の要素の子 <Providers>",
+      layoutBody(`  return <Providers>${H}</Providers>;`),
+      false,
+    ],
+    [
+      "3-ae: フラグメントの子",
+      layoutBody(`  return <>${H}</>;`),
+      false,
+    ],
+    [
+      "3-ae: 条件式 c ? <html> : null",
+      layoutBody(`  return c ? ${H} : null;`),
+      false,
+    ],
+    [
+      "3-ae: 論理式 c && <html>",
+      layoutBody(`  return c && ${H};`),
+      false,
+    ],
+    [
+      "3-af: 入れ子が2段（最も内側の inner だけが <html> を返す）",
+      layoutBody(`  const outer = () => { const inner = () => ${H}; return inner(); };
+  return outer();`),
+      false,
+    ],
+    [
+      "3-ag: 括弧なし",
+      layoutBody(`  return ${H};`),
+      true,
+    ],
+    [
+      "3-ag: 括弧あり",
+      layoutBody(`  return (${H});`),
+      true,
+    ],
+    [
+      "3-ag: 括弧の重ね",
+      layoutBody(`  return ((${H}));`),
+      true,
+    ],
+    [
+      "3-ah: <html> を含まない入れ子の関数がある",
+      layoutBody(`  const pick = (v: string) => v.trim();
+  return (${H});`),
+      true,
+    ],
+    [
+      "3-ah: 早期 if (c) return null; がある",
+      layoutBody(`  if (c) return null;
+  return (${H});`),
+      true,
+    ],
+    [
+      "3-ah: 入れ子の関数と早期 return null の両方がある",
+      layoutBody(`  const pick = (v: string) => v.trim();
+  if (c) return null;
+  return (${H});`),
+      true,
+    ],
   ])("fixture %s", (_name, text, expected) => {
+    expect(() => parseSource(text)).not.toThrow();
     expect(htmlLangComplies(text)).toBe(expected);
   });
 
