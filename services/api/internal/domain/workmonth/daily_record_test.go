@@ -192,33 +192,10 @@ func TestNewTimeOfDay(t *testing.T) {
 	}
 }
 
-// TestNewTimeOfDay_SameConstructionForAllFourTimes は、4つの時刻（開始・終了・休憩開始・休憩終了）の
-// いずれに同じ不正な値を置いても同じ番兵で弾かれることを検査する（AC-3-12-b・AC-12-18 ① (i)）。
-// 4つはすべて同じ型（TimeOfDay）を通る＝時刻ごとに検査を書き分けない。
-// 公開の構築関数は NewTimeOfDay の1つだけなので、4つの位置の入力を同じ関数へ通して確かめる。
-// 位置ごとの取り違え（片方の時刻だけを検査する実装）を interactor 経由で検出する対は
+// AC-12-18 ① (i)（同じ不正な値を4つの時刻それぞれに置く組）の担保は、domain ではなく
 // interactor の TestEnterDailyRecord_InvalidTimeOfDayInEachOfFourTimes が持つ。
-func TestNewTimeOfDay_SameConstructionForAllFourTimes(t *testing.T) {
-	positions := []string{"開始時刻", "終了時刻", "休憩開始時刻", "休憩終了時刻"}
-	// 3-1-a の `9:10`（分が粒度の外）と 3-2-b の `24:00`（時 24）
-	invalids := []struct {
-		name         string
-		hour, minute int
-	}{
-		{name: "9:10", hour: 9, minute: 10},
-		{name: "24:00", hour: 24, minute: 0},
-	}
-	for _, pos := range positions {
-		for _, in := range invalids {
-			t.Run(pos+"に "+in.name, func(t *testing.T) {
-				_, err := workmonth.NewTimeOfDay(in.hour, in.minute)
-				if !errors.Is(err, workmonth.ErrTimeOfDayOutOfRange) {
-					t.Errorf("NewTimeOfDay(%d, %d) のエラー = %v, want errors.Is(err, ErrTimeOfDayOutOfRange)", in.hour, in.minute, err)
-				}
-			})
-		}
-	}
-}
+// 公開の構築関数は NewTimeOfDay の1つだけで、domain 単独では位置を区別できず
+// （位置を変えても同じ関数を呼ぶだけ）、TestNewTimeOfDay と重複するため置かない。
 
 // ---- AC-3-12-c〜g・3-12-h: Break / DailyRecord（仕様書の表から駆動） -----------
 

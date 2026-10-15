@@ -48,7 +48,7 @@ func specPath(t *testing.T) string {
 	return filepath.Join("..", "..", "..", "..", "..", "docs", "specs", "daily-record-entry.md")
 }
 
-// loadSpecSection は仕様書の「### AC-N.」の節から、先頭セルが prefix で始まる表の行を返す。
+// loadSpecSection は仕様書の heading の節（次の nextHeading の手前まで）から、表の行をセルに分けて返す。
 func loadSpecSection(t *testing.T, heading, nextHeading string) [][]string {
 	t.Helper()
 	raw, err := os.ReadFile(specPath(t))
