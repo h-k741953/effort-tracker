@@ -14,8 +14,11 @@ var (
 	// ErrFutureDate は対象日が「当日」より後であることを表す。
 	ErrFutureDate = errors.New("workmonth: date is in the future")
 
-	// ErrWorkingHoursOutOfRange は稼働時間が値域外であることを表す。
-	ErrWorkingHoursOutOfRange = errors.New("workmonth: working hours out of range")
+	// ErrTimeOfDayOutOfRange は時刻が値域外・粒度外であることを表す（AC-11-4）。
+	ErrTimeOfDayOutOfRange = errors.New("workmonth: time of day out of range")
+
+	// ErrInvalidTimeCombination は時刻の組み合わせが不正であることを表す（AC-11-4-a）。
+	ErrInvalidTimeCombination = errors.New("workmonth: invalid time combination")
 
 	// ErrInvalidValue は値オブジェクトの構築に失敗したことを表す。
 	ErrInvalidValue = errors.New("workmonth: invalid value")

@@ -84,13 +84,39 @@ func (i *EnterDailyRecord) Execute(ctx context.Context, input port.EnterDailyRec
 		return
 	}
 
-	// ⑤ 業務バリデーション（値域 → 当該月外・未来日は集約が判定する）。
-	hours, err := workmonth.NewWorkingHours(input.Hours, input.Minutes)
+	// ⑤ 業務バリデーション。順序は AC-7-18:
+	// (i) 4つの時刻すべての構築 → (ii) 休憩と稼働実績の構築 → (iii) 集約（当該月外・未来日）。
+	startTime, err := toTimeOfDay(input.StartTime)
 	if err != nil {
 		i.output.PresentError(err)
 		return
 	}
-	record, err := workmonth.NewDailyRecord(input.Date, hours)
+	endTime, err := toTimeOfDay(input.EndTime)
+	if err != nil {
+		i.output.PresentError(err)
+		return
+	}
+	var breakStart, breakEnd workmonth.TimeOfDay
+	if input.Break != nil {
+		if breakStart, err = toTimeOfDay(input.Break.Start); err != nil {
+			i.output.PresentError(err)
+			return
+		}
+		if breakEnd, err = toTimeOfDay(input.Break.End); err != nil {
+			i.output.PresentError(err)
+			return
+		}
+	}
+	var brk *workmonth.Break
+	if input.Break != nil {
+		b, err := workmonth.NewBreak(breakStart, breakEnd)
+		if err != nil {
+			i.output.PresentError(err)
+			return
+		}
+		brk = &b
+	}
+	record, err := workmonth.NewDailyRecord(input.Date, startTime, endTime, brk)
 	if err != nil {
 		i.output.PresentError(err)
 		return
@@ -109,4 +135,9 @@ func (i *EnterDailyRecord) Execute(ctx context.Context, input port.EnterDailyRec
 
 	// ⑦ 更新後の勤務月を出力ポートへ渡す（AC-7-5）。
 	i.output.Present(newWorkMonthOutput(target, contract))
+}
+
+// toTimeOfDay は素の時刻を値オブジェクトへ構築する。4つの時刻は同じ構築を通す（AC-3-5-a）。
+func toTimeOfDay(t port.TimeOfDay) (workmonth.TimeOfDay, error) {
+	return workmonth.NewTimeOfDay(t.Hour, t.Minute)
 }
