@@ -56,6 +56,19 @@ function isStaticJa(attribute: ts.JsxAttribute): boolean {
   return false;
 }
 
+/**
+ * 1-a (i)(ii): <html> 要素が return 文の式（括弧を外したもの）そのものであり、
+ * その return 文を囲む最も内側の関数が root であること。
+ */
+function isReturnedBy(tag: HtmlTag, root: ts.FunctionDeclaration): boolean {
+  let node: ts.Node = ts.isJsxOpeningElement(tag) ? tag.parent : tag;
+  while (ts.isParenthesizedExpression(node.parent)) node = node.parent;
+  if (!ts.isReturnStatement(node.parent)) return false;
+  let fn: ts.Node | undefined = node.parent.parent;
+  while (fn !== undefined && !ts.isFunctionLike(fn)) fn = fn.parent;
+  return fn === root;
+}
+
 /** 13-1 の 1-a〜1-f を構文から読む。構文として読めないテキストは投げる（2-d）。 */
 function htmlLangComplies(text: string): boolean {
   const source = parseSource(text);
@@ -65,12 +78,12 @@ function htmlLangComplies(text: string): boolean {
     ts.forEachChild(node, collect);
   };
   collect(source);
-  // 1-a: <html> はファイル内にちょうど1つ、かつ default export の RootLayout の本体の中。
+  // 1-a: <html> はファイル内にちょうど1つ、かつ default export の RootLayout が「返す」。
   if (tags.length !== 1) return false;
   const root = findRootLayout(source);
-  if (root?.body === undefined) return false;
+  if (root === undefined) return false;
   const html = tags[0];
-  if (html.pos < root.body.pos || html.end > root.body.end) return false;
+  if (!isReturnedBy(html, root)) return false;
 
   const props = html.attributes.properties;
   // 1-e: spread 属性を置かない。
