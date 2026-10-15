@@ -109,7 +109,7 @@ func TestAssembly_EnterDailyRecord_WiresGatewayAndClock(t *testing.T) {
 		RejectWorkMonth:   noopHandler,
 	})
 
-	reqBody := `{"workingHours":{"hours":8,"minutes":0}}`
+	reqBody := `{"startTime":{"hour":9,"minute":0},"endTime":{"hour":17,"minute":0},"break":null}`
 	req := httptest.NewRequest(http.MethodPut, "/work-months/ctr-assembly-2/2026-07/daily-records/2026-07-15", strings.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Actor-Id", "eng-assembly-2")

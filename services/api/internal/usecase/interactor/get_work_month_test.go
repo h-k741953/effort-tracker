@@ -94,11 +94,7 @@ func TestGetWorkMonth_GeneratedVsUngenerated(t *testing.T) {
 				Excess:     nil,
 				Shortfall:  nil,
 				DailyRecords: []port.DailyRecordOutput{
-					{
-						Date:                "2026-07-01",
-						WorkingHours:        port.Hours{Hours: 8, Minutes: 50},
-						RoundedWorkingHours: port.Hours{Hours: 8, Minutes: 45},
-					},
+					recordOutput("2026-07-01", 8, 45),
 				},
 			},
 		},
@@ -132,7 +128,7 @@ func TestGetWorkMonth_GeneratedVsUngenerated(t *testing.T) {
 					t, f.contractID, f.yearMonth,
 					mustSettlementRange(t, 100, 200),
 					workmonth.StateDraft,
-					[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 50)},
+					[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 45)},
 				))
 			}
 

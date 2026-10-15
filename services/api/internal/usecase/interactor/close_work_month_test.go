@@ -26,7 +26,7 @@ func (f *fixture) close() *interactor.CloseWorkMonth {
 
 // recordsSummingTo は合計が totalMinutes 分になるよう、2026年7月の連続した日へ
 // 分割した稼働実績を組み立てる。1日あたり20時間（1200分）以下に収め、
-// DailyRecord の1日の上限（24時間）に抵触しないようにする。
+// DailyRecord の1日の上限（23時間45分）に抵触しないようにする。
 // totalMinutes は15分単位でなければならない（呼び出し側が保証する）。
 func recordsSummingTo(t *testing.T, totalMinutes int) []workmonth.DailyRecord {
 	t.Helper()

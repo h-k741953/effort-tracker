@@ -10,9 +10,9 @@ import (
 )
 
 // 検証対象の受け入れ条件:
-//   - docs/specs/daily-record-entry.md AC-2（稼働実績が持つもの）
-//   - 同 AC-3（稼働時間の値域バリデーション）
 //   - 同 AC-6（15分切り捨て）
+//   - 稼働実績（DailyRecord）の構築と時刻の検証は daily_record_test.go が持つ
+//     （daily-record-entry.md AC-2・AC-3。2026-10-15 の改定で稼働時間は入力でなくなった）
 //   - docs/specs/workmonth-implementation-design.md AC-3（値オブジェクトと不変条件）
 
 // hoursView は go-cmp で稼働時間を比較するための表示用の射影。
@@ -27,9 +27,10 @@ func viewOfHours(w workmonth.WorkingHours) hoursView {
 	return hoursView{Hours: w.Hours(), Minutes: w.Minutes()}
 }
 
-// TestNewWorkingHours は稼働時間の値域を検証する。
-// AC-3-1（0時間0分は許可）・AC-3-4（負の値は弾く）・AC-3-5（分が 0〜59 の範囲外は弾く）。
-// 1日の上限（24時間）は WorkingHours では検査しない（実装設計 AC-3-8）。
+// TestNewWorkingHours は稼働の量の表現としての妥当性を検証する（実装設計 AC-3-4）。
+// 時と分の組として表せない値（負・分の桁あふれ）を弾く。失敗は ErrInvalidValue
+// （2026-10-15 改定。決定16 の帰結。旧: ErrWorkingHoursOutOfRange は廃止＝AC-11-4）。
+// 1日の上限・下限は WorkingHours では検査しない（DailyRecord の構築時＝実装設計 AC-3-8）。
 func TestNewWorkingHours(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -38,15 +39,15 @@ func TestNewWorkingHours(t *testing.T) {
 		want    hoursView
 		wantErr error
 	}{
-		{name: "0時間0分は許可（AC-3-1）", hours: 0, minutes: 0, want: hoursView{Hours: 0, Minutes: 0}},
+		{name: "0時間0分は許可", hours: 0, minutes: 0, want: hoursView{Hours: 0, Minutes: 0}},
 		{name: "8時間50分は許可", hours: 8, minutes: 50, want: hoursView{Hours: 8, Minutes: 50}},
-		{name: "分の上端 59 は許可（AC-3-5）", hours: 8, minutes: 59, want: hoursView{Hours: 8, Minutes: 59}},
-		{name: "24時間0分は許可（AC-3-2）", hours: 24, minutes: 0, want: hoursView{Hours: 24, Minutes: 0}},
+		{name: "分の上端 59 は許可", hours: 8, minutes: 59, want: hoursView{Hours: 8, Minutes: 59}},
+		{name: "24時間0分は許可", hours: 24, minutes: 0, want: hoursView{Hours: 24, Minutes: 0}},
 		{name: "24時間を超える値も WorkingHours 自体は許可（実装設計 AC-3-8）", hours: 140, minutes: 0, want: hoursView{Hours: 140, Minutes: 0}},
-		{name: "分が 60 は弾く（AC-3-5）", hours: 8, minutes: 60, wantErr: workmonth.ErrWorkingHoursOutOfRange},
-		{name: "分が負は弾く（AC-3-5）", hours: 8, minutes: -1, wantErr: workmonth.ErrWorkingHoursOutOfRange},
-		{name: "時が負は弾く（AC-3-4）", hours: -1, minutes: 0, wantErr: workmonth.ErrWorkingHoursOutOfRange},
-		{name: "時も分も負は弾く（AC-3-4）", hours: -1, minutes: -30, wantErr: workmonth.ErrWorkingHoursOutOfRange},
+		{name: "分が 60 は弾く", hours: 8, minutes: 60, wantErr: workmonth.ErrInvalidValue},
+		{name: "分が負は弾く", hours: 8, minutes: -1, wantErr: workmonth.ErrInvalidValue},
+		{name: "時が負は弾く", hours: -1, minutes: 0, wantErr: workmonth.ErrInvalidValue},
+		{name: "時も分も負は弾く", hours: -1, minutes: -30, wantErr: workmonth.ErrInvalidValue},
 	}
 
 	for _, tt := range tests {
@@ -95,69 +96,6 @@ func TestWorkingHours_TruncateTo15Minutes(t *testing.T) {
 				t.Errorf("(%d時間%d分).TruncateTo15Minutes() が不一致 (-want +got):\n%s", tt.hours, tt.minutes, diff)
 			}
 		})
-	}
-}
-
-// TestNewDailyRecord_WorkingHoursRange は1日の稼働時間の上限を検証する。
-// AC-3-1（0時間0分は許可）・AC-3-2（24時間0分は許可・上限を含む）・AC-3-3（24時間超は弾く）。
-// 検査位置は DailyRecord の構築時（実装設計 AC-3-5・AC-3-8）。
-func TestNewDailyRecord_WorkingHoursRange(t *testing.T) {
-	tests := []struct {
-		name    string
-		hours   int
-		minutes int
-		wantErr error
-	}{
-		{name: "0時間0分は許可（AC-3-1）", hours: 0, minutes: 0},
-		{name: "8時間50分は許可", hours: 8, minutes: 50},
-		{name: "24時間0分は許可・上限を含む（AC-3-2）", hours: 24, minutes: 0},
-		{name: "23時間59分は許可", hours: 23, minutes: 59},
-		{name: "24時間1分は弾く（AC-3-3）", hours: 24, minutes: 1, wantErr: workmonth.ErrWorkingHoursOutOfRange},
-		{name: "25時間0分は弾く（AC-3-3）", hours: 25, minutes: 0, wantErr: workmonth.ErrWorkingHoursOutOfRange},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			date := mustDate(t, 2026, 7, 1)
-			hours := mustWorkingHours(t, tt.hours, tt.minutes)
-
-			got, err := workmonth.NewDailyRecord(date, hours)
-
-			if tt.wantErr != nil {
-				if !errors.Is(err, tt.wantErr) {
-					t.Fatalf("NewDailyRecord(%d時間%d分) のエラー = %v, want errors.Is(err, %v)", tt.hours, tt.minutes, err, tt.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("NewDailyRecord(%d時間%d分) が予期しないエラーを返した: %v", tt.hours, tt.minutes, err)
-			}
-			want := hoursView{Hours: tt.hours, Minutes: tt.minutes}
-			if diff := cmp.Diff(want, viewOfHours(got.WorkingHours())); diff != "" {
-				t.Errorf("NewDailyRecord(%d時間%d分) の稼働時間が不一致 (-want +got):\n%s", tt.hours, tt.minutes, diff)
-			}
-		})
-	}
-}
-
-// TestNewDailyRecord_HoldsDateAndWorkingHours は稼働実績が対象日と稼働時間を持つことを検証する（AC-2-1）。
-// 開始・終了時刻や休憩時間は持たない（AC-2-1・D-2・D-3）。これは型の定義そのもので担保する。
-func TestNewDailyRecord_HoldsDateAndWorkingHours(t *testing.T) {
-	date := mustDate(t, 2026, 7, 15)
-	hours := mustWorkingHours(t, 8, 50)
-
-	record, err := workmonth.NewDailyRecord(date, hours)
-	if err != nil {
-		t.Fatalf("NewDailyRecord が予期しないエラーを返した: %v", err)
-	}
-
-	wantDate := dateView{Year: 2026, Month: 7, Day: 15}
-	if diff := cmp.Diff(wantDate, viewOfDate(record.Date())); diff != "" {
-		t.Errorf("DailyRecord.Date() が不一致 (-want +got):\n%s", diff)
-	}
-	wantHours := hoursView{Hours: 8, Minutes: 50}
-	if diff := cmp.Diff(wantHours, viewOfHours(record.WorkingHours())); diff != "" {
-		t.Errorf("DailyRecord.WorkingHours() が不一致 (-want +got):\n%s", diff)
 	}
 }
 

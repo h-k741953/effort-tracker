@@ -37,11 +37,7 @@ func TestDeleteDailyRecord_RemovesRecord(t *testing.T) {
 			name:       "レコードのある日を削除するとその日は消える（AC-5-4）",
 			deleteDate: [3]int{2026, 7, 1},
 			want: []port.DailyRecordOutput{
-				{
-					Date:                "2026-07-02",
-					WorkingHours:        port.Hours{Hours: 7, Minutes: 0},
-					RoundedWorkingHours: port.Hours{Hours: 7, Minutes: 0},
-				},
+				recordOutput("2026-07-02", 7, 0),
 			},
 			wantTotal: port.Hours{Hours: 7, Minutes: 0},
 		},
@@ -49,16 +45,8 @@ func TestDeleteDailyRecord_RemovesRecord(t *testing.T) {
 			name:       "レコードの無い日の削除は成功し、他の日に影響しない（実装設計 AC-4-2）",
 			deleteDate: [3]int{2026, 7, 10},
 			want: []port.DailyRecordOutput{
-				{
-					Date:                "2026-07-01",
-					WorkingHours:        port.Hours{Hours: 8, Minutes: 0},
-					RoundedWorkingHours: port.Hours{Hours: 8, Minutes: 0},
-				},
-				{
-					Date:                "2026-07-02",
-					WorkingHours:        port.Hours{Hours: 7, Minutes: 0},
-					RoundedWorkingHours: port.Hours{Hours: 7, Minutes: 0},
-				},
+				recordOutput("2026-07-01", 8, 0),
+				recordOutput("2026-07-02", 7, 0),
 			},
 			wantTotal: port.Hours{Hours: 15, Minutes: 0},
 		},

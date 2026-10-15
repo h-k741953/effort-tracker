@@ -65,11 +65,20 @@ func mustSettlementRange(t *testing.T, lowerHours, upperHours int) workmonth.Set
 	return s
 }
 
+// mustDailyRecord は「開始 0:00・終了 = 稼働時間・休憩なし」の稼働実績を構築する。
+// 稼働時間は時刻から算出される値であり入力ではない（daily-record-entry.md D-2）ため、
+// このヘルパーは指定の稼働時間になる時刻の組を作る。稼働時間は 15 分の倍数で、
+// 0時間15分以上 23時間45分以下でなければならない（同 AC-3-A・3-B。D-7・D-13）。
 func mustDailyRecord(t *testing.T, year, month, day, hours, minutes int) workmonth.DailyRecord {
 	t.Helper()
-	r, err := workmonth.NewDailyRecord(mustDate(t, year, month, day), mustWorkingHours(t, hours, minutes))
+	r, err := workmonth.NewDailyRecord(
+		mustDate(t, year, month, day),
+		mustTimeOfDay(t, 0, 0),
+		mustTimeOfDay(t, hours, minutes),
+		nil,
+	)
 	if err != nil {
-		t.Fatalf("前提の構築に失敗: NewDailyRecord(%d-%02d-%02d, %d時間%d分): %v", year, month, day, hours, minutes, err)
+		t.Fatalf("前提の構築に失敗: NewDailyRecord(%d-%02d-%02d, 0:00〜%d:%02d): %v", year, month, day, hours, minutes, err)
 	}
 	return r
 }
@@ -214,9 +223,9 @@ func TestWorkMonth_EnterDailyRecord_OneRecordPerDate(t *testing.T) {
 			entries: []workmonth.DailyRecord{
 				mustDailyRecord(t, 2026, 7, 10, 8, 0),
 				mustDailyRecord(t, 2026, 7, 10, 6, 30),
-				mustDailyRecord(t, 2026, 7, 10, 0, 0),
+				mustDailyRecord(t, 2026, 7, 10, 0, 15),
 			},
-			want: []recordView{{Date: "2026-07-10", Hours: 0, Minutes: 0}},
+			want: []recordView{{Date: "2026-07-10", Hours: 0, Minutes: 15}},
 		},
 		{
 			name: "入力順が降順でも対象日の昇順で返る（実装設計 AC-2-6）",
@@ -918,36 +927,37 @@ func TestWorkMonth_DailyRecords_ReturnsCopy(t *testing.T) {
 // ---- AC-6 ----------------------------------------------------------------
 
 // TestWorkMonth_TotalHours は総稼働時間の算出を検証する。
-// AC-6-1（各日を15分単位で切り捨ててから合計する。合計してから丸めない）
-// AC-6-2（8時間50分の日の寄与は8時間45分）
+// AC-6-1（各日の稼働時間を15分単位で切り捨てて合計する）
+// AC-6-2-a（時刻から算出した値は15分の倍数で、切り捨てで値は変わらない）
 // AC-6-3（レコードのない日は項に現れない）。
+//
+// AC-6-2 の例（8時間50分の日の寄与は8時間45分）と「合計してから丸めない」は、時刻から
+// 算出する稼働時間が常に15分の倍数になった（D-10）ため、DailyRecord を経由して再現する手段が
+// 無い（同 AC-6-2）。丸め規則そのものは TestWorkingHours_TruncateTo15Minutes（value_test.go）が
+// WorkingHours の単位で検証する。稼働 0 の日（旧: AC-6-3・D-5 の「稼働ゼロの日も項として0」）は
+// D-13 により構築できないため、ケースを削除した。
 func TestWorkMonth_TotalHours(t *testing.T) {
+	date := func(day int) workmonth.Date { return mustDate(t, 2026, 7, day) }
+	noonBreak := mustBreak(t, 12, 0, 13, 0)
+	lunchBreak := mustBreak(t, 12, 30, 13, 15)
+
 	tests := []struct {
 		name     string
 		existing []workmonth.DailyRecord
 		want     hoursView
 	}{
 		{
-			name:     "レコードが1件（AC-6-2）",
-			existing: []workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 50)},
-			want:     hoursView{Hours: 8, Minutes: 45},
+			name:     "レコードが1件（休憩なしの 9:00〜18:00 は 9時間0分）",
+			existing: []workmonth.DailyRecord{mustDailyRecordAt(t, date(1), [2]int{9, 0}, [2]int{18, 0}, nil)},
+			want:     hoursView{Hours: 9, Minutes: 0},
 		},
 		{
-			name: "各日を切り捨ててから合計する（AC-6-1）",
+			name: "時刻から算出した値の寄与は切り捨てで変わらない（AC-6-2-a）",
 			existing: []workmonth.DailyRecord{
-				mustDailyRecord(t, 2026, 7, 1, 8, 50),
-				mustDailyRecord(t, 2026, 7, 2, 7, 20),
+				mustDailyRecordAt(t, date(1), [2]int{9, 0}, [2]int{18, 0}, &noonBreak),    // 8時間0分
+				mustDailyRecordAt(t, date(2), [2]int{9, 15}, [2]int{17, 45}, &lunchBreak), // 7時間45分
 			},
-			want: hoursView{Hours: 16, Minutes: 0},
-		},
-		{
-			name: "合計してから丸めた値にはならない（AC-6-1）",
-			existing: []workmonth.DailyRecord{
-				mustDailyRecord(t, 2026, 7, 1, 8, 10),
-				mustDailyRecord(t, 2026, 7, 2, 8, 10),
-			},
-			// 各日切り捨て: 8:00 + 8:00 = 16:00。合計してから丸めると 16:15 になり不一致。
-			want: hoursView{Hours: 16, Minutes: 0},
+			want: hoursView{Hours: 15, Minutes: 45},
 		},
 		{
 			name: "レコードのある日だけを合計する（AC-6-3）",
@@ -956,14 +966,6 @@ func TestWorkMonth_TotalHours(t *testing.T) {
 				mustDailyRecord(t, 2026, 7, 20, 8, 0),
 			},
 			want: hoursView{Hours: 16, Minutes: 0},
-		},
-		{
-			name: "稼働ゼロの日も項として0を加えるだけ（AC-6-3・D-5）",
-			existing: []workmonth.DailyRecord{
-				mustDailyRecord(t, 2026, 7, 1, 0, 0),
-				mustDailyRecord(t, 2026, 7, 2, 8, 0),
-			},
-			want: hoursView{Hours: 8, Minutes: 0},
 		},
 		{
 			name:     "レコードが無ければ0時間0分（AC-6-3）",
@@ -996,7 +998,7 @@ func TestWorkMonth_TotalHours(t *testing.T) {
 
 // recordsSummingTo は合計が totalMinutes 分になるよう、2026年7月の連続した日へ
 // 分割した稼働実績を組み立てる。1日あたり20時間（1200分）以下に収め、
-// DailyRecord の1日の上限（24時間）に抵触しないようにする。
+// DailyRecord の1日の上限（23時間45分。mustDailyRecord は 0:00 起点の時刻の組を作る）に抵触しないようにする。
 // totalMinutes は15分単位でなければならない（呼び出し側が保証する）。
 func recordsSummingTo(t *testing.T, totalMinutes int) []workmonth.DailyRecord {
 	t.Helper()

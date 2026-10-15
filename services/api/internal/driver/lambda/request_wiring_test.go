@@ -183,7 +183,7 @@ func buildSequencedEnterDailyRecordInvoker(presentOn ...bool) func(port.WorkMont
 // （AC-10-8②は①から独立して呼び出せることを要求する）。呼ぶたびに新しい
 // io.Reader を持つ *http.Request を返す（ボディは1回しか読めないため）。
 func newEnterDailyRecordRequest() *http.Request {
-	r := httptest.NewRequest(http.MethodPut, "/work-months/ctr-0001/2026-07/daily-records/2026-07-01", strings.NewReader(`{"workingHours":{"hours":8,"minutes":0}}`))
+	r := httptest.NewRequest(http.MethodPut, "/work-months/ctr-0001/2026-07/daily-records/2026-07-01", strings.NewReader(`{"startTime":{"hour":9,"minute":0},"endTime":{"hour":17,"minute":0},"break":null}`))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("X-Actor-Id", "eng-0001")
 	r.Header.Set("X-Actor-Role", "Engineer")

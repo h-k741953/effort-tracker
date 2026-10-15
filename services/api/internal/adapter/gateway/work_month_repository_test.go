@@ -53,45 +53,119 @@ func mustSettlementRange(t *testing.T, lowerH, lowerM, upperH, upperM int) workm
 	return r
 }
 
-func mustDailyRecord(t *testing.T, year, month, day, hours, minutes int) workmonth.DailyRecord {
+func mustTimeOfDay(t *testing.T, hour, minute int) workmonth.TimeOfDay {
+	t.Helper()
+	tod, err := workmonth.NewTimeOfDay(hour, minute)
+	if err != nil {
+		t.Fatalf("NewTimeOfDay(%d, %d) failed: %v", hour, minute, err)
+	}
+	return tod
+}
+
+// mustDailyRecord は時刻から稼働実績を構築する。start・end は {時, 分}。
+// brk が nil なら休憩なし、非 nil なら {休憩開始の時, 分, 休憩終了の時, 分}。
+func mustDailyRecord(t *testing.T, year, month, day int, start, end [2]int, brk *[4]int) workmonth.DailyRecord {
 	t.Helper()
 	date, err := workmonth.NewDate(year, month, day)
 	if err != nil {
 		t.Fatalf("NewDate failed: %v", err)
 	}
-	wh, err := workmonth.NewWorkingHours(hours, minutes)
-	if err != nil {
-		t.Fatalf("NewWorkingHours failed: %v", err)
+	var b *workmonth.Break
+	if brk != nil {
+		built, err := workmonth.NewBreak(mustTimeOfDay(t, brk[0], brk[1]), mustTimeOfDay(t, brk[2], brk[3]))
+		if err != nil {
+			t.Fatalf("NewBreak failed: %v", err)
+		}
+		b = &built
 	}
-	record, err := workmonth.NewDailyRecord(date, wh)
+	record, err := workmonth.NewDailyRecord(date, mustTimeOfDay(t, start[0], start[1]), mustTimeOfDay(t, end[0], end[1]), b)
 	if err != nil {
 		t.Fatalf("NewDailyRecord failed: %v", err)
 	}
 	return record
 }
 
-// workMonthCmpOpts は WorkMonth の比較用に、非公開フィールドを持つ値オブジェクトの
-// 比較を許可する（AC-12-4）。
-var workMonthCmpOpts = cmp.AllowUnexported(
-	workmonth.WorkMonth{},
-	workmonth.ContractID{}, workmonth.YearMonth{}, workmonth.Date{},
-	workmonth.WorkingHours{}, workmonth.DailyRecord{}, workmonth.SettlementRange{},
+// 仕様書 daily-record-entry.md AC-2-6 の入力（行の時刻のそのまま。表の値は仕様書が持つ）。
+var (
+	// 2-6-a: 9:15〜17:45／休憩 12:30〜13:15（稼働時間 7時間45分）
+	startA, endA, breakA = [2]int{9, 15}, [2]int{17, 45}, [4]int{12, 30, 13, 15}
+	// 2-6-b: 9:00〜18:00／休憩なし
+	startB, endB = [2]int{9, 0}, [2]int{18, 0}
+	// 2-6-c: 0:00〜23:45／休憩 0:00〜0:15（稼働時間 23時間30分）
+	startC, endC, breakC = [2]int{0, 0}, [2]int{23, 45}, [4]int{0, 0, 0, 15}
 )
+
+// workMonthView は集約を go-cmp で比べるための射影。公開アクセサだけを読み、
+// 実装の非公開フィールドの形に依存しない。
+type workMonthView struct {
+	ContractID string
+	Year       int
+	Month      int
+	Lower      [2]int
+	Upper      [2]int
+	State      string
+	Excess     *[2]int
+	Shortfall  *[2]int
+	Records    []recordView
+}
+
+type recordView struct {
+	Date         [3]int
+	Start        [2]int
+	End          [2]int
+	HasBreak     bool
+	Break        [4]int
+	WorkingHours [2]int
+}
+
+func viewOfWorkMonth(wm *workmonth.WorkMonth) workMonthView {
+	v := workMonthView{
+		ContractID: wm.ContractID().String(),
+		Year:       wm.YearMonth().Year(),
+		Month:      wm.YearMonth().Month(),
+		Lower:      [2]int{wm.SettlementRange().LowerBound().Hours(), wm.SettlementRange().LowerBound().Minutes()},
+		Upper:      [2]int{wm.SettlementRange().UpperBound().Hours(), wm.SettlementRange().UpperBound().Minutes()},
+		State:      string(wm.State()),
+	}
+	if e, ok := wm.Excess(); ok {
+		v.Excess = &[2]int{e.Hours(), e.Minutes()}
+	}
+	if sf, ok := wm.Shortfall(); ok {
+		v.Shortfall = &[2]int{sf.Hours(), sf.Minutes()}
+	}
+	for _, r := range wm.DailyRecords() {
+		rv := recordView{
+			Date:         [3]int{r.Date().Year(), r.Date().Month(), r.Date().Day()},
+			Start:        [2]int{r.StartTime().Hour(), r.StartTime().Minute()},
+			End:          [2]int{r.EndTime().Hour(), r.EndTime().Minute()},
+			WorkingHours: [2]int{r.WorkingHours().Hours(), r.WorkingHours().Minutes()},
+		}
+		if b, ok := r.Break(); ok {
+			rv.HasBreak = true
+			rv.Break = [4]int{b.Start().Hour(), b.Start().Minute(), b.End().Hour(), b.End().Minute()}
+		}
+		v.Records = append(v.Records, rv)
+	}
+	return v
+}
 
 // ---- ① 行 → 集約の変換（AC-9-15） -----------------------------------------
 
 // TestWorkMonthRepository_Find_ReconstructsFromRows は、Fake が返す行から
 // Reconstruct へ渡る引数が AC-9-15-b のとおりであることを検証する。
 // 精算幅は「行の値」であり（契約の現在値は Find に渡らないため、これが唯一の
-// 情報源になる＝AC-9-15-b）、稼働実績は「対象日と入力された稼働時間」のみを持つ。
+// 情報源になる＝AC-9-15-b）、稼働実績は「対象日と保存した時刻」を持ち、
+// 稼働時間は行から読まず DailyRecord が時刻から算出する（AC-9-15-b・AC-3-13）。
+// 行は AC-9-15-i の11列の並び。入力は daily-record-entry.md AC-2-6-a〜2-6-c。
 func TestWorkMonthRepository_Find_ReconstructsFromRows(t *testing.T) {
 	db := newFakeDB()
 	db.pushQuery(newFakeRows(
 		workMonthHeaderRow("contract-1", 2026, 7, 8, 0, 20, 0, string(workmonth.StateDraft), nil, nil, nil, nil),
 	), nil)
 	db.pushQuery(newFakeRows(
-		dailyRecordRow(2026, 7, 1, 7, 30),
-		dailyRecordRow(2026, 7, 2, 8, 0),
+		dailyRecordRow(2026, 7, 1, startA, endA, &breakA),
+		dailyRecordRow(2026, 7, 2, startB, endB, nil),
+		dailyRecordRow(2026, 7, 3, startC, endC, &breakC),
 	), nil)
 
 	repo := gateway.NewWorkMonthRepository(db)
@@ -100,23 +174,123 @@ func TestWorkMonthRepository_Find_ReconstructsFromRows(t *testing.T) {
 		t.Fatalf("Find failed: %v", err)
 	}
 
-	want, err := workmonth.Reconstruct(
-		mustContractID(t, "contract-1"),
-		mustYearMonth(t, 2026, 7),
-		mustSettlementRange(t, 8, 0, 20, 0),
-		workmonth.StateDraft,
-		[]workmonth.DailyRecord{
-			mustDailyRecord(t, 2026, 7, 1, 7, 30),
-			mustDailyRecord(t, 2026, 7, 2, 8, 0),
+	want := workMonthView{
+		ContractID: "contract-1", Year: 2026, Month: 7,
+		Lower: [2]int{8, 0}, Upper: [2]int{20, 0},
+		State: string(workmonth.StateDraft),
+		Records: []recordView{
+			// 2-6-a: 休憩あり。稼働時間 7時間45分は時刻からの算出値
+			{Date: [3]int{2026, 7, 1}, Start: startA, End: endA, HasBreak: true, Break: breakA, WorkingHours: [2]int{7, 45}},
+			// 2-6-b: 休憩なし。休憩の時刻を 0:00 等で埋めない
+			{Date: [3]int{2026, 7, 2}, Start: startB, End: endB, HasBreak: false, Break: [4]int{}, WorkingHours: [2]int{9, 0}},
+			// 2-6-c: 最小の時刻を持つ休憩は「休憩あり」（休憩なしと取り違えない）。稼働時間 23時間30分
+			{Date: [3]int{2026, 7, 3}, Start: startC, End: endC, HasBreak: true, Break: breakC, WorkingHours: [2]int{23, 30}},
 		},
-		nil, nil,
-	)
-	if err != nil {
-		t.Fatalf("Reconstruct(want) failed: %v", err)
+	}
+	if diff := cmp.Diff(want, viewOfWorkMonth(got)); diff != "" {
+		t.Errorf("Find が返す集約が不一致 (-want +got):\n%s（AC-9-15-b・AC-9-15-i）", diff)
+	}
+}
+
+// TestWorkMonthRepository_Find_DailyRecordQueryArguments は、稼働実績を引く Query の引数が
+// 既存のまま（契約識別子 string・年 int・月 int の3つ）であることを検証する（AC-9-15-i）。
+func TestWorkMonthRepository_Find_DailyRecordQueryArguments(t *testing.T) {
+	db := newFakeDB()
+	db.pushQuery(newFakeRows(
+		workMonthHeaderRow("contract-1", 2026, 7, 8, 0, 20, 0, string(workmonth.StateDraft), nil, nil, nil, nil),
+	), nil)
+	db.pushQuery(newFakeRows(), nil)
+
+	repo := gateway.NewWorkMonthRepository(db)
+	if _, err := repo.Find(context.Background(), mustContractID(t, "contract-1"), mustYearMonth(t, 2026, 7)); err != nil {
+		t.Fatalf("Find failed: %v", err)
 	}
 
-	if diff := cmp.Diff(want, got, workMonthCmpOpts); diff != "" {
-		t.Errorf("Find が返す集約が不一致 (-want +got):\n%s（AC-9-15-b）", diff)
+	if len(db.queryLog) != 2 {
+		t.Fatalf("Query の呼び出し回数 = %d, want 2（勤務月の行 → 稼働実績の行。AC-9-15-i）", len(db.queryLog))
+	}
+	want := []any{"contract-1", 2026, 7}
+	if diff := cmp.Diff(want, db.queryLog[1].args); diff != "" {
+		t.Errorf("稼働実績を引く Query の引数が不一致 (-want +got):\n%s（AC-9-15-i）", diff)
+	}
+}
+
+// TestWorkMonthRepository_Find_CorruptedDailyRecordRows は、破損した稼働実績の行を
+// ErrInvalidValue で返し、利用者向けの時刻の番兵（AC-3-14）にも他の番兵にも
+// 当たらないことを検証する（AC-9-15-h・AC-9-15-i・AC-12-18 ② (iv)）。
+// 永続化行の破損を 400 として外へ出さないため（AC-11-5・AC-11-13）。
+//
+// 正常な行（2-6-a）と対にして置く（対にしないと「常に ErrInvalidValue を返す」実装が
+// Green になる）。時刻の値は daily-record-entry.md AC-3 の「弾く」行の例を使う。
+func TestWorkMonthRepository_Find_CorruptedDailyRecordRows(t *testing.T) {
+	p := intPtr
+	n := (*int)(nil)
+	tests := []struct {
+		name    string
+		row     []any
+		wantErr bool
+	}{
+		{name: "正常: 2-6-a の行", row: dailyRecordRow(2026, 7, 1, startA, endA, &breakA), wantErr: false},
+		{name: "正常: 2-6-b の行（休憩の4値がすべて nil）", row: dailyRecordRow(2026, 7, 1, startB, endB, nil), wantErr: false},
+		{name: "3-2-b: 終了時刻の時が 24", row: dailyRecordRow(2026, 7, 1, [2]int{9, 0}, [2]int{24, 0}, nil), wantErr: true},
+		{name: "3-1-a: 開始時刻の分が 10", row: dailyRecordRow(2026, 7, 1, [2]int{9, 10}, [2]int{18, 0}, nil), wantErr: true},
+		{name: "3-5-a: 終了＝開始", row: dailyRecordRow(2026, 7, 1, [2]int{9, 0}, [2]int{9, 0}, nil), wantErr: true},
+		{name: "3-5-b: 終了が開始より前", row: dailyRecordRow(2026, 7, 1, [2]int{18, 0}, [2]int{9, 0}, nil), wantErr: true},
+		{name: "3-6-a: 休憩終了＝休憩開始", row: dailyRecordRow(2026, 7, 1, [2]int{9, 0}, [2]int{18, 0}, &[4]int{12, 0, 12, 0}), wantErr: true},
+		{name: "3-8: 休憩開始が開始より前", row: dailyRecordRow(2026, 7, 1, [2]int{9, 0}, [2]int{18, 0}, &[4]int{8, 45, 10, 0}), wantErr: true},
+		{name: "3-9: 稼働 0 になる休憩", row: dailyRecordRow(2026, 7, 1, [2]int{9, 0}, [2]int{18, 0}, &[4]int{9, 0, 18, 0}), wantErr: true},
+		{name: "休憩の4値の一部だけ nil: ⑧休憩開始の時のみ nil", row: dailyRecordRowRaw(2026, 7, 1, [8]*int{p(9), p(0), p(18), p(0), n, p(0), p(13), p(0)}), wantErr: true},
+		{name: "休憩の4値の一部だけ nil: ⑪休憩終了の分のみ nil", row: dailyRecordRowRaw(2026, 7, 1, [8]*int{p(9), p(0), p(18), p(0), p(12), p(0), p(13), n}), wantErr: true},
+		{name: "休憩の4値の一部だけ nil: 休憩開始の2列は値あり・休憩終了の2列が nil", row: dailyRecordRowRaw(2026, 7, 1, [8]*int{p(9), p(0), p(18), p(0), p(12), p(0), n, n}), wantErr: true},
+		{name: "開始時刻の時 ④ が nil", row: dailyRecordRowRaw(2026, 7, 1, [8]*int{n, p(0), p(18), p(0), n, n, n, n}), wantErr: true},
+		{name: "開始時刻の分 ⑤ が nil", row: dailyRecordRowRaw(2026, 7, 1, [8]*int{p(9), n, p(18), p(0), n, n, n, n}), wantErr: true},
+		{name: "終了時刻の時 ⑥ が nil", row: dailyRecordRowRaw(2026, 7, 1, [8]*int{p(9), p(0), n, p(0), n, n, n, n}), wantErr: true},
+		{name: "終了時刻の分 ⑦ が nil", row: dailyRecordRowRaw(2026, 7, 1, [8]*int{p(9), p(0), p(18), n, n, n, n, n}), wantErr: true},
+	}
+
+	userFacing := []struct {
+		name string
+		err  error
+	}{
+		{"ErrTimeOfDayOutOfRange", workmonth.ErrTimeOfDayOutOfRange},
+		{"ErrInvalidTimeCombination", workmonth.ErrInvalidTimeCombination},
+		{"ErrNotEditable", workmonth.ErrNotEditable},
+		{"ErrDateOutOfMonth", workmonth.ErrDateOutOfMonth},
+		{"ErrFutureDate", workmonth.ErrFutureDate},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newFakeDB()
+			db.pushQuery(newFakeRows(
+				workMonthHeaderRow("contract-1", 2026, 7, 8, 0, 20, 0, string(workmonth.StateDraft), nil, nil, nil, nil),
+			), nil)
+			db.pushQuery(newFakeRows(tt.row), nil)
+
+			repo := gateway.NewWorkMonthRepository(db)
+			got, err := repo.Find(context.Background(), mustContractID(t, "contract-1"), mustYearMonth(t, 2026, 7))
+
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("正常な行で Find が失敗した: %v", err)
+				}
+				if got == nil {
+					t.Fatalf("正常な行で Find の戻り値 = nil")
+				}
+				return
+			}
+			if !errors.Is(err, workmonth.ErrInvalidValue) {
+				t.Fatalf("Find のエラー = %v, want errors.Is(err, ErrInvalidValue)（AC-9-15-h）", err)
+			}
+			for _, u := range userFacing {
+				if errors.Is(err, u.err) {
+					t.Errorf("Find のエラー %v が利用者向けの番兵 %s に当たる（永続化行の破損を 400 として外へ出さない。AC-9-15-h）", err, u.name)
+				}
+			}
+			if got != nil {
+				t.Errorf("Find の戻り値 = %+v, want nil（破損した行から集約を返さない）", got)
+			}
+		})
 	}
 }
 
@@ -194,8 +368,8 @@ func TestWorkMonthRepository_Find_PropagatesReconstructError(t *testing.T) {
 		workMonthHeaderRow("contract-1", 2026, 7, 8, 0, 20, 0, string(workmonth.StateDraft), nil, nil, nil, nil),
 	), nil)
 	db.pushQuery(newFakeRows(
-		dailyRecordRow(2026, 7, 1, 7, 30),
-		dailyRecordRow(2026, 7, 1, 8, 0),
+		dailyRecordRow(2026, 7, 1, startB, endB, nil),
+		dailyRecordRow(2026, 7, 1, startA, endA, &breakA),
 	), nil)
 
 	repo := gateway.NewWorkMonthRepository(db)
@@ -254,7 +428,7 @@ func closedWorkMonth(t *testing.T) *workmonth.WorkMonth {
 		t.Fatalf("New failed: %v", err)
 	}
 	today := mustDateOnly(t, 2026, 7, 31)
-	if err := wm.EnterDailyRecord(mustDailyRecord(t, 2026, 7, 1, 7, 30), today); err != nil {
+	if err := wm.EnterDailyRecord(mustDailyRecord(t, 2026, 7, 1, startA, endA, &breakA), today); err != nil {
 		t.Fatalf("EnterDailyRecord failed: %v", err)
 	}
 	if err := wm.Close(); err != nil {
@@ -272,17 +446,32 @@ func mustDateOnly(t *testing.T, year, month, day int) workmonth.Date {
 	return d
 }
 
-// findExecCall は execCalls から、要素数が want と一致する最初の呼び出しを返す
-// （ヘッダ upsert とレコード削除／挿入で引数の個数が異なることを利用して区別する。
-// SQL 文そのものは検査しない＝AC-13-18）。
-func execCallsWithArgCount(calls []execCall, n int) []execCall {
-	var matched []execCall
-	for _, c := range calls {
-		if len(c.args) == n {
-			matched = append(matched, c)
-		}
+// Save が Tx 越しに行う Exec の呼び出しは位置で見分ける（AC-9-16-h ①・AC-12-18 ②）。
+// 勤務月の行の書き込みと稼働実績の挿入は、いずれも12引数になり、引数の個数では
+// 見分けられない。SQL 文そのものは検査しない（AC-13-18）。
+//
+//	1回目: 勤務月の行の書き込み（12引数）
+//	2回目: 当該勤務月の稼働実績の行の全削除（3引数: 契約識別子・年・月）
+//	3回目以降: 稼働実績1件ごとの挿入（12引数）。DailyRecords() の並び（対象日の昇順）で1件1回
+
+// nilInt は NULL を表す (*int)(nil)。
+var nilInt = (*int)(nil)
+
+// insertArgs は稼働実績1件の挿入の引数（AC-9-16-h ②の12個の並び）を組み立てる。
+func insertArgs(contractID string, year, month, day int, start, end [2]int, brk *[4]int) []any {
+	args := []any{contractID, year, month, day, start[0], start[1], end[0], end[1]}
+	if brk == nil {
+		return append(args, nilInt, nilInt, nilInt, nilInt)
 	}
-	return matched
+	return append(args, intPtr(brk[0]), intPtr(brk[1]), intPtr(brk[2]), intPtr(brk[3]))
+}
+
+func argsOf(calls []execCall) [][]any {
+	out := make([][]any, 0, len(calls))
+	for _, c := range calls {
+		out = append(out, c.args)
+	}
+	return out
 }
 
 // TestWorkMonthRepository_Save_CommitsAfterWritingBothTables は、Save が
@@ -313,11 +502,15 @@ func TestWorkMonthRepository_Save_CommitsAfterWritingBothTables(t *testing.T) {
 	}
 }
 
-// TestWorkMonthRepository_Save_WritesExactDailyRecordSet は、保存後の稼働実績の
-// 行集合が集約の稼働実績と一致すること（削除された対象日の行を残さない。
-// AC-9-16-b）と、書き込む値が入力された稼働時間のみであること（丸め値・総稼働
-// 時間の列を持たない。AC-9-16-c）を検証する。
-func TestWorkMonthRepository_Save_WritesExactDailyRecordSet(t *testing.T) {
+// TestWorkMonthRepository_Save_ExecOrderAndArguments は、Tx 越しの Exec の呼び出し順と
+// 稼働実績の挿入の引数（AC-9-16-h）を検証する。
+//  1. 勤務月の行（12引数）→ 2. 稼働実績の全削除（3引数）→ 3. 以降は稼働実績1件ごとの挿入（12引数）
+//  2. 挿入の引数は時刻のみ（稼働時間・丸め値を含まない。AC-9-16-c）。休憩なしは ⑨〜⑫ が
+//     4つとも (*int)(nil)、休憩ありは4つとも非 nil（AC-9-16-g）。
+//
+// 保存後の稼働実績の行集合が集約の稼働実績と一致すること（削除された対象日の行を残さない。
+// AC-9-16-b）もここで固定する。入力は daily-record-entry.md AC-2-6-a〜2-6-c。
+func TestWorkMonthRepository_Save_ExecOrderAndArguments(t *testing.T) {
 	db := newFakeDB()
 	tx := newFakeTx()
 	db.pushBegin(tx, nil)
@@ -328,14 +521,19 @@ func TestWorkMonthRepository_Save_WritesExactDailyRecordSet(t *testing.T) {
 		t.Fatalf("New failed: %v", err)
 	}
 	today := mustDateOnly(t, 2026, 7, 31)
-	if err := wm.EnterDailyRecord(mustDailyRecord(t, 2026, 7, 1, 7, 30), today); err != nil {
-		t.Fatalf("EnterDailyRecord failed: %v", err)
+	// 入力順は昇順でない（挿入が DailyRecords() の昇順に従うことを示す）
+	for _, r := range []workmonth.DailyRecord{
+		mustDailyRecord(t, 2026, 7, 3, startC, endC, &breakC),
+		mustDailyRecord(t, 2026, 7, 1, startA, endA, &breakA),
+		mustDailyRecord(t, 2026, 7, 2, startB, endB, nil),
+		mustDailyRecord(t, 2026, 7, 4, startB, endB, nil),
+	} {
+		if err := wm.EnterDailyRecord(r, today); err != nil {
+			t.Fatalf("EnterDailyRecord failed: %v", err)
+		}
 	}
-	if err := wm.EnterDailyRecord(mustDailyRecord(t, 2026, 7, 2, 8, 0), today); err != nil {
-		t.Fatalf("EnterDailyRecord failed: %v", err)
-	}
-	// 7/2 を削除する。保存される稼働実績の行は 7/1 のみになるはず（AC-9-16-b）。
-	if err := wm.DeleteDailyRecord(mustDateOnly(t, 2026, 7, 2)); err != nil {
+	// 7/4 を削除する。保存される稼働実績の行は 7/1〜7/3 のみになるはず（AC-9-16-b）。
+	if err := wm.DeleteDailyRecord(mustDateOnly(t, 2026, 7, 4)); err != nil {
 		t.Fatalf("DeleteDailyRecord failed: %v", err)
 	}
 
@@ -343,45 +541,83 @@ func TestWorkMonthRepository_Save_WritesExactDailyRecordSet(t *testing.T) {
 		t.Fatalf("Save failed: %v", err)
 	}
 
-	// 稼働実績1件分の Exec 呼び出しは6引数（契約識別子・年・月・日・時・分。
-	// AC-9-16-c）とする tester の取り決め（doubles_test.go の前書き。契約識別子を
-	// 書かないと、稼働実績の主キーである「契約 × 年月 × 対象日」が保存されず、
-	// 保存した行を二度と読み出せない＝AC-10-5・AC-9-16-b 違反）。丸め値・
-	// 総稼働時間の列は引数に含まれない。
-	recordCalls := execCallsWithArgCount(tx.execCalls, 6)
-	want := []execCall{{args: []any{"contract-1", 2026, 7, 1, 7, 30}}}
-	if diff := cmp.Diff(want, recordCalls, cmp.Comparer(func(a, b execCall) bool {
-		return cmp.Equal(a.args, b.args)
-	})); diff != "" {
-		t.Errorf("稼働実績の書き込みが不一致 (-want +got):\n%s（AC-9-16-b・AC-9-16-c）", diff)
+	if len(tx.execCalls) != 5 {
+		t.Fatalf("Tx.Exec の呼び出し回数 = %d, want 5（勤務月 1 + 全削除 1 + 稼働実績 3。AC-9-16-h ①）", len(tx.execCalls))
+	}
+	if n := len(tx.execCalls[0].args); n != 12 {
+		t.Errorf("1回目（勤務月の行）の引数の個数 = %d, want 12", n)
+	}
+	wantDelete := []any{"contract-1", 2026, 7}
+	if diff := cmp.Diff(wantDelete, tx.execCalls[1].args); diff != "" {
+		t.Errorf("2回目（稼働実績の全削除）の引数が不一致 (-want +got):\n%s（AC-9-16-h ①・AC-9-16-b）", diff)
+	}
+	wantInserts := [][]any{
+		insertArgs("contract-1", 2026, 7, 1, startA, endA, &breakA),
+		insertArgs("contract-1", 2026, 7, 2, startB, endB, nil),
+		insertArgs("contract-1", 2026, 7, 3, startC, endC, &breakC),
+	}
+	if diff := cmp.Diff(wantInserts, argsOf(tx.execCalls[2:])); diff != "" {
+		t.Errorf("3回目以降（稼働実績の挿入）の引数が不一致 (-want +got):\n%s（AC-9-16-h ②・AC-9-16-c・AC-9-16-g）", diff)
 	}
 }
 
-// TestWorkMonthRepository_Save_DeletesDailyRecordsBeforeInserting は、Save が
-// 稼働実績の全削除（DELETE）を発行することを検証する（AC-9-16-b・AC-12-11②）。
-// 削除の手順ごと欠落しても、単に保存後の行集合を突き合わせるだけの検証では
-// 検出できない（挿入前に対象の勤務月分の行が0件だから、削除してもしなくても
-// 結果の行集合は変わらない）。そのため DELETE の発行そのものを、他の Exec
-// 呼び出し（12引数のヘッダ upsert・6引数の稼働実績 insert）と引数の個数で
-// 判別してアサートする（DELETE は契約識別子・年・月の3引数。doubles_test.go の
-// 前書きに定める tester の取り決め）。
-func TestWorkMonthRepository_Save_DeletesDailyRecordsBeforeInserting(t *testing.T) {
-	db := newFakeDB()
-	tx := newFakeTx()
-	db.pushBegin(tx, nil)
-
-	repo := gateway.NewWorkMonthRepository(db)
-	target := closedWorkMonth(t)
-	if err := repo.Save(context.Background(), target); err != nil {
-		t.Fatalf("Save failed: %v", err)
+// TestWorkMonthRepository_Save_BreakColumnsAreNullAfterEditToNoBreak は、休憩ありの日を
+// 休憩なしへ編集（再入力）した後の Save で、休憩の4列が NULL に戻ることを検証する
+// （AC-9-16-g・daily-record-entry.md AC-2-6-d）。編集前の休憩の時刻を残さない。
+// 最小の時刻を持つ休憩（2-6-c）は NULL にならないことと対にする（AC-2-6-c）。
+func TestWorkMonthRepository_Save_BreakColumnsAreNullAfterEditToNoBreak(t *testing.T) {
+	tests := []struct {
+		name  string
+		build func(t *testing.T, wm *workmonth.WorkMonth, today workmonth.Date)
+		want  []any
+	}{
+		{
+			name: "2-6-a の日を 2-6-d（9:00〜18:00／休憩なし）で再入力すると休憩の4列が NULL",
+			build: func(t *testing.T, wm *workmonth.WorkMonth, today workmonth.Date) {
+				for _, r := range []workmonth.DailyRecord{
+					mustDailyRecord(t, 2026, 7, 1, startA, endA, &breakA),
+					mustDailyRecord(t, 2026, 7, 1, startB, endB, nil),
+				} {
+					if err := wm.EnterDailyRecord(r, today); err != nil {
+						t.Fatalf("EnterDailyRecord failed: %v", err)
+					}
+				}
+			},
+			want: insertArgs("contract-1", 2026, 7, 1, startB, endB, nil),
+		},
+		{
+			name: "2-6-c: 0:00〜0:15 の休憩は NULL にしない（値 0 を持つ非 nil）",
+			build: func(t *testing.T, wm *workmonth.WorkMonth, today workmonth.Date) {
+				if err := wm.EnterDailyRecord(mustDailyRecord(t, 2026, 7, 1, startC, endC, &breakC), today); err != nil {
+					t.Fatalf("EnterDailyRecord failed: %v", err)
+				}
+			},
+			want: insertArgs("contract-1", 2026, 7, 1, startC, endC, &breakC),
+		},
 	}
 
-	deleteCalls := execCallsWithArgCount(tx.execCalls, 3)
-	want := []execCall{{args: []any{"contract-1", 2026, 7}}}
-	if diff := cmp.Diff(want, deleteCalls, cmp.Comparer(func(a, b execCall) bool {
-		return cmp.Equal(a.args, b.args)
-	})); diff != "" {
-		t.Errorf("稼働実績の全削除 (DELETE) の呼び出しが不一致 (-want +got):\n%s（AC-9-16-b・AC-12-11②）", diff)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newFakeDB()
+			tx := newFakeTx()
+			db.pushBegin(tx, nil)
+			wm, err := workmonth.New(mustContractID(t, "contract-1"), mustYearMonth(t, 2026, 7), mustSettlementRange(t, 8, 0, 20, 0))
+			if err != nil {
+				t.Fatalf("New failed: %v", err)
+			}
+			tt.build(t, wm, mustDateOnly(t, 2026, 7, 31))
+
+			if err := gateway.NewWorkMonthRepository(db).Save(context.Background(), wm); err != nil {
+				t.Fatalf("Save failed: %v", err)
+			}
+
+			if len(tx.execCalls) != 3 {
+				t.Fatalf("Tx.Exec の呼び出し回数 = %d, want 3", len(tx.execCalls))
+			}
+			if diff := cmp.Diff(tt.want, tx.execCalls[2].args); diff != "" {
+				t.Errorf("稼働実績の挿入の引数が不一致 (-want +got):\n%s（AC-9-16-g）", diff)
+			}
+		})
 	}
 }
 
@@ -402,14 +638,13 @@ func TestWorkMonthRepository_Save_ExcessShortfallNullWhenUndetermined(t *testing
 		t.Fatalf("Save failed: %v", err)
 	}
 
-	// 勤務月のヘッダ行の Exec 呼び出しは12引数（doubles_test.go の workMonthHeaderRow
-	// と対称の並び）とする tester の取り決め。
-	headerCalls := execCallsWithArgCount(tx.execCalls, 12)
-	if len(headerCalls) != 1 {
-		t.Fatalf("ヘッダ行の Exec 呼び出し回数 = %d, want 1", len(headerCalls))
+	// 勤務月の行の書き込みは1回目の Exec で、引数は12個（AC-9-16-h ①）。
+	if len(tx.execCalls) == 0 || len(tx.execCalls[0].args) != 12 {
+		t.Fatalf("1回目の Exec（勤務月の行）の引数が12個でない: %+v", tx.execCalls)
 	}
-	excessH, excessM := headerCalls[0].args[8], headerCalls[0].args[9]
-	shortfallH, shortfallM := headerCalls[0].args[10], headerCalls[0].args[11]
+	header := tx.execCalls[0]
+	excessH, excessM := header.args[8], header.args[9]
+	shortfallH, shortfallM := header.args[10], header.args[11]
 	for name, v := range map[string]any{
 		"excessH": excessH, "excessM": excessM, "shortfallH": shortfallH, "shortfallM": shortfallM,
 	} {
