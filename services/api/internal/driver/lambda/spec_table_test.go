@@ -14,9 +14,6 @@ import (
 // domain/workmonth の spec_table_test.go と同じ読み方の写し（テストコードは層ごとに
 // パッケージが分かれ、共有する置き場を新設しないため。読み方を変えるときは両方を直す）。
 //
-// domain/workmonth の spec_table_test.go と同じ読み方の写し（層ごとにテストのパッケージが
-// 分かれ、共有の置き場を新設しないため。読み方を変えるときは両方を直す）。
-//
 // 実装設計 AC-12-18 ① と daily-record-entry-ui.md AC-3-6-d により、時刻の組の行は
 // テストコードへ手で写さず、仕様書の表から入力と期待を読む。表へ行を足すと、
 // このローダを通して本パッケージのテストに現れる（domain の daily_record_test.go・画面側の
@@ -53,7 +50,7 @@ func specPath(t *testing.T) string {
 	return filepath.Join("..", "..", "..", "..", "..", "docs", "specs", "daily-record-entry.md")
 }
 
-// loadSpecSection は仕様書の「### AC-N.」の節から、先頭セルが prefix で始まる表の行を返す。
+// loadSpecSection は仕様書の heading の節（次の nextHeading の手前まで）から、表の行をセルに分けて返す。
 func loadSpecSection(t *testing.T, heading, nextHeading string) [][]string {
 	t.Helper()
 	raw, err := os.ReadFile(specPath(t))
