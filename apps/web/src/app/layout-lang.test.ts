@@ -116,7 +116,7 @@ ${head}({ children }: { children: React.ReactNode }) {
 }
 `;
 
-// RootLayout の本体と return 文を差し替える fixture 用（3-ab〜3-ah）。1行に並べた形は別の fixture にする（13-2-b）。
+// RootLayout の本体と return 文を差し替える fixture 用（3-ab〜3-aj）。1行に並べた形は別の fixture にする（13-2-b）。
 const layoutBody = (body: string): string => `
 export default function RootLayout({ children }: { children: React.ReactNode }) {
 ${body}
