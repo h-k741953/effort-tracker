@@ -493,7 +493,7 @@ func TestEnterDailyRecord_InvalidTimeOfDayInEachOfFourTimes(t *testing.T) {
 }
 
 // TestEnterDailyRecord_TimeValidationOrder は、時刻の検証の中の順序を検証する
-// （実装設計 AC-7-18。契約 AC-4-13-b〜AC-4-13-i・D-17）。
+// （実装設計 AC-7-18。契約 AC-4-13-b〜AC-4-13-j・D-17）。
 //
 //	状態(5) → ① 4つの時刻すべての値域 → ② Break と DailyRecord の組み合わせ → 当該月外 → 未来日
 //
@@ -525,6 +525,15 @@ func TestEnterDailyRecord_TimeValidationOrder(t *testing.T) {
 			// 休憩の構築を開始・終了の時刻の構築より先に行う実装は ② を返すため、4-13-b だけでは検出できない。
 			name: "4-13-i: 値域外(開始 24:00)が休憩の組み合わせの不正(13:00〜12:00)より先",
 			times: timesCase{start: tod(24, 0), end: tod(18, 0),
+				brk: &port.Break{Start: tod(13, 0), End: tod(12, 0)}},
+			date: [3]int{2026, 7, 1}, state: workmonth.StateDraft, generated: true,
+			wantErr: workmonth.ErrTimeOfDayOutOfRange,
+		},
+		{
+			// 4-13-j: endTime が 3-2-b(24:00) に当たり、かつ break が 3-6-b(13:00〜12:00)。①が②より先。
+			// 4-13-i の終了時刻側。終了時刻の構築だけを Break の構築の後へ回す実装は ② を返すため、4-13-i では検出できない。
+			name: "4-13-j: 値域外(終了 24:00)が休憩の組み合わせの不正(13:00〜12:00)より先",
+			times: timesCase{start: tod(9, 0), end: tod(24, 0),
 				brk: &port.Break{Start: tod(13, 0), End: tod(12, 0)}},
 			date: [3]int{2026, 7, 1}, state: workmonth.StateDraft, generated: true,
 			wantErr: workmonth.ErrTimeOfDayOutOfRange,
