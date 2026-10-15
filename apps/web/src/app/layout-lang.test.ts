@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 // layout.tsx を TypeScript の構文木で読み、default export の RootLayout が返す <html> 要素が
 // lang="ja" で画面の言語を示すことを読む。layout-theme.test.ts（同じ <html> の data-theme を読む）に倣う。
 // 判定は述語として切り出し、テキストを受け取って単体で呼べる形にする（13-2-b）。合格側 3-a〜3-d・3-ag・3-ah と
-// 不合格側 3-e〜3-u・3-x〜3-af を fixture として通し、実ファイルへ適用し（3-v）、構文として読めない入力は投げる（3-w）。
+// 不合格側 3-e〜3-u・3-x〜3-af・3-ai を fixture として通し、実ファイルへ適用し（3-v）、構文として読めない入力は投げる（3-w）。
 // 描画された HTML・実ブラウザは読まない（13-L3）。
 
 function parseSource(text: string): ts.SourceFile {
@@ -293,6 +293,36 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       "3-af: 入れ子が2段（最も内側の inner だけが <html> を返す）",
       layoutBody(`  const outer = () => { const inner = () => ${H}; return inner(); };
   return outer();`),
+      false,
+    ],
+    [
+      "3-ai: 入れ子: クラスの get アクセサ",
+      layoutBody(`  class C { get x() { return ${H}; } }
+  return <body>{children}</body>;`),
+      false,
+    ],
+    [
+      "3-ai: 入れ子: オブジェクトリテラルの get アクセサ",
+      layoutBody(`  const o = { get x() { return ${H}; } };
+  return <body>{children}</body>;`),
+      false,
+    ],
+    [
+      "3-ai: 入れ子: クラスの set アクセサ",
+      layoutBody(`  class C { set x(v: unknown) { return ${H}; } }
+  return <body>{children}</body>;`),
+      false,
+    ],
+    [
+      "3-ai: 入れ子: オブジェクトリテラルの set アクセサ",
+      layoutBody(`  const o = { set x(v: unknown) { return ${H}; } };
+  return <body>{children}</body>;`),
+      false,
+    ],
+    [
+      "3-ai: 入れ子: コンストラクタ",
+      layoutBody(`  class C { constructor() { return ${H}; } }
+  return <body>{children}</body>;`),
       false,
     ],
     [
