@@ -22,6 +22,9 @@ func newWorkMonthOutput(target *workmonth.WorkMonth, contract port.Contract) por
 	for _, record := range records {
 		outputs = append(outputs, port.DailyRecordOutput{
 			Date:                formatDate(record.Date()),
+			StartTime:           toTimeOfDayOutput(record.StartTime()),
+			EndTime:             toTimeOfDayOutput(record.EndTime()),
+			Break:               breakOutput(record),
 			WorkingHours:        toHours(record.WorkingHours()),
 			RoundedWorkingHours: toHours(record.WorkingHours().TruncateTo15Minutes()),
 		})
@@ -41,6 +44,20 @@ func newWorkMonthOutput(target *workmonth.WorkMonth, contract port.Contract) por
 		Shortfall:    shortfallOutput(target),
 		DailyRecords: outputs,
 	}
+}
+
+// breakOutput は稼働実績の休憩を出力 DTO へ落とす。休憩なしなら nil（AC-7-18-a）。
+func breakOutput(record workmonth.DailyRecord) *port.Break {
+	brk, ok := record.Break()
+	if !ok {
+		return nil
+	}
+	return &port.Break{Start: toTimeOfDayOutput(brk.Start()), End: toTimeOfDayOutput(brk.End())}
+}
+
+// toTimeOfDayOutput は時刻を素の値へ落とす。
+func toTimeOfDayOutput(t workmonth.TimeOfDay) port.TimeOfDay {
+	return port.TimeOfDay{Hour: t.Hour(), Minute: t.Minute()}
 }
 
 // excessOutput は集約の確定済みの超過を出力 DTO へ落とす。未確定なら nil（AC-7-11）。

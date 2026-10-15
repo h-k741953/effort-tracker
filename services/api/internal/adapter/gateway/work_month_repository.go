@@ -31,9 +31,12 @@ WHERE contract_id = $1 AND year = $2 AND month = $3
 `
 
 // workMonthDailyRecordsSelectQuery は稼働実績の行を取得する SQL 文
-// （年・月・日・稼働時間（時・分）の5列。AC-9-15-a）。
+// （年・月・日・開始時刻・終了時刻・休憩開始時刻・休憩終了時刻（いずれも時・分）の11列。
+// AC-9-15-i。稼働時間の列は読まない）。
 const workMonthDailyRecordsSelectQuery = `
-SELECT year, month, day, hours, minutes
+SELECT year, month, day,
+       start_hour, start_minute, end_hour, end_minute,
+       break_start_hour, break_start_minute, break_end_hour, break_end_minute
 FROM daily_records
 WHERE contract_id = $1 AND year = $2 AND month = $3
 `
@@ -62,10 +65,15 @@ const workMonthDailyRecordsDeleteQuery = `
 DELETE FROM daily_records WHERE contract_id = $1 AND year = $2 AND month = $3
 `
 
-// workMonthDailyRecordInsertQuery は稼働実績を1件挿入する SQL 文（AC-9-16-c。
-// 入力された稼働時間のみを書き、丸め値・総稼働時間の列は持たない）。
+// workMonthDailyRecordInsertQuery は稼働実績を1件挿入する SQL 文（AC-9-16-c・AC-9-16-h。
+// 保存する時刻のみを書き、稼働時間・丸め値・総稼働時間の列は持たない。
+// 休憩なしは休憩の4値をすべて NULL で書く）。
 const workMonthDailyRecordInsertQuery = `
-INSERT INTO daily_records (contract_id, year, month, day, hours, minutes) VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO daily_records (
+    contract_id, year, month, day,
+    start_hour, start_minute, end_hour, end_minute,
+    break_start_hour, break_start_minute, break_end_hour, break_end_minute
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 `
 
 // Find は勤務月を1件取得し、workmonth.Reconstruct（AC-2-5）で集約へ組み立てる
@@ -142,25 +150,7 @@ func (r *WorkMonthRepository) Find(
 
 	records := make([]workmonth.DailyRecord, 0)
 	for recordRows.Next() {
-		var (
-			year    int
-			month   int
-			day     int
-			hours   int
-			minutes int
-		)
-		if err := recordRows.Scan(&year, &month, &day, &hours, &minutes); err != nil {
-			return nil, err
-		}
-		date, err := workmonth.NewDate(year, month, day)
-		if err != nil {
-			return nil, err
-		}
-		workingHours, err := workmonth.NewWorkingHours(hours, minutes)
-		if err != nil {
-			return nil, err
-		}
-		record, err := workmonth.NewDailyRecord(date, workingHours)
+		record, err := scanDailyRecord(recordRows)
 		if err != nil {
 			return nil, err
 		}
@@ -171,6 +161,93 @@ func (r *WorkMonthRepository) Find(
 	}
 
 	return workmonth.Reconstruct(contractID, yearMonth, settlementRange, workmonth.State(state), records, excess, shortfall)
+}
+
+// scanDailyRecord は稼働実績の1行（11列。AC-9-15-i）を DailyRecord へ構築する。
+// 判定の順は AC-9-15-i: (i) 開始・終了の欠落 → (ii) 休憩の4値の揃い → (iii) 構築。
+// 構築の失敗は利用者向けの番兵ではなく ErrInvalidValue として返す（AC-9-15-h）。
+func scanDailyRecord(rows Rows) (workmonth.DailyRecord, error) {
+	var (
+		year, month, day           int
+		startH, startM, endH, endM *int
+		breakStartH, breakStartM   *int
+		breakEndH, breakEndM       *int
+	)
+	if err := rows.Scan(
+		&year, &month, &day, &startH, &startM, &endH, &endM,
+		&breakStartH, &breakStartM, &breakEndH, &breakEndM,
+	); err != nil {
+		return workmonth.DailyRecord{}, err
+	}
+	if startH == nil || startM == nil || endH == nil || endM == nil {
+		return workmonth.DailyRecord{}, fmt.Errorf("%w: daily record row lacks start or end time", workmonth.ErrInvalidValue)
+	}
+	date, err := workmonth.NewDate(year, month, day)
+	if err != nil {
+		return workmonth.DailyRecord{}, err
+	}
+	startTime, err := corruptedAsInvalid(workmonth.NewTimeOfDay(*startH, *startM))
+	if err != nil {
+		return workmonth.DailyRecord{}, err
+	}
+	endTime, err := corruptedAsInvalid(workmonth.NewTimeOfDay(*endH, *endM))
+	if err != nil {
+		return workmonth.DailyRecord{}, err
+	}
+
+	breakNils := countNil(breakStartH, breakStartM, breakEndH, breakEndM)
+	var brk *workmonth.Break
+	switch breakNils {
+	case 4:
+		// 休憩なし。
+	case 0:
+		breakStart, err := corruptedAsInvalid(workmonth.NewTimeOfDay(*breakStartH, *breakStartM))
+		if err != nil {
+			return workmonth.DailyRecord{}, err
+		}
+		breakEnd, err := corruptedAsInvalid(workmonth.NewTimeOfDay(*breakEndH, *breakEndM))
+		if err != nil {
+			return workmonth.DailyRecord{}, err
+		}
+		b, err := corruptedAsInvalid(workmonth.NewBreak(breakStart, breakEnd))
+		if err != nil {
+			return workmonth.DailyRecord{}, err
+		}
+		brk = &b
+	default:
+		return workmonth.DailyRecord{}, fmt.Errorf("%w: daily record row has a partial break", workmonth.ErrInvalidValue)
+	}
+
+	record, err := corruptedAsInvalid(workmonth.NewDailyRecord(date, startTime, endTime, brk))
+	if err != nil {
+		return workmonth.DailyRecord{}, err
+	}
+	return record, nil
+}
+
+// corruptedAsInvalid は永続化行からの構築失敗を ErrInvalidValue へそろえる（AC-9-15-h）。
+// 利用者の要求に対する時刻の検証の番兵には当たらない形にし、行の破損を 400 として外へ出さない。
+// 元のエラーの文言は残すが、番兵としてはラップしない。
+func corruptedAsInvalid[T any](v T, err error) (T, error) {
+	if err != nil {
+		var zero T
+		return zero, fmt.Errorf("%w: stored row is corrupted: %s", workmonth.ErrInvalidValue, err.Error())
+	}
+	return v, nil
+}
+
+// intPtr は整数のポインタを返す。
+func intPtr(v int) *int { return &v }
+
+// countNil は nil のポインタの個数を返す。
+func countNil(values ...*int) int {
+	n := 0
+	for _, v := range values {
+		if v == nil {
+			n++
+		}
+	}
+	return n
 }
 
 // optionalWorkingHours は NULL 許容の時・分の列を *workmonth.WorkingHours へ写す。
@@ -241,9 +318,17 @@ func (r *WorkMonthRepository) writeWithinTx(ctx context.Context, tx Tx, target *
 	}
 
 	for _, record := range target.DailyRecords() {
+		// 休憩なしは4値とも (*int)(nil)（AC-9-16-g）。ゼロ値で埋めない。
+		var breakStartH, breakStartM, breakEndH, breakEndM *int
+		if brk, ok := record.Break(); ok {
+			breakStartH, breakStartM = intPtr(brk.Start().Hour()), intPtr(brk.Start().Minute())
+			breakEndH, breakEndM = intPtr(brk.End().Hour()), intPtr(brk.End().Minute())
+		}
 		if err := tx.Exec(ctx, workMonthDailyRecordInsertQuery,
 			contractID, record.Date().Year(), record.Date().Month(), record.Date().Day(),
-			record.WorkingHours().Hours(), record.WorkingHours().Minutes(),
+			record.StartTime().Hour(), record.StartTime().Minute(),
+			record.EndTime().Hour(), record.EndTime().Minute(),
+			breakStartH, breakStartM, breakEndH, breakEndM,
 		); err != nil {
 			return err
 		}

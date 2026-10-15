@@ -45,11 +45,41 @@ type SettlementRangeViewModel struct {
 	UpperBound HoursViewModel `json:"upperBound"`
 }
 
+// TimeOfDayViewModel は契約 AC-10-1 の時刻オブジェクト（AC-9-11-g）。
+// 時分オブジェクト（HoursViewModel）とは別の形で、取り違えない。
+type TimeOfDayViewModel struct {
+	Hour   int `json:"hour"`
+	Minute int `json:"minute"`
+}
+
+// BreakViewModel は契約 AC-10-1 の休憩（休憩開始時刻 start・休憩終了時刻 end）。
+type BreakViewModel struct {
+	Start TimeOfDayViewModel `json:"start"`
+	End   TimeOfDayViewModel `json:"end"`
+}
+
+// toTimeOfDayViewModel は port.TimeOfDay を ViewModel へ写す。
+func toTimeOfDayViewModel(t port.TimeOfDay) TimeOfDayViewModel {
+	return TimeOfDayViewModel{Hour: t.Hour, Minute: t.Minute}
+}
+
+// toBreakViewModel は休憩なし（nil）を保ったまま写す。最小の時刻の休憩を nil にしない。
+func toBreakViewModel(b *port.Break) *BreakViewModel {
+	if b == nil {
+		return nil
+	}
+	return &BreakViewModel{Start: toTimeOfDayViewModel(b.Start), End: toTimeOfDayViewModel(b.End)}
+}
+
 // DailyRecordViewModel は契約 AC-10-1 の `dailyRecords[]`。
 type DailyRecordViewModel struct {
-	Date                string         `json:"date"`
-	WorkingHours        HoursViewModel `json:"workingHours"`
-	RoundedWorkingHours HoursViewModel `json:"roundedWorkingHours"`
+	Date      string             `json:"date"`
+	StartTime TimeOfDayViewModel `json:"startTime"`
+	EndTime   TimeOfDayViewModel `json:"endTime"`
+	// Break は休憩なしを null として直列化し、キーを省略しない（AC-9-11-g）。
+	Break               *BreakViewModel `json:"break"`
+	WorkingHours        HoursViewModel  `json:"workingHours"`
+	RoundedWorkingHours HoursViewModel  `json:"roundedWorkingHours"`
 }
 
 // WorkMonthViewModel は契約 AC-10-1 の勤務月の表現（成功応答のボディ）。
@@ -90,6 +120,9 @@ func (p *WorkMonthPresenter) Present(output port.WorkMonthOutput) {
 	for _, r := range output.DailyRecords {
 		records = append(records, DailyRecordViewModel{
 			Date:                r.Date,
+			StartTime:           toTimeOfDayViewModel(r.StartTime),
+			EndTime:             toTimeOfDayViewModel(r.EndTime),
+			Break:               toBreakViewModel(r.Break),
 			WorkingHours:        toHoursViewModel(r.WorkingHours),
 			RoundedWorkingHours: toHoursViewModel(r.RoundedWorkingHours),
 		})
@@ -126,7 +159,8 @@ var errorMapping = []struct {
 	message  string
 }{
 	{port.ErrInvalidRequest, "INVALID_REQUEST", http.StatusBadRequest, "the request is invalid"},
-	{workmonth.ErrWorkingHoursOutOfRange, "WORKING_HOURS_OUT_OF_RANGE", http.StatusBadRequest, "working hours out of range"},
+	{workmonth.ErrTimeOfDayOutOfRange, "TIME_OF_DAY_OUT_OF_RANGE", http.StatusBadRequest, "time of day out of range"},
+	{workmonth.ErrInvalidTimeCombination, "INVALID_TIME_COMBINATION", http.StatusBadRequest, "invalid combination of times"},
 	{workmonth.ErrFutureDate, "FUTURE_DATE_NOT_ALLOWED", http.StatusBadRequest, "date must not be in the future"},
 	{workmonth.ErrDateOutOfMonth, "DATE_OUT_OF_WORK_MONTH", http.StatusBadRequest, "date is out of the work month"},
 	{port.ErrUnauthenticated, "UNAUTHENTICATED", http.StatusUnauthorized, "authentication is required"},

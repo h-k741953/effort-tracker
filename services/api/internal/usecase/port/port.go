@@ -56,16 +56,31 @@ type Clock interface {
 
 // EnterDailyRecordInput は稼働実績の入力・編集の入力 DTO（AC-7-2）。
 //
-// 稼働時間を値オブジェクトではなく素の整数で受け取るのは、値域の検査を
+// 稼働時間は持たない（時刻から算出する値であり入力ではない。AC-7-18）。
+// 時刻を値オブジェクトではなく素の整数で受け取るのは、値域の検査を
 // 認可・状態の判定より後に行うためである（判定順序は
 // docs/specs/domain-api-http-contract.md AC-9）。
+// 休憩の有無は Break の nil / 非 nil で表す（AC-7-18-a）。
 type EnterDailyRecordInput struct {
 	Actor      Actor
 	ContractID workmonth.ContractID
 	YearMonth  workmonth.YearMonth
 	Date       workmonth.Date
-	Hours      int
-	Minutes    int
+	StartTime  TimeOfDay
+	EndTime    TimeOfDay
+	Break      *Break
+}
+
+// TimeOfDay は時刻の素の値（AC-7-18-a）。値域・粒度の検査は持たない。
+type TimeOfDay struct {
+	Hour   int
+	Minute int
+}
+
+// Break は休憩の素の値（AC-7-18-a）。Start が休憩開始時刻、End が休憩終了時刻。
+type Break struct {
+	Start TimeOfDay
+	End   TimeOfDay
 }
 
 // DeleteDailyRecordInput は稼働実績の削除の入力 DTO（AC-7-2）。
@@ -119,6 +134,9 @@ type SettlementRangeOutput struct {
 // DailyRecordOutput は稼働実績1件の出力 DTO。
 type DailyRecordOutput struct {
 	Date                string // YYYY-MM-DD
+	StartTime           TimeOfDay
+	EndTime             TimeOfDay
+	Break               *Break // nil は休憩なし
 	WorkingHours        Hours
 	RoundedWorkingHours Hours
 }
