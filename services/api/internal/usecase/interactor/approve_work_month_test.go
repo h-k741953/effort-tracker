@@ -87,11 +87,7 @@ func TestApproveWorkMonth_StateTransition(t *testing.T) {
 		Excess:     &wantExcess,
 		Shortfall:  &wantShortfall,
 		DailyRecords: []port.DailyRecordOutput{
-			{
-				Date:                "2026-07-01",
-				WorkingHours:        port.Hours{Hours: 8, Minutes: 0},
-				RoundedWorkingHours: port.Hours{Hours: 8, Minutes: 0},
-			},
+			recordOutput("2026-07-01", 8, 0),
 		},
 	}
 	output := f.output.onlyPresented(t)

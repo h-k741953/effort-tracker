@@ -226,10 +226,27 @@ func workMonthHeaderRow(
 	return []any{contractID, year, month, lowerH, lowerM, upperH, upperM, state, excessH, excessM, shortfallH, shortfallM}
 }
 
-// dailyRecordRow は稼働実績の行を Scan の並びどおりに組み立てる（年・月・日・
-// 稼働時間（時・分）の5列）。
-func dailyRecordRow(year, month, day, hours, minutes int) []any {
-	return []any{year, month, day, hours, minutes}
+// dailyRecordRow は稼働実績の行を Scan の並びどおりに組み立てる
+// （実装設計 AC-9-15-i の11列: ①年・②月・③日・④開始時刻の時・⑤分・⑥終了時刻の時・⑦分・
+// ⑧休憩開始時刻の時・⑨分・⑩休憩終了時刻の時・⑪分。④〜⑪はいずれも *int＝NULL を nil で受ける）。
+// 稼働時間の列は持たない（AC-9-15-b・AC-10-5）。
+// start・end は {時, 分}。brk が nil なら休憩の4列がすべて NULL（休憩なし）。
+func dailyRecordRow(year, month, day int, start, end [2]int, brk *[4]int) []any {
+	row := []any{year, month, day, intPtr(start[0]), intPtr(start[1]), intPtr(end[0]), intPtr(end[1])}
+	if brk == nil {
+		return append(row, (*int)(nil), (*int)(nil), (*int)(nil), (*int)(nil))
+	}
+	return append(row, intPtr(brk[0]), intPtr(brk[1]), intPtr(brk[2]), intPtr(brk[3]))
+}
+
+// dailyRecordRowRaw は ④〜⑪ の8列を *int のまま直接指定して行を組み立てる。
+// 破損した行（一部だけ NULL）を作るために使う（AC-9-15-i (i)(ii)）。
+func dailyRecordRowRaw(year, month, day int, cols [8]*int) []any {
+	row := []any{year, month, day}
+	for _, c := range cols {
+		row = append(row, c)
+	}
+	return row
 }
 
 // contractRow は契約の行を Scan の並びどおりに組み立てる（識別子・契約表示名・
@@ -240,7 +257,7 @@ func contractRow(id, displayName, engineerID string, lowerH, lowerM, upperH, upp
 
 // workMonthListRow は一覧の行を Scan の並びどおりに組み立てる（契約識別子・
 // 契約表示名・年・月・状態の5列。AC-9-18-a・AC-6-7-d）。年・月を分けるのは
-// 既存の workMonthHeaderRow・dailyRecordRow と揃えるため（tester の選択）。
+// 既存の workMonthHeaderRow と揃えるため（tester の選択）。
 func workMonthListRow(contractID, displayName string, year, month int, state string) []any {
 	return []any{contractID, displayName, year, month, state}
 }

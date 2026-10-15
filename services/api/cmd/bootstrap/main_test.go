@@ -521,8 +521,12 @@ func TestRun_RegisteredHandlerAnswersContractShape(t *testing.T) {
 	// 勤務月ヘッダ1件（12列。超過／不足は NULL＝未確定）。
 	var null *int
 	db.pushQuery(newBootRows([]any{"ctr-boot", 2026, 7, 140, 0, 180, 0, "Draft", null, null, null, null}))
-	// 稼働実績1件（年・月・日・稼働時間（時・分）の5列）。
-	db.pushQuery(newBootRows([]any{2026, 7, 3, 8, 0}))
+	// 稼働実績1件（実装設計 AC-9-15-i の11列: 年・月・日・開始時刻の時・分・
+	// 終了時刻の時・分・休憩開始時刻の時・分・休憩終了時刻の時・分。④〜⑪は *int で、
+	// 休憩なしは休憩の4列がすべて NULL）。9:00〜17:00／休憩なし＝8時間0分。
+	var nilInt *int
+	nine, zero, seventeen := 9, 0, 17
+	db.pushQuery(newBootRows([]any{2026, 7, 3, &nine, &zero, &seventeen, &zero, nilInt, nilInt, nilInt, nilInt}))
 
 	if err := Run(
 		rec.resolveReturning(dummyResolvedConnectionString),
@@ -573,6 +577,9 @@ func TestRun_RegisteredHandlerAnswersContractShape(t *testing.T) {
 		"dailyRecords": [
 			{
 				"date": "2026-07-03",
+				"startTime": {"hour": 9, "minute": 0},
+				"endTime": {"hour": 17, "minute": 0},
+				"break": null,
 				"workingHours": {"hours": 8, "minutes": 0},
 				"roundedWorkingHours": {"hours": 8, "minutes": 0}
 			}

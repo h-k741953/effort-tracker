@@ -107,7 +107,7 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 			seed: func(db *fakeDB) {
 				db.pushQuery(newFakeRows(contractRow("ctr-e1", "契約E1", "eng-e1", 140, 0, 180, 0)), nil)
 				db.pushQuery(newFakeRows(workMonthHeaderRow("ctr-e1", 2026, 7, 140, 0, 180, 0, "Draft")), nil)
-				db.pushQuery(newFakeRows(dailyRecordRow(2026, 7, 5, 7, 30)), nil)
+				db.pushQuery(newFakeRows(dailyRecordRow(2026, 7, 5, [2]int{9, 15}, [2]int{17, 45}, &[4]int{12, 30, 13, 15})), nil)
 			},
 			method: http.MethodGet,
 			target: "/work-months/ctr-e1/2026-07",
@@ -123,14 +123,17 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 						"lowerBound": {"hours": 140, "minutes": 0},
 						"upperBound": {"hours": 180, "minutes": 0}
 					},
-					"totalHours": {"hours": 7, "minutes": 30},
+					"totalHours": {"hours": 7, "minutes": 45},
 					"excess": null,
 					"shortfall": null,
 					"dailyRecords": [
 						{
 							"date": "2026-07-05",
-							"workingHours": {"hours": 7, "minutes": 30},
-							"roundedWorkingHours": {"hours": 7, "minutes": 30}
+							"startTime": {"hour": 9, "minute": 15},
+							"endTime": {"hour": 17, "minute": 45},
+							"break": {"start": {"hour": 12, "minute": 30}, "end": {"hour": 13, "minute": 15}},
+							"workingHours": {"hours": 7, "minutes": 45},
+							"roundedWorkingHours": {"hours": 7, "minutes": 45}
 						}
 					]
 				}`,
@@ -172,7 +175,7 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 			seed: func(db *fakeDB) {
 				db.pushQuery(newFakeRows(contractRow("ctr-e34", "契約E34", "eng-e34", 140, 0, 180, 0)), nil)
 				db.pushQuery(newFakeRows(workMonthHeaderRow("ctr-e34", 2026, 7, 140, 0, 180, 0, "Draft")), nil)
-				db.pushQuery(newFakeRows(dailyRecordRow(2026, 7, 15, 6, 0)), nil)
+				db.pushQuery(newFakeRows(dailyRecordRow(2026, 7, 15, [2]int{9, 0}, [2]int{15, 0}, nil)), nil)
 			},
 			method: http.MethodPut,
 			target: "/work-months/ctr-e34/2026-07/daily-records/2026-07-15",
@@ -181,7 +184,7 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 				"X-Actor-Id":   "eng-e34",
 				"X-Actor-Role": "Engineer",
 			},
-			body: `{"workingHours":{"hours":8,"minutes":0}}`,
+			body: `{"startTime":{"hour":9,"minute":0},"endTime":{"hour":17,"minute":0},"break":null}`,
 			// 稼働実績の入力は対象日が「当日」より後かを判定するため
 			// （AC-6-5）、7つのうちこの1本だけが port.Clock を使う。
 			wantsClock: true,
@@ -203,6 +206,9 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 					"dailyRecords": [
 						{
 							"date": "2026-07-15",
+							"startTime": {"hour": 9, "minute": 0},
+							"endTime": {"hour": 17, "minute": 0},
+							"break": null,
 							"workingHours": {"hours": 8, "minutes": 0},
 							"roundedWorkingHours": {"hours": 8, "minutes": 0}
 						}
@@ -217,7 +223,7 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 			seed: func(db *fakeDB) {
 				db.pushQuery(newFakeRows(contractRow("ctr-e34", "契約E34", "eng-e34", 140, 0, 180, 0)), nil)
 				db.pushQuery(newFakeRows(workMonthHeaderRow("ctr-e34", 2026, 7, 140, 0, 180, 0, "Draft")), nil)
-				db.pushQuery(newFakeRows(dailyRecordRow(2026, 7, 15, 6, 0)), nil)
+				db.pushQuery(newFakeRows(dailyRecordRow(2026, 7, 15, [2]int{9, 0}, [2]int{15, 0}, nil)), nil)
 			},
 			method: http.MethodDelete,
 			target: "/work-months/ctr-e34/2026-07/daily-records/2026-07-15",
@@ -469,8 +475,15 @@ func workMonthHeaderRow(contractID string, year, month, lowerH, lowerM, upperH, 
 	return queryRow{contractID, year, month, lowerH, lowerM, upperH, upperM, state, null, null, null, null}
 }
 
-// dailyRecordRow は稼働実績の行を Scan の並びで組み立てる（年・月・日・
-// 稼働時間（時・分）の5列）。
-func dailyRecordRow(year, month, day, hours, minutes int) queryRow {
-	return queryRow{year, month, day, hours, minutes}
+// dailyRecordRow は稼働実績の行を Scan の並びで組み立てる（実装設計 AC-9-15-i の11列:
+// 年・月・日・開始時刻の時・分・終了時刻の時・分・休憩開始時刻の時・分・休憩終了時刻の時・分。
+// ④〜⑪は *int＝NULL を nil で受ける）。start・end は {時, 分}。brk が nil なら休憩の4列が
+// すべて NULL（休憩なし）、非 nil なら {休憩開始の時, 分, 休憩終了の時, 分}。
+func dailyRecordRow(year, month, day int, start, end [2]int, brk *[4]int) queryRow {
+	intPtr := func(v int) *int { return &v }
+	row := queryRow{year, month, day, intPtr(start[0]), intPtr(start[1]), intPtr(end[0]), intPtr(end[1])}
+	if brk == nil {
+		return append(row, (*int)(nil), (*int)(nil), (*int)(nil), (*int)(nil))
+	}
+	return append(row, intPtr(brk[0]), intPtr(brk[1]), intPtr(brk[2]), intPtr(brk[3]))
 }

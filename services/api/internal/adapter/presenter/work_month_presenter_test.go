@@ -52,10 +52,37 @@ func TestWorkMonthPresenter_PresentError_MapsToCodeAndStatus(t *testing.T) {
 		},
 		// domain/workmonth の番兵（AC-11-1〜AC-11-6、契約 AC-9 の表）。
 		{
-			name:       "workmonth.ErrWorkingHoursOutOfRange は WORKING_HOURS_OUT_OF_RANGE へ写る",
-			err:        workmonth.ErrWorkingHoursOutOfRange,
-			wantCode:   "WORKING_HOURS_OUT_OF_RANGE",
+			// 2026-10-15 追加（実装設計 AC-11-4。契約 AC-9 の表・D-16）。
+			name:       "workmonth.ErrTimeOfDayOutOfRange は TIME_OF_DAY_OUT_OF_RANGE へ写る（AC-12-18 ④）",
+			err:        workmonth.ErrTimeOfDayOutOfRange,
+			wantCode:   "TIME_OF_DAY_OUT_OF_RANGE",
 			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "workmonth.ErrInvalidTimeCombination は INVALID_TIME_COMBINATION へ写る（AC-12-18 ④）",
+			err:        workmonth.ErrInvalidTimeCombination,
+			wantCode:   "INVALID_TIME_COMBINATION",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			// ラップされても同じ（AC-12-10・AC-11-9）。ErrInvalidValue にも当たらない形で写る。
+			name:       "ラップされた ErrTimeOfDayOutOfRange も TIME_OF_DAY_OUT_OF_RANGE へ写る",
+			err:        fmt.Errorf("interactor: time of day: %w", workmonth.ErrTimeOfDayOutOfRange),
+			wantCode:   "TIME_OF_DAY_OUT_OF_RANGE",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "ラップされた ErrInvalidTimeCombination も INVALID_TIME_COMBINATION へ写る",
+			err:        fmt.Errorf("interactor: time combination: %w", workmonth.ErrInvalidTimeCombination),
+			wantCode:   "INVALID_TIME_COMBINATION",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			// 永続化行の破損は ErrInvalidValue（gateway が返す。AC-9-15-h）。時刻の番兵と取り違えない。
+			name:       "ラップされた ErrInvalidValue（永続化行の破損）は INTERNAL_ERROR のまま（AC-11-13。400 として出さない）",
+			err:        fmt.Errorf("gateway: corrupted daily record row: %w", workmonth.ErrInvalidValue),
+			wantCode:   "INTERNAL_ERROR",
+			wantStatus: http.StatusInternalServerError,
 		},
 		{
 			name:       "workmonth.ErrFutureDate は FUTURE_DATE_NOT_ALLOWED へ写る",
@@ -176,6 +203,35 @@ func TestWorkMonthPresenter_PresentError_MapsToCodeAndStatus(t *testing.T) {
 	}
 }
 
+// TestWorkMonthPresenter_PresentError_NeverEmitsRetiredWorkingHoursCode は、廃止した
+// WORKING_HOURS_OUT_OF_RANGE をどの入力からも出さないことを検証する（AC-12-18 ④・契約 D-16。
+// 稼働時間を入力として受け取らなくなったため、この code を生む要求が存在しない）。
+// 既知の番兵・ラップした番兵・未知のエラーを一通り与え、いずれの code にも現れないことを確かめる。
+func TestWorkMonthPresenter_PresentError_NeverEmitsRetiredWorkingHoursCode(t *testing.T) {
+	inputs := []error{
+		workmonth.ErrInvalidValue,
+		workmonth.ErrTimeOfDayOutOfRange,
+		workmonth.ErrInvalidTimeCombination,
+		workmonth.ErrFutureDate,
+		workmonth.ErrDateOutOfMonth,
+		workmonth.ErrNotEditable,
+		port.ErrInvalidRequest,
+		fmt.Errorf("working hours out of range: %w", workmonth.ErrInvalidValue),
+		errors.New("workmonth: working hours out of range"),
+	}
+	for _, in := range inputs {
+		p := presenter.NewWorkMonthPresenter()
+		p.PresentError(in)
+		result, ok := p.Result()
+		if !ok {
+			t.Fatalf("PresentError(%v) の後に Result が保持されていない", in)
+		}
+		if code := mustErrorBody(t, result.Body).Code; code == "WORKING_HOURS_OUT_OF_RANGE" {
+			t.Errorf("PresentError(%v) が廃止した code %q を出した（契約 D-16）", in, code)
+		}
+	}
+}
+
 // TestWorkMonthPresenter_PresentError_MapsWrappedErrorToSameCode は、
 // fmt.Errorf の %w でラップされたエラーでも errors.Is で同じ code へ写ることを
 // 固定する（AC-12-10。`==` 比較の実装では Red になる）。
@@ -251,10 +307,14 @@ func sampleClosedOutput() port.WorkMonthOutput {
 		Excess:     &port.Hours{Hours: 0, Minutes: 15},
 		Shortfall:  &port.Hours{Hours: 0, Minutes: 0},
 		DailyRecords: []port.DailyRecordOutput{
+			// daily-record-entry.md AC-2-6-a の値（契約 AC-10-1 の例の1要素目）
 			{
 				Date:                "2026-07-01",
-				WorkingHours:        port.Hours{Hours: 8, Minutes: 50},
-				RoundedWorkingHours: port.Hours{Hours: 8, Minutes: 45},
+				StartTime:           port.TimeOfDay{Hour: 9, Minute: 15},
+				EndTime:             port.TimeOfDay{Hour: 17, Minute: 45},
+				Break:               &port.Break{Start: port.TimeOfDay{Hour: 12, Minute: 30}, End: port.TimeOfDay{Hour: 13, Minute: 15}},
+				WorkingHours:        port.Hours{Hours: 7, Minutes: 45},
+				RoundedWorkingHours: port.Hours{Hours: 7, Minutes: 45},
 			},
 		},
 	}
@@ -371,6 +431,121 @@ func TestWorkMonthPresenter_Present_EmptyDailyRecordsSerializeToEmptyArrayNotNul
 	got := strings.TrimSpace(string(obj["dailyRecords"]))
 	if got != "[]" {
 		t.Errorf("dailyRecords の直列化 = %s, want []（空でも配列であり null にしない。AC-9-11-c・契約 AC-2-2）", got)
+	}
+}
+
+// dailyRecordsOf は直列化した JSON の dailyRecords を、キーの順序に依らない汎用の形
+// （map[string]any）で読む。null のキーも map に残る（キーの省略と区別できる）。
+func dailyRecordsOf(t *testing.T, output port.WorkMonthOutput) []map[string]any {
+	t.Helper()
+	_, raw := presentAndMarshal(t, output)
+	var body struct {
+		DailyRecords []map[string]any `json:"dailyRecords"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("json.Unmarshal(raw) failed: %v", err)
+	}
+	return body.DailyRecords
+}
+
+func todJSON(hour, minute int) map[string]any {
+	return map[string]any{"hour": float64(hour), "minute": float64(minute)}
+}
+
+func hoursJSON(hours, minutes int) map[string]any {
+	return map[string]any{"hours": float64(hours), "minutes": float64(minutes)}
+}
+
+// TestWorkMonthPresenter_Present_DailyRecordSerializesTimes は、稼働実績の時刻を契約 AC-10-1 の
+// 時刻オブジェクト（hour / minute）で直列化し、時分オブジェクト（hours / minutes）と取り違えない
+// こと、休憩なしは break を null として直列化しキーを省略しないこと、最小の時刻を持つ休憩は
+// null にしないことを検証する（AC-9-11-g・AC-12-18 ④。daily-record-entry.md AC-2-6-a〜2-6-c）。
+func TestWorkMonthPresenter_Present_DailyRecordSerializesTimes(t *testing.T) {
+	tests := []struct {
+		name   string
+		record port.DailyRecordOutput
+		want   map[string]any
+	}{
+		{
+			name: "2-6-a: 休憩あり",
+			record: port.DailyRecordOutput{
+				Date:      "2026-07-01",
+				StartTime: port.TimeOfDay{Hour: 9, Minute: 15},
+				EndTime:   port.TimeOfDay{Hour: 17, Minute: 45},
+				Break: &port.Break{
+					Start: port.TimeOfDay{Hour: 12, Minute: 30},
+					End:   port.TimeOfDay{Hour: 13, Minute: 15},
+				},
+				WorkingHours:        port.Hours{Hours: 7, Minutes: 45},
+				RoundedWorkingHours: port.Hours{Hours: 7, Minutes: 45},
+			},
+			want: map[string]any{
+				"date":                "2026-07-01",
+				"startTime":           todJSON(9, 15),
+				"endTime":             todJSON(17, 45),
+				"break":               map[string]any{"start": todJSON(12, 30), "end": todJSON(13, 15)},
+				"workingHours":        hoursJSON(7, 45),
+				"roundedWorkingHours": hoursJSON(7, 45),
+			},
+		},
+		{
+			// break は null。キーを省略せず、{"hour":0,"minute":0} 等で埋めない。
+			name: "2-6-b: 休憩なしは break が null（キーは残る）",
+			record: port.DailyRecordOutput{
+				Date:                "2026-07-02",
+				StartTime:           port.TimeOfDay{Hour: 9, Minute: 0},
+				EndTime:             port.TimeOfDay{Hour: 18, Minute: 0},
+				Break:               nil,
+				WorkingHours:        port.Hours{Hours: 9, Minutes: 0},
+				RoundedWorkingHours: port.Hours{Hours: 9, Minutes: 0},
+			},
+			want: map[string]any{
+				"date":                "2026-07-02",
+				"startTime":           todJSON(9, 0),
+				"endTime":             todJSON(18, 0),
+				"break":               nil,
+				"workingHours":        hoursJSON(9, 0),
+				"roundedWorkingHours": hoursJSON(9, 0),
+			},
+		},
+		{
+			name: "2-6-c: 0:00〜0:15 の休憩は null でない",
+			record: port.DailyRecordOutput{
+				Date:      "2026-07-03",
+				StartTime: port.TimeOfDay{Hour: 0, Minute: 0},
+				EndTime:   port.TimeOfDay{Hour: 23, Minute: 45},
+				Break: &port.Break{
+					Start: port.TimeOfDay{Hour: 0, Minute: 0},
+					End:   port.TimeOfDay{Hour: 0, Minute: 15},
+				},
+				WorkingHours:        port.Hours{Hours: 23, Minutes: 30},
+				RoundedWorkingHours: port.Hours{Hours: 23, Minutes: 30},
+			},
+			want: map[string]any{
+				"date":                "2026-07-03",
+				"startTime":           todJSON(0, 0),
+				"endTime":             todJSON(23, 45),
+				"break":               map[string]any{"start": todJSON(0, 0), "end": todJSON(0, 15)},
+				"workingHours":        hoursJSON(23, 30),
+				"roundedWorkingHours": hoursJSON(23, 30),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := sampleClosedOutput()
+			output.DailyRecords = []port.DailyRecordOutput{tt.record}
+
+			got := dailyRecordsOf(t, output)
+
+			if len(got) != 1 {
+				t.Fatalf("dailyRecords の件数 = %d, want 1", len(got))
+			}
+			if diff := cmp.Diff(tt.want, got[0]); diff != "" {
+				t.Errorf("dailyRecords[0] の直列化が契約 AC-10-1 と不一致 (-want +got):\n%s（AC-9-11-g）", diff)
+			}
+		})
 	}
 }
 

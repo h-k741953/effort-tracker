@@ -79,13 +79,43 @@ func mustSettlementRange(t *testing.T, lowerHours, upperHours int) workmonth.Set
 	return s
 }
 
+// mustDailyRecord は「開始 0:00・終了 = 稼働時間・休憩なし」の稼働実績を構築する
+// （前提投入用。稼働時間は時刻から算出される値であり入力ではない＝daily-record-entry.md D-2）。
+// 稼働時間は 15 分の倍数で 0時間15分以上 23時間45分以下でなければならない（同 AC-3 の 3-A・3-B）。
 func mustDailyRecord(t *testing.T, year, month, day, hours, minutes int) workmonth.DailyRecord {
 	t.Helper()
-	r, err := workmonth.NewDailyRecord(mustDate(t, year, month, day), mustWorkingHours(t, hours, minutes))
+	start, err := workmonth.NewTimeOfDay(0, 0)
 	if err != nil {
-		t.Fatalf("前提の構築に失敗: NewDailyRecord(%d-%02d-%02d): %v", year, month, day, err)
+		t.Fatalf("前提の構築に失敗: NewTimeOfDay(0, 0): %v", err)
+	}
+	end, err := workmonth.NewTimeOfDay(hours, minutes)
+	if err != nil {
+		t.Fatalf("前提の構築に失敗: NewTimeOfDay(%d, %d): %v", hours, minutes, err)
+	}
+	r, err := workmonth.NewDailyRecord(mustDate(t, year, month, day), start, end, nil)
+	if err != nil {
+		t.Fatalf("前提の構築に失敗: NewDailyRecord(%d-%02d-%02d, 0:00〜%d:%02d): %v", year, month, day, hours, minutes, err)
 	}
 	return r
+}
+
+// tod は入力・出力 DTO の時刻（素の整数。実装設計 AC-7-18-a）を組み立てる。
+func tod(hour, minute int) port.TimeOfDay {
+	return port.TimeOfDay{Hour: hour, Minute: minute}
+}
+
+// recordOutput は mustDailyRecord が作る稼働実績（開始 0:00・終了 = 稼働時間・休憩なし）の
+// 出力 DTO を組み立てる。稼働時間は時刻から算出した値で、15 分の倍数なので丸め後の寄与と等しい
+// （daily-record-entry.md AC-6-2-a）。
+func recordOutput(date string, hours, minutes int) port.DailyRecordOutput {
+	return port.DailyRecordOutput{
+		Date:                date,
+		StartTime:           tod(0, 0),
+		EndTime:             tod(hours, minutes),
+		Break:               nil,
+		WorkingHours:        port.Hours{Hours: hours, Minutes: minutes},
+		RoundedWorkingHours: port.Hours{Hours: hours, Minutes: minutes},
+	}
 }
 
 // fixture は UC1 のユースケースを実行するための最小の前提一式。
@@ -193,8 +223,10 @@ func TestEnterDailyRecord_GeneratesWorkMonthImplicitly(t *testing.T) {
 		ContractID: f.contractID,
 		YearMonth:  f.yearMonth,
 		Date:       mustDate(t, 2026, 7, 1),
-		Hours:      8,
-		Minutes:    50,
+		// daily-record-entry.md AC-2-6-a の入力（稼働時間は 7時間45分）。
+		StartTime: tod(9, 15),
+		EndTime:   tod(17, 45),
+		Break:     &port.Break{Start: tod(12, 30), End: tod(13, 15)},
 	})
 
 	if f.workMonths.saveCount != 1 {
@@ -223,14 +255,17 @@ func TestEnterDailyRecord_GeneratesWorkMonthImplicitly(t *testing.T) {
 			LowerBound: port.Hours{Hours: 140, Minutes: 0},
 			UpperBound: port.Hours{Hours: 180, Minutes: 0},
 		},
-		TotalHours: port.Hours{Hours: 8, Minutes: 45},
+		TotalHours: port.Hours{Hours: 7, Minutes: 45},
 		Excess:     nil,
 		Shortfall:  nil,
 		DailyRecords: []port.DailyRecordOutput{
 			{
 				Date:                "2026-07-01",
-				WorkingHours:        port.Hours{Hours: 8, Minutes: 50},
-				RoundedWorkingHours: port.Hours{Hours: 8, Minutes: 45},
+				StartTime:           tod(9, 15),
+				EndTime:             tod(17, 45),
+				Break:               &port.Break{Start: tod(12, 30), End: tod(13, 15)},
+				WorkingHours:        port.Hours{Hours: 7, Minutes: 45},
+				RoundedWorkingHours: port.Hours{Hours: 7, Minutes: 45},
 			},
 		},
 	}
@@ -259,22 +294,14 @@ func TestEnterDailyRecord_UsesExistingWorkMonth(t *testing.T) {
 		ContractID: f.contractID,
 		YearMonth:  f.yearMonth,
 		Date:       mustDate(t, 2026, 7, 2),
-		Hours:      7,
-		Minutes:    30,
+		StartTime:  tod(0, 0),
+		EndTime:    tod(7, 30),
 	})
 
 	output := f.output.onlyPresented(t)
 	wantRecords := []port.DailyRecordOutput{
-		{
-			Date:                "2026-07-01",
-			WorkingHours:        port.Hours{Hours: 8, Minutes: 0},
-			RoundedWorkingHours: port.Hours{Hours: 8, Minutes: 0},
-		},
-		{
-			Date:                "2026-07-02",
-			WorkingHours:        port.Hours{Hours: 7, Minutes: 30},
-			RoundedWorkingHours: port.Hours{Hours: 7, Minutes: 30},
-		},
+		recordOutput("2026-07-01", 8, 0),
+		recordOutput("2026-07-02", 7, 30),
 	}
 	if diff := cmp.Diff(wantRecords, output.DailyRecords); diff != "" {
 		t.Errorf("既存の勤務月へ追加されていない (-want +got):\n%s（AC-1-4）", diff)
@@ -301,8 +328,8 @@ func TestEnterDailyRecord_ContractChangeDoesNotRetroact(t *testing.T) {
 		ContractID: f.contractID,
 		YearMonth:  f.yearMonth,
 		Date:       mustDate(t, 2026, 7, 1),
-		Hours:      8,
-		Minutes:    0,
+		StartTime:  tod(0, 0),
+		EndTime:    tod(8, 0),
 	})
 	if len(f.output.errs) != 0 {
 		t.Fatalf("前提の実行に失敗: PresentError = %v", f.output.errs)
@@ -322,8 +349,8 @@ func TestEnterDailyRecord_ContractChangeDoesNotRetroact(t *testing.T) {
 		ContractID: f.contractID,
 		YearMonth:  f.yearMonth,
 		Date:       mustDate(t, 2026, 7, 2),
-		Hours:      7,
-		Minutes:    0,
+		StartTime:  tod(0, 0),
+		EndTime:    tod(7, 0),
 	})
 
 	saved := f.workMonths.saved(t, f.contractID, f.yearMonth)
@@ -339,23 +366,52 @@ func TestEnterDailyRecord_ContractChangeDoesNotRetroact(t *testing.T) {
 
 // ---- AC-2-4・AC-3・AC-4 --------------------------------------------------
 
+// timesCase は1つの入力の時刻の組。値は daily-record-entry.md AC-3 の行の例を使う
+// （行番号を各ケースの名前に付ける）。
+type timesCase struct {
+	start, end port.TimeOfDay
+	brk        *port.Break
+}
+
+// validTimes は AC-3-11 の入力（`9:00`〜`18:00`／休憩なし。稼働時間 9時間0分）。
+// 他の条件を満たす「妥当な時刻」として、日付・状態・認可の検査を単独で当てる行に使う。
+var validTimes = timesCase{start: tod(9, 0), end: tod(18, 0)}
+
+func (c timesCase) input(f *fixture, date workmonth.Date) port.EnterDailyRecordInput {
+	return port.EnterDailyRecordInput{
+		Actor:      f.actor,
+		ContractID: f.contractID,
+		YearMonth:  f.yearMonth,
+		Date:       date,
+		StartTime:  c.start,
+		EndTime:    c.end,
+		Break:      c.brk,
+	}
+}
+
 // TestEnterDailyRecord_RejectsInvalidEntry は業務バリデーションで弾かれる入力を検証する。
-// AC-2-4（当該年月に属さない対象日）／AC-3-3・AC-3-5（稼働時間の値域）／AC-4-3（未来日）。
+// AC-2-4（当該年月に属さない対象日）／AC-4-3（未来日）／
+// daily-record-entry.md AC-3（時刻の値域外は ErrTimeOfDayOutOfRange、
+// 時刻の組み合わせの不正は ErrInvalidTimeCombination。実装設計 AC-7-18・AC-3-14）。
 // 「当日」は Clock ポートから取る（実装設計 AC-6-5。time.Now を使わない）。
 func TestEnterDailyRecord_RejectsInvalidEntry(t *testing.T) {
 	tests := []struct {
 		name    string
 		date    [3]int // 年・月・日
-		hours   int
-		minutes int
+		times   timesCase
 		wantErr error
 	}{
-		{name: "翌月の日は弾く（AC-2-4）", date: [3]int{2026, 8, 1}, hours: 8, wantErr: workmonth.ErrDateOutOfMonth},
-		{name: "前月の日は弾く（AC-2-4）", date: [3]int{2026, 6, 30}, hours: 8, wantErr: workmonth.ErrDateOutOfMonth},
-		{name: "24時間1分は弾く（AC-3-3）", date: [3]int{2026, 7, 1}, hours: 24, minutes: 1, wantErr: workmonth.ErrWorkingHoursOutOfRange},
-		{name: "分が60は弾く（AC-3-5）", date: [3]int{2026, 7, 1}, hours: 8, minutes: 60, wantErr: workmonth.ErrWorkingHoursOutOfRange},
-		{name: "負の稼働時間は弾く（AC-3-4）", date: [3]int{2026, 7, 1}, hours: -1, wantErr: workmonth.ErrWorkingHoursOutOfRange},
-		{name: "当日より後の日は弾く（AC-4-3）", date: [3]int{2026, 7, 11}, hours: 8, wantErr: workmonth.ErrFutureDate},
+		{name: "翌月の日は弾く（AC-2-4）", date: [3]int{2026, 8, 1}, times: validTimes, wantErr: workmonth.ErrDateOutOfMonth},
+		{name: "前月の日は弾く（AC-2-4）", date: [3]int{2026, 6, 30}, times: validTimes, wantErr: workmonth.ErrDateOutOfMonth},
+		{name: "当日より後の日は弾く（AC-4-3）", date: [3]int{2026, 7, 11}, times: validTimes, wantErr: workmonth.ErrFutureDate},
+		{name: "3-1-a: 開始の分が 10 は値域外", date: [3]int{2026, 7, 1}, times: timesCase{start: tod(9, 10), end: tod(18, 0)}, wantErr: workmonth.ErrTimeOfDayOutOfRange},
+		{name: "3-2-a: 開始の時が負は値域外", date: [3]int{2026, 7, 1}, times: timesCase{start: tod(-1, 0), end: tod(18, 0)}, wantErr: workmonth.ErrTimeOfDayOutOfRange},
+		{name: "3-2-b: 終了 24:00 は値域外", date: [3]int{2026, 7, 1}, times: timesCase{start: tod(9, 0), end: tod(24, 0)}, wantErr: workmonth.ErrTimeOfDayOutOfRange},
+		{name: "3-5-a: 終了＝開始は組み合わせの不正", date: [3]int{2026, 7, 1}, times: timesCase{start: tod(9, 0), end: tod(9, 0)}, wantErr: workmonth.ErrInvalidTimeCombination},
+		{name: "3-5-b: 終了が開始より前は組み合わせの不正", date: [3]int{2026, 7, 1}, times: timesCase{start: tod(18, 0), end: tod(9, 0)}, wantErr: workmonth.ErrInvalidTimeCombination},
+		{name: "3-6-a: 休憩終了＝休憩開始は組み合わせの不正", date: [3]int{2026, 7, 1}, times: timesCase{start: tod(9, 0), end: tod(18, 0), brk: &port.Break{Start: tod(12, 0), End: tod(12, 0)}}, wantErr: workmonth.ErrInvalidTimeCombination},
+		{name: "3-8: 休憩開始が開始より前は組み合わせの不正", date: [3]int{2026, 7, 1}, times: timesCase{start: tod(9, 0), end: tod(18, 0), brk: &port.Break{Start: tod(8, 45), End: tod(10, 0)}}, wantErr: workmonth.ErrInvalidTimeCombination},
+		{name: "3-9: 稼働 0 になる休憩は組み合わせの不正", date: [3]int{2026, 7, 1}, times: timesCase{start: tod(9, 0), end: tod(18, 0), brk: &port.Break{Start: tod(9, 0), End: tod(18, 0)}}, wantErr: workmonth.ErrInvalidTimeCombination},
 	}
 
 	for _, tt := range tests {
@@ -363,14 +419,7 @@ func TestEnterDailyRecord_RejectsInvalidEntry(t *testing.T) {
 			// 「当日」は 2026-07-10。
 			f := newFixture(t, mustDate(t, 2026, 7, 10))
 
-			f.enter().Execute(context.Background(), port.EnterDailyRecordInput{
-				Actor:      f.actor,
-				ContractID: f.contractID,
-				YearMonth:  f.yearMonth,
-				Date:       mustDate(t, tt.date[0], tt.date[1], tt.date[2]),
-				Hours:      tt.hours,
-				Minutes:    tt.minutes,
-			})
+			f.enter().Execute(context.Background(), tt.times.input(f, mustDate(t, tt.date[0], tt.date[1], tt.date[2])))
 
 			if err := f.output.onlyPresentedError(t); !errors.Is(err, tt.wantErr) {
 				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, %v)", err, tt.wantErr)
@@ -385,6 +434,259 @@ func TestEnterDailyRecord_RejectsInvalidEntry(t *testing.T) {
 	}
 }
 
+// TestEnterDailyRecord_InvalidTimeOfDayInEachOfFourTimes は、同じ不正な時刻（3-1-a の分 10）が
+// 4つの時刻（開始・終了・休憩開始・休憩終了）のどこに現れても ErrTimeOfDayOutOfRange で弾かれる
+// ことを検証する（実装設計 AC-12-18 ① (i)・⑤。契約 AC-4-5「いずれに現れても同じ」）。
+// 片方の時刻だけを検査する実装を Red にする。他の3つは妥当な値にして、値域の違反だけを当てる。
+func TestEnterDailyRecord_InvalidTimeOfDayInEachOfFourTimes(t *testing.T) {
+	// 妥当な基準: 9:00〜18:00／休憩 12:00〜13:00
+	base := func() (start, end, bs, be port.TimeOfDay) { return tod(9, 0), tod(18, 0), tod(12, 0), tod(13, 0) }
+	positions := []struct {
+		name  string
+		build func(bad port.TimeOfDay) timesCase
+	}{
+		{"開始時刻", func(bad port.TimeOfDay) timesCase {
+			_, e, bs, be := base()
+			return timesCase{start: bad, end: e, brk: &port.Break{Start: bs, End: be}}
+		}},
+		{"終了時刻", func(bad port.TimeOfDay) timesCase {
+			s, _, bs, be := base()
+			return timesCase{start: s, end: bad, brk: &port.Break{Start: bs, End: be}}
+		}},
+		{"休憩開始時刻", func(bad port.TimeOfDay) timesCase {
+			s, e, _, be := base()
+			return timesCase{start: s, end: e, brk: &port.Break{Start: bad, End: be}}
+		}},
+		{"休憩終了時刻", func(bad port.TimeOfDay) timesCase {
+			s, e, bs, _ := base()
+			return timesCase{start: s, end: e, brk: &port.Break{Start: bs, End: bad}}
+		}},
+	}
+	bads := []struct {
+		name string
+		tod  port.TimeOfDay
+	}{
+		{"分が粒度の外 (3-1-a: 9:10)", tod(9, 10)},
+		{"時 24 (3-2-b: 24:00)", tod(24, 0)},
+	}
+
+	for _, pos := range positions {
+		for _, bad := range bads {
+			t.Run(pos.name+"に"+bad.name, func(t *testing.T) {
+				f := newFixture(t, mustDate(t, 2026, 7, 10))
+
+				f.enter().Execute(context.Background(), pos.build(bad.tod).input(f, mustDate(t, 2026, 7, 1)))
+
+				err := f.output.onlyPresentedError(t)
+				if !errors.Is(err, workmonth.ErrTimeOfDayOutOfRange) {
+					t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, ErrTimeOfDayOutOfRange)", err)
+				}
+				if errors.Is(err, workmonth.ErrInvalidTimeCombination) {
+					t.Errorf("エラー %v が ErrInvalidTimeCombination にも当たる（番兵を兼ねない＝AC-3-14）", err)
+				}
+				if f.workMonths.saveCount != 0 || len(f.workMonths.stored) != 0 {
+					t.Errorf("弾かれた入力で保存・生成が行われた（Save %d 回・勤務月 %d 件）", f.workMonths.saveCount, len(f.workMonths.stored))
+				}
+			})
+		}
+	}
+}
+
+// TestEnterDailyRecord_TimeValidationOrder は、時刻の検証の中の順序を検証する
+// （実装設計 AC-7-18。契約 AC-4-13-b〜AC-4-13-h・D-17）。
+//
+//	状態(5) → ① 4つの時刻すべての値域 → ② Break と DailyRecord の組み合わせ → 当該月外 → 未来日
+//
+// いずれの組でも Save が呼ばれず、未生成の勤務月を生成しないこと（4-13-h）まで固定する。
+func TestEnterDailyRecord_TimeValidationOrder(t *testing.T) {
+	// 3-5-a: 9:00〜9:00（終了＝開始）
+	combination := timesCase{start: tod(9, 0), end: tod(9, 0)}
+	tests := []struct {
+		name      string
+		times     timesCase
+		date      [3]int
+		state     workmonth.State
+		generated bool
+		actor     func() port.Actor // nil なら本人
+		wantErr   error
+	}{
+		{
+			// 4-13-b: 3-5-a に当たり、かつ break.start の minute が 3-1-a。①が②より先。
+			// 休憩の時刻が値域外のとき、開始・終了の組み合わせの不正より値域外が返る。
+			name: "4-13-b: 値域外(休憩開始 12:10)が組み合わせの不正(9:00〜9:00)より先",
+			times: timesCase{start: tod(9, 0), end: tod(9, 0),
+				brk: &port.Break{Start: tod(12, 10), End: tod(13, 0)}},
+			date: [3]int{2026, 7, 1}, state: workmonth.StateDraft, generated: true,
+			wantErr: workmonth.ErrTimeOfDayOutOfRange,
+		},
+		{
+			// 4-13-c: 3-5-a に当たり、かつ当該月外。②が当該月外より先。
+			name: "4-13-c: 組み合わせの不正が当該月外より先", times: combination,
+			date: [3]int{2026, 8, 1}, state: workmonth.StateDraft, generated: true,
+			wantErr: workmonth.ErrInvalidTimeCombination,
+		},
+		{
+			// 4-13-d: startTime が 3-1-a に当たり、かつ未来日。①が未来日より先。
+			name: "4-13-d: 値域外が未来日より先", times: timesCase{start: tod(9, 10), end: tod(18, 0)},
+			date: [3]int{2026, 7, 11}, state: workmonth.StateDraft, generated: true,
+			wantErr: workmonth.ErrTimeOfDayOutOfRange,
+		},
+		{
+			// 4-13-e: 時刻は妥当で、当該月外かつ未来日。当該月外が未来日より先。
+			name: "4-13-e: 当該月外が未来日より先", times: validTimes,
+			date: [3]int{2026, 8, 1}, state: workmonth.StateDraft, generated: true,
+			wantErr: workmonth.ErrDateOutOfMonth,
+		},
+		{
+			// 4-13-f: 3-5-a に当たり、かつ PendingApproval。状態(5)が順6より先。
+			name: "4-13-f: 状態が組み合わせの不正より先", times: combination,
+			date: [3]int{2026, 7, 1}, state: workmonth.StatePendingApproval, generated: true,
+			wantErr: workmonth.ErrNotEditable,
+		},
+		{
+			// 4-13-g: startTime が 3-2-b に当たり、かつ本人でない。認可(4)が順6より先。
+			name: "4-13-g: 認可が値域外より先", times: timesCase{start: tod(24, 0), end: tod(18, 0)},
+			date: [3]int{2026, 7, 1}, state: workmonth.StateDraft, generated: true,
+			actor:   func() port.Actor { return foreignActor(port.RoleEngineer) },
+			wantErr: port.ErrNotOwner,
+		},
+		{
+			// 4-13-h: 3-9 に当たり、かつ未生成。勤務月を生成しない。
+			name: "4-13-h: 稼働 0(3-9)で未生成の勤務月は生成されない",
+			times: timesCase{start: tod(9, 0), end: tod(18, 0),
+				brk: &port.Break{Start: tod(9, 0), End: tod(18, 0)}},
+			date: [3]int{2026, 7, 1}, generated: false,
+			wantErr: workmonth.ErrInvalidTimeCombination,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// 「当日」は 2026-07-10。2026-07-11 は未来日、2026-08-01 は当該月外かつ未来日。
+			f := newFixture(t, mustDate(t, 2026, 7, 10))
+			if tt.generated {
+				f.workMonths.put(reconstructWorkMonth(
+					t, f.contractID, f.yearMonth, mustSettlementRange(t, 140, 180),
+					tt.state, []workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
+				))
+			}
+			in := tt.times.input(f, mustDate(t, tt.date[0], tt.date[1], tt.date[2]))
+			if tt.actor != nil {
+				in.Actor = tt.actor()
+			}
+
+			f.enter().Execute(context.Background(), in)
+
+			if err := f.output.onlyPresentedError(t); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, %v)", err, tt.wantErr)
+			}
+			if f.workMonths.saveCount != 0 {
+				t.Errorf("弾かれた入力で Save が呼ばれた（回数 = %d, want 0）", f.workMonths.saveCount)
+			}
+			if !tt.generated && len(f.workMonths.stored) != 0 {
+				t.Errorf("弾かれた入力で未生成の勤務月が生成された（件数 = %d, want 0）", len(f.workMonths.stored))
+			}
+		})
+	}
+}
+
+// TestEnterDailyRecord_NoBreakAndMinimumBreak は、休憩なし（Break が nil）と
+// 「最小の時刻を持つ休憩」（&Break{0:00〜0:15}）を取り違えずに保存・出力することを対にして検証する
+// （実装設計 AC-7-18・AC-7-18-a。daily-record-entry.md AC-2-6-b・AC-2-6-c）。
+func TestEnterDailyRecord_NoBreakAndMinimumBreak(t *testing.T) {
+	tests := []struct {
+		name      string
+		times     timesCase
+		wantBreak *port.Break
+		wantHours port.Hours
+		wantEnd   port.TimeOfDay
+	}{
+		{
+			name:      "2-6-b: 休憩なしは Break が nil",
+			times:     timesCase{start: tod(9, 0), end: tod(18, 0)},
+			wantBreak: nil,
+			wantHours: port.Hours{Hours: 9, Minutes: 0},
+			wantEnd:   tod(18, 0),
+		},
+		{
+			name:      "2-6-c: 0:00〜0:15 の休憩は nil でない",
+			times:     timesCase{start: tod(0, 0), end: tod(23, 45), brk: &port.Break{Start: tod(0, 0), End: tod(0, 15)}},
+			wantBreak: &port.Break{Start: tod(0, 0), End: tod(0, 15)},
+			wantHours: port.Hours{Hours: 23, Minutes: 30},
+			wantEnd:   tod(23, 45),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t, mustDate(t, 2026, 7, 10))
+
+			f.enter().Execute(context.Background(), tt.times.input(f, mustDate(t, 2026, 7, 1)))
+
+			output := f.output.onlyPresented(t)
+			if len(output.DailyRecords) != 1 {
+				t.Fatalf("DailyRecords の件数 = %d, want 1", len(output.DailyRecords))
+			}
+			got := output.DailyRecords[0]
+			want := port.DailyRecordOutput{
+				Date:                "2026-07-01",
+				StartTime:           tt.times.start,
+				EndTime:             tt.wantEnd,
+				Break:               tt.wantBreak,
+				WorkingHours:        tt.wantHours,
+				RoundedWorkingHours: tt.wantHours,
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("出力の稼働実績が不一致 (-want +got):\n%s", diff)
+			}
+			// 保存された集約も同じ時刻・休憩の有無を持つ（Save に渡された値の検査）。
+			saved := f.workMonths.saved(t, f.contractID, f.yearMonth)
+			records := saved.DailyRecords()
+			if len(records) != 1 {
+				t.Fatalf("保存された稼働実績の件数 = %d, want 1", len(records))
+			}
+			brk, ok := records[0].Break()
+			if ok != (tt.wantBreak != nil) {
+				t.Errorf("保存された稼働実績の Break() の第2戻り値 = %v, want %v", ok, tt.wantBreak != nil)
+			}
+			if ok && tt.wantBreak != nil {
+				gotBreak := port.Break{
+					Start: tod(brk.Start().Hour(), brk.Start().Minute()),
+					End:   tod(brk.End().Hour(), brk.End().Minute()),
+				}
+				if diff := cmp.Diff(*tt.wantBreak, gotBreak); diff != "" {
+					t.Errorf("保存された休憩が不一致 (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+}
+
+// TestEnterDailyRecord_ReplacesBreakWhenEditedToNoBreak は、休憩ありの日を休憩なしで再入力（編集）
+// すると編集前の休憩の時刻を残さないことを検証する（daily-record-entry.md AC-2-6-d）。
+func TestEnterDailyRecord_ReplacesBreakWhenEditedToNoBreak(t *testing.T) {
+	f := newFixture(t, mustDate(t, 2026, 8, 15))
+	first := timesCase{start: tod(9, 15), end: tod(17, 45), brk: &port.Break{Start: tod(12, 30), End: tod(13, 15)}} // 2-6-a
+	date := mustDate(t, 2026, 7, 1)
+
+	f.enter().Execute(context.Background(), first.input(f, date))
+	f.output = &spyWorkMonthOutputPort{}
+	f.enter().Execute(context.Background(), validTimes.input(f, date)) // 2-6-d: 9:00〜18:00／休憩なし
+
+	output := f.output.onlyPresented(t)
+	want := []port.DailyRecordOutput{{
+		Date:                "2026-07-01",
+		StartTime:           tod(9, 0),
+		EndTime:             tod(18, 0),
+		Break:               nil,
+		WorkingHours:        port.Hours{Hours: 9, Minutes: 0},
+		RoundedWorkingHours: port.Hours{Hours: 9, Minutes: 0},
+	}}
+	if diff := cmp.Diff(want, output.DailyRecords); diff != "" {
+		t.Errorf("編集後の稼働実績が不一致 (-want +got):\n%s（AC-2-6-d）", diff)
+	}
+}
+
 // TestEnterDailyRecord_AcceptsToday は「当日」の入力が許可されることを検証する（AC-4-1）。
 func TestEnterDailyRecord_AcceptsToday(t *testing.T) {
 	f := newFixture(t, mustDate(t, 2026, 7, 10))
@@ -394,17 +696,13 @@ func TestEnterDailyRecord_AcceptsToday(t *testing.T) {
 		ContractID: f.contractID,
 		YearMonth:  f.yearMonth,
 		Date:       mustDate(t, 2026, 7, 10),
-		Hours:      8,
-		Minutes:    0,
+		StartTime:  tod(0, 0),
+		EndTime:    tod(8, 0),
 	})
 
 	output := f.output.onlyPresented(t)
 	wantRecords := []port.DailyRecordOutput{
-		{
-			Date:                "2026-07-10",
-			WorkingHours:        port.Hours{Hours: 8, Minutes: 0},
-			RoundedWorkingHours: port.Hours{Hours: 8, Minutes: 0},
-		},
+		recordOutput("2026-07-10", 8, 0),
 	}
 	if diff := cmp.Diff(wantRecords, output.DailyRecords); diff != "" {
 		t.Errorf("当日の入力が反映されていない (-want +got):\n%s（AC-4-1）", diff)
@@ -430,17 +728,13 @@ func TestEnterDailyRecord_EditsSameDate(t *testing.T) {
 		ContractID: f.contractID,
 		YearMonth:  f.yearMonth,
 		Date:       mustDate(t, 2026, 7, 1),
-		Hours:      6,
-		Minutes:    30,
+		StartTime:  tod(0, 0),
+		EndTime:    tod(6, 30),
 	})
 
 	output := f.output.onlyPresented(t)
 	wantRecords := []port.DailyRecordOutput{
-		{
-			Date:                "2026-07-01",
-			WorkingHours:        port.Hours{Hours: 6, Minutes: 30},
-			RoundedWorkingHours: port.Hours{Hours: 6, Minutes: 30},
-		},
+		recordOutput("2026-07-01", 6, 30),
 	}
 	if diff := cmp.Diff(wantRecords, output.DailyRecords); diff != "" {
 		t.Errorf("同一日への入力が編集として扱われていない (-want +got):\n%s（AC-2-3）", diff)
@@ -477,8 +771,8 @@ func TestEnterDailyRecord_RejectsNotEditableState(t *testing.T) {
 				ContractID: f.contractID,
 				YearMonth:  f.yearMonth,
 				Date:       mustDate(t, 2026, 7, 2),
-				Hours:      7,
-				Minutes:    30,
+				StartTime:  tod(0, 0),
+				EndTime:    tod(7, 30),
 			})
 
 			if err := f.output.onlyPresentedError(t); !errors.Is(err, workmonth.ErrNotEditable) {
@@ -534,8 +828,8 @@ func TestEnterDailyRecord_RejectsUnauthenticated(t *testing.T) {
 				ContractID: contractID,
 				YearMonth:  f.yearMonth,
 				Date:       mustDate(t, 2026, 7, 1),
-				Hours:      8,
-				Minutes:    0,
+				StartTime:  tod(0, 0),
+				EndTime:    tod(8, 0),
 			})
 
 			if err := f.output.onlyPresentedError(t); !errors.Is(err, port.ErrUnauthenticated) {
@@ -597,8 +891,8 @@ func TestEnterDailyRecord_Authorization(t *testing.T) {
 					ContractID: f.contractID,
 					YearMonth:  f.yearMonth,
 					Date:       mustDate(t, 2026, 7, 2),
-					Hours:      7,
-					Minutes:    30,
+					StartTime:  tod(0, 0),
+					EndTime:    tod(7, 30),
 				})
 
 				if ac.wantErr != nil {
@@ -625,11 +919,7 @@ func TestEnterDailyRecord_Authorization(t *testing.T) {
 				if f.workMonths.saveCount != 1 {
 					t.Errorf("Save の呼び出し回数 = %d, want 1", f.workMonths.saveCount)
 				}
-				want := port.DailyRecordOutput{
-					Date:                "2026-07-02",
-					WorkingHours:        port.Hours{Hours: 7, Minutes: 30},
-					RoundedWorkingHours: port.Hours{Hours: 7, Minutes: 30},
-				}
+				want := recordOutput("2026-07-02", 7, 30)
 				got := output.DailyRecords[len(output.DailyRecords)-1]
 				if diff := cmp.Diff(want, got); diff != "" {
 					t.Errorf("許可された入力が反映されていない (-want +got):\n%s", diff)
@@ -644,55 +934,56 @@ func TestEnterDailyRecord_Authorization(t *testing.T) {
 // TestEnterDailyRecord_JudgementOrder は複数の条件に該当する入力で
 // 「先に該当したもの」が返ることを検証する（HTTP 契約 AC-9 の判定順序表・実装設計 AC-7-7）。
 //
-//	4 認可 → 5 状態 → 6 業務バリデーション（値域・未来日・当該月外）
+//	4 認可 → 5 状態 → 6 業務バリデーション（時刻の値域・組み合わせ・未来日・当該月外）
 //
-// 状態を値域より先に判定するため、締め済の勤務月へ値域外の稼働時間を送っても
-// 400 WORKING_HOURS_OUT_OF_RANGE ではなく 409 WORK_MONTH_NOT_EDITABLE になる
-// （HTTP 契約 AC-4-4 / AC-4-5）。
+// 状態を時刻の検証より先に判定するため、締め済の勤務月へ値域外の時刻を送っても
+// 400 TIME_OF_DAY_OUT_OF_RANGE ではなく 409 WORK_MONTH_NOT_EDITABLE になる
+// （HTTP 契約 AC-4-4）。時刻の検証の中の順序は TestEnterDailyRecord_TimeValidationOrder が持つ。
 func TestEnterDailyRecord_JudgementOrder(t *testing.T) {
+	outOfRange := timesCase{start: tod(24, 0), end: tod(18, 0)} // 3-2-b
+	combination := timesCase{start: tod(9, 0), end: tod(9, 0)}  // 3-5-a
 	tests := []struct {
 		name    string
 		actor   port.Actor
 		state   workmonth.State
 		date    [3]int
-		hours   int
-		minutes int
+		times   timesCase
 		wantErr error
 	}{
 		{
-			name:  "状態(5)は値域(6)より先 — 締め済へ24時間1分",
+			name:  "状態(5)は時刻の値域(6)より先 — 締め済へ時 24",
 			actor: ownerActor(port.RoleEngineer), state: workmonth.StatePendingApproval,
-			date: [3]int{2026, 7, 2}, hours: 24, minutes: 1,
+			date: [3]int{2026, 7, 2}, times: outOfRange,
 			wantErr: workmonth.ErrNotEditable,
 		},
 		{
-			name:  "状態(5)は値域(6)より先 — 締め済へ分が60",
+			name:  "状態(5)は時刻の組み合わせ(6)より先 — 締め済へ終了＝開始",
 			actor: ownerActor(port.RoleEngineer), state: workmonth.StatePendingApproval,
-			date: [3]int{2026, 7, 2}, hours: 8, minutes: 60,
+			date: [3]int{2026, 7, 2}, times: combination,
 			wantErr: workmonth.ErrNotEditable,
 		},
 		{
 			name:  "状態(5)は未来日(6)より先 — 承認済へ未来日",
 			actor: ownerActor(port.RoleEngineer), state: workmonth.StateApproved,
-			date: [3]int{2026, 7, 31}, hours: 8,
+			date: [3]int{2026, 7, 31}, times: validTimes,
 			wantErr: workmonth.ErrNotEditable,
 		},
 		{
 			name:  "状態(5)は当該月外(6)より先 — 承認済へ翌月の日",
 			actor: ownerActor(port.RoleEngineer), state: workmonth.StateApproved,
-			date: [3]int{2026, 8, 1}, hours: 8,
+			date: [3]int{2026, 8, 1}, times: validTimes,
 			wantErr: workmonth.ErrNotEditable,
 		},
 		{
 			name:  "認可(4)は状態(5)より先 — 他人が締め済へ入力",
 			actor: foreignActor(port.RoleApprover), state: workmonth.StatePendingApproval,
-			date: [3]int{2026, 7, 2}, hours: 8,
+			date: [3]int{2026, 7, 2}, times: validTimes,
 			wantErr: port.ErrNotOwner,
 		},
 		{
-			name:  "認可(4)は値域(6)より先 — 他人が下書きへ24時間1分",
+			name:  "認可(4)は時刻の値域(6)より先 — 他人が下書きへ時 24",
 			actor: foreignActor(port.RoleEngineer), state: workmonth.StateDraft,
-			date: [3]int{2026, 7, 2}, hours: 24, minutes: 1,
+			date: [3]int{2026, 7, 2}, times: outOfRange,
 			wantErr: port.ErrNotOwner,
 		},
 	}
@@ -709,15 +1000,10 @@ func TestEnterDailyRecord_JudgementOrder(t *testing.T) {
 				tt.state,
 				[]workmonth.DailyRecord{mustDailyRecord(t, 2026, 7, 1, 8, 0)},
 			))
+			in := tt.times.input(f, mustDate(t, tt.date[0], tt.date[1], tt.date[2]))
+			in.Actor = tt.actor
 
-			f.enter().Execute(context.Background(), port.EnterDailyRecordInput{
-				Actor:      tt.actor,
-				ContractID: f.contractID,
-				YearMonth:  f.yearMonth,
-				Date:       mustDate(t, tt.date[0], tt.date[1], tt.date[2]),
-				Hours:      tt.hours,
-				Minutes:    tt.minutes,
-			})
+			f.enter().Execute(context.Background(), in)
 
 			if err := f.output.onlyPresentedError(t); !errors.Is(err, tt.wantErr) {
 				t.Fatalf("PresentError に渡されたエラー = %v, want errors.Is(err, %v)", err, tt.wantErr)
@@ -741,7 +1027,8 @@ func TestEnterDailyRecord_ContractNotFound(t *testing.T) {
 		ContractID: mustContractID(t, "ctr-unknown"),
 		YearMonth:  f.yearMonth,
 		Date:       mustDate(t, 2026, 7, 1),
-		Hours:      8,
+		StartTime:  tod(0, 0),
+		EndTime:    tod(8, 0),
 	})
 
 	if err := f.output.onlyPresentedError(t); !errors.Is(err, port.ErrContractNotFound) {
@@ -767,7 +1054,8 @@ func TestEnterDailyRecord_SaveFailure(t *testing.T) {
 		ContractID: f.contractID,
 		YearMonth:  f.yearMonth,
 		Date:       mustDate(t, 2026, 7, 1),
-		Hours:      8,
+		StartTime:  tod(0, 0),
+		EndTime:    tod(8, 0),
 	})
 
 	if err := f.output.onlyPresentedError(t); !errors.Is(err, errSaveFailed) {
