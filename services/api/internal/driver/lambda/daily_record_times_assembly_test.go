@@ -315,7 +315,7 @@ func TestEnterDailyRecord_Assembly_ReadBackOfSavedTimes(t *testing.T) {
 			db2 := newFakeDB()
 			db2.pushQuery(newFakeRows(contractRow(timesTestContract, "契約T", timesTestEngineer, 140, 0, 180, 0)), nil)
 			db2.pushQuery(newFakeRows(workMonthHeaderRow(timesTestContract, 2026, 7, 140, 0, 180, 0, "Draft")), nil)
-			db2.pushQuery(newFakeRows(queryRow(insert[1:])), nil)
+			db2.pushQuery(newFakeRows(readBackRow(insert)), nil)
 
 			get := getWorkMonth(t, db2)
 
@@ -373,8 +373,25 @@ func TestEnterDailyRecord_Assembly_EditToNoBreakLeavesNoOldBreak(t *testing.T) {
 	db2 := newFakeDB()
 	db2.pushQuery(newFakeRows(contractRow(timesTestContract, "契約T", timesTestEngineer, 140, 0, 180, 0)), nil)
 	db2.pushQuery(newFakeRows(workMonthHeaderRow(timesTestContract, 2026, 7, 140, 0, 180, 0, "Draft")), nil)
-	db2.pushQuery(newFakeRows(queryRow(insert[1:])), nil)
+	db2.pushQuery(newFakeRows(readBackRow(insert)), nil)
 	if diff := cmp.Diff(putEl, dailyRecordElement(t, getWorkMonth(t, db2))); diff != "" {
 		t.Errorf("E-1 の応答の要素が直前の E-3 の応答と不一致 (-want +got):\n%s（契約 AC-4-14-e）", diff)
 	}
+}
+
+// readBackRow は、稼働実績の挿入の引数（AC-9-16-h ②: 12個）から、読み出しの行（AC-9-15-i:
+// 年・月・日・開始と終了の時分・休憩の4列の11列）を組み立てる。書き込みでは開始・終了の時分が
+// int、読み出しでは *int（NULL 可の列を読む）なので、DB が書いた int を読み返す振る舞いに
+// 忠実に、開始・終了の時分（insert[4:8]）だけを *int へ変換する。休憩の4列は書き込みの時点で
+// *int なのでそのまま渡す。Fake の Scan（fakeScanAssign）は緩めない。
+func readBackRow(insert []any) queryRow {
+	row := queryRow(append([]any(nil), insert[1:]...))
+	for i := 3; i <= 6; i++ {
+		v, ok := row[i].(int)
+		if !ok {
+			continue
+		}
+		row[i] = &v
+	}
+	return row
 }
