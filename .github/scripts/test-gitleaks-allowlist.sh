@@ -443,6 +443,14 @@ collect_structure_violations() {
   # （12-2-d-1-d）。
   local PATHS_DEFAULT_VALUE='^apps/web/\.next/'
 
+  # --- 12-2-k / 12-2-k-1（AC-11-11 の1件）: 許可する値は1つに固定する。
+  #     regexes の比較相手は、テスト側が置いた K_SIG_VALUE（値の写しは
+  #     1つ。12-2-k-1-c / 12-L8 (3)）をそのまま参照する。
+  local RULES_ID_VALUE='"generic-api-key"' RA_COND_VALUE='"AND"'
+  local RA_PATHS_VALUE='^apps/web/src/lib/lambda-client\.test\.ts$'
+  local rules_count=0 ra_count=0
+  local rules_id_occ=0 ra_cond_occ=0 ra_paths_occ=0 ra_regexes_occ=0
+
   local extend_count=0 allowlists_count=0
   # --- 12-2-i: 「ちょうど1つ」はキーの出現回数で数える（真偽フラグでは
   #     2回目の代入が1回目を吸収してしまい、重複キー行を検知できない）。
@@ -490,8 +498,32 @@ collect_structure_violations() {
       continue
     fi
 
-    # 許可されないテーブル見出し（[allowlist] / [[rules]] /
-    # [[rules.allowlists]] / [allowlists.xxx] 等）
+    # --- 12-2-b / 2-k: [[rules]] と [[rules.allowlists]] は各ちょうど1つ
+    if [ "$trimmed" = "[[rules]]" ]; then
+      rules_count=$((rules_count + 1))
+      current_table="rules"
+      if [ "$had_comment" = "1" ]; then
+        violations+=("行${lineno}: 2-k の行に行末コメントがある（12-2-k-1-e）: ${line}")
+      fi
+      if [ "$rules_count" -gt 1 ]; then
+        violations+=("行${lineno}: [[rules]] テーブルが複数（2-b）: ${trimmed}")
+      fi
+      continue
+    fi
+
+    if [ "$trimmed" = "[[rules.allowlists]]" ]; then
+      ra_count=$((ra_count + 1))
+      current_table="rulesallow"
+      if [ "$had_comment" = "1" ]; then
+        violations+=("行${lineno}: 2-k の行に行末コメントがある（12-2-k-1-e）: ${line}")
+      fi
+      if [ "$ra_count" -gt 1 ]; then
+        violations+=("行${lineno}: [[rules.allowlists]] テーブルが複数（2-b）: ${trimmed}")
+      fi
+      continue
+    fi
+
+    # 許可されないテーブル見出し（[allowlist] / [allowlists.xxx] 等）
     if [[ "$trimmed" =~ ^\[\[?[A-Za-z0-9_.-]+\]\]?$ ]]; then
       violations+=("行${lineno}: 許可されないテーブル見出し（2-b）: ${trimmed}")
       current_table="other"
@@ -572,6 +604,58 @@ collect_structure_violations() {
             violations+=("行${lineno}: [[allowlists]] 内の許可外キー/値（2-d）: ${trimmed}")
           fi
           ;;
+        rules)
+          # 12-2-k: [[rules]] 内は id のみ。値は "generic-api-key" に完全一致
+          if [ "$key2" = "id" ]; then
+            rules_id_occ=$((rules_id_occ + 1))
+            if [ "$had_comment" = "1" ]; then
+              violations+=("行${lineno}: id 行に行末コメントがある（12-2-k-1-e）: ${line}")
+            elif [ "$val2" != "$RULES_ID_VALUE" ]; then
+              violations+=("行${lineno}: [[rules]] の id の値が許可値と完全一致しない（12-2-k-1-a）: ${trimmed}")
+            fi
+          else
+            violations+=("行${lineno}: [[rules]] 内の許可外キー（2-k）: ${trimmed}")
+          fi
+          ;;
+        rulesallow)
+          # 12-2-k: [[rules.allowlists]] 内は condition / paths / regexes のみ
+          local rav rarc
+          case "$key2" in
+            condition)
+              ra_cond_occ=$((ra_cond_occ + 1))
+              if [ "$had_comment" = "1" ]; then
+                violations+=("行${lineno}: condition 行に行末コメントがある（12-2-k-1-e）: ${line}")
+              elif [ "$val2" != "$RA_COND_VALUE" ]; then
+                violations+=("行${lineno}: condition の値が許可値と完全一致しない（12-2-k-1-a）: ${trimmed}")
+              fi
+              ;;
+            paths)
+              ra_paths_occ=$((ra_paths_occ + 1))
+              rav="$(extract_single_literal_value "$val2")"; rarc=$?
+              if [ "$had_comment" = "1" ]; then
+                violations+=("行${lineno}: paths 行に行末コメントがある（12-2-k-1-e）: ${line}")
+              elif [ "$rarc" -ne 0 ]; then
+                violations+=("行${lineno}: [[rules.allowlists]] の paths は要素1個のリテラル文字列配列ではない（12-2-k-1-b）: ${trimmed}")
+              elif [ "$rav" != "$RA_PATHS_VALUE" ]; then
+                violations+=("行${lineno}: [[rules.allowlists]] の paths の値が許可値と完全一致しない（12-2-k-1-b）: ${trimmed}")
+              fi
+              ;;
+            regexes)
+              ra_regexes_occ=$((ra_regexes_occ + 1))
+              rav="$(extract_single_literal_value "$val2")"; rarc=$?
+              if [ "$had_comment" = "1" ]; then
+                violations+=("行${lineno}: regexes 行に行末コメントがある（12-2-k-1-e）: ${line}")
+              elif [ "$rarc" -ne 0 ]; then
+                violations+=("行${lineno}: regexes は要素1個のリテラル文字列配列ではない（12-2-k-1-c）: ${trimmed}")
+              elif [ "$rav" != "$K_SIG_VALUE" ]; then
+                violations+=("行${lineno}: regexes の値が許可値と完全一致しない（12-2-k-1-c）: ${trimmed}")
+              fi
+              ;;
+            *)
+              violations+=("行${lineno}: [[rules.allowlists]] 内の許可外キー（2-k）: ${trimmed}")
+              ;;
+          esac
+          ;;
         other)
           violations+=("行${lineno}: 許可されないテーブル内のキー（2-b）: ${trimmed}")
           ;;
@@ -595,6 +679,27 @@ collect_structure_violations() {
   fi
   if [ "$allowlists_count" -eq 0 ]; then
     violations+=("[[allowlists]] テーブルが存在しない（2-b 補足）")
+  fi
+  # --- 2-b / 2-k / 2-l: 2-k の1件の不在と、キーの出現回数（ちょうど1）
+  #     [[allowlists]] の paths と [[rules.allowlists]] の paths は別のキー
+  #     として数え、合算しない（2-l）。
+  if [ "$rules_count" -eq 0 ]; then
+    violations+=("[[rules]] テーブルが存在しない（2-b）")
+  fi
+  if [ "$ra_count" -eq 0 ]; then
+    violations+=("[[rules.allowlists]] テーブルが存在しない（2-b）")
+  fi
+  if [ "$rules_id_occ" -ne 1 ]; then
+    violations+=("[[rules]] 内の id キーが ${rules_id_occ} 回出現している（2-k / 2-l: ちょうど1でなければ不合格）")
+  fi
+  if [ "$ra_cond_occ" -ne 1 ]; then
+    violations+=("[[rules.allowlists]] 内の condition キーが ${ra_cond_occ} 回出現している（2-k / 2-l: ちょうど1でなければ不合格）")
+  fi
+  if [ "$ra_paths_occ" -ne 1 ]; then
+    violations+=("[[rules.allowlists]] 内の paths キーが ${ra_paths_occ} 回出現している（2-k / 2-l: ちょうど1でなければ不合格）")
+  fi
+  if [ "$ra_regexes_occ" -ne 1 ]; then
+    violations+=("[[rules.allowlists]] 内の regexes キーが ${ra_regexes_occ} 回出現している（2-k / 2-l: ちょうど1でなければ不合格）")
   fi
   # --- 12-2-i: useDefault / paths それぞれの出現回数がちょうど1であること
   #     （0件=不在、2件以上=重複キー行。いずれも違反。値が既定値と一致して
