@@ -29,6 +29,16 @@ variables {
 run "bff_ssr_env_receives_user_pool_and_client_ids" {
   command = plan
 
+  # 注入された Function URL は computed で plan 時 unknown になるため、参照先だけ
+  # ダミー値で確定させる（ac_10_4_z と同形）。assert は変えない。
+  override_resource {
+    target = aws_lambda_function_url.domain_api
+    values = {
+      function_url = "https://dummy-domain-api-0000000000.lambda-url.ap-northeast-1.on.aws/"
+    }
+    override_during = plan
+  }
+
   # User Pool・アプリクライアントの id は provider が採番する computed 値で
   # あり、plan 時点では unknown になる（ac_10_4_s と同型の理由）。ダミーの
   # ID で override_during = plan により確定させる。

@@ -36,6 +36,16 @@ variables {
 run "bff_ssr_env_excludes_google_client_secret" {
   command = plan
 
+  # 注入された Function URL は computed で plan 時 unknown になるため、参照先だけ
+  # ダミー値で確定させる（ac_10_4_z と同形）。assert は変えない。
+  override_resource {
+    target = aws_lambda_function_url.domain_api
+    values = {
+      function_url = "https://dummy-domain-api-0000000000.lambda-url.ap-northeast-1.on.aws/"
+    }
+    override_during = plan
+  }
+
   # BFF・SSR Lambda の environment.variables には、この構成が作る User
   # Pool・アプリクライアントの id が混ざる（COGNITO_USER_POOL_ID・
   # COGNITO_CLIENT_ID）。これらは provider が採番する computed 値であり、
