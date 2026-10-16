@@ -49,7 +49,7 @@ Issue #52 のうち **`apps/web`（BFF）に載る部分**の仕様。**方式�
 | P-7 | **`npm ci` 以降、lint / test がネットワークアクセスを要求しない。決定的であること**（現在時刻・乱数に依存して結果が変わるテストを置かない） | `web-app-scaffold.md` AC-6-3・AC-6-4 |
 | P-8 | **依存ライブラリの許可リストは人間の承認事項。** 列挙されていない改変は、弱体化の疑いがある側に倒す | ADR 0010 §A・`docs/rules/development-process.md` |
 | P-9 | **自己承認排除（`approval.md` D-4）はロールに依存せず維持する。** ロールを `Approver` に切り替えても、自分が技術者である勤務月は承認・差戻しできない | ADR 0016・`login-ui.md` P-5・`domain-api-http-contract.md` AC-7-4 |
-| P-10 | 現況（実測 2026-09-01）: `apps/web` に **Route Handler は存在せず、`src/lib/lambda-client.ts` も存在しない**。`src/lib/` は `.gitkeep` のみ。テストは `src/next.config.test.ts` の1本 | `apps/web` の作業ツリー |
+| P-10 | **本仕様が `apps/web` に置く Route Handler は、AC-11-2 の3経路（サインインの開始・戻り・デモ用ロール切替）に限る**（AC-11-1）。**`src/lib/lambda-client.ts` と、ドメイン API を呼ぶ業務の Route Handler は本仕様の対象外であり**（AC-9）、**仕様は `docs/specs/bff-wiring.md` が持つ**。**`apps/web` にどのファイルが現に存在するかは作業ツリーが持ち、本仕様は持たない**（特定時点の実測を条文に埋め込まない＝`docs/rules/development-process.md`。2026-10-16、人間の決定により現況へ改めた） | AC-9・AC-11-1・`bff-wiring.md` |
 
 ---
 
@@ -163,7 +163,7 @@ Issue #52 のうち **`apps/web`（BFF）に載る部分**の仕様。**方式�
 |---|---|---|
 | 6-1 | AWS 認証の手段 | **ドメイン API への到達は BFF の実行ロールによる SigV4 のみ**（ADR 0014・0003・P-1）。**Cognito のトークンを AWS の認証に用いない** —— **Identity Pool 等で AWS の資格情報へ交換する経路を作らない**（`docs/rules/security.md`「ランタイムの AWS 認証に外部 IdP との federation を挟まない」・`cognito-auth-infra.md` AC-6-2） |
 | 6-2 | トークンの転送 | **Cognito のトークンをドメイン API へそのまま転送しない。** ドメイン API はトークン検証をせず、**BFF が確定させた操作者・ロールを2ヘッダで受け取る**（`domain-api-http-contract.md` P-2・D-2） |
-| 6-3 | 署名対象 | **操作者ヘッダは SigV4 の署名対象に含める**（同 AC-1-8）。**この実現は `lambda-client.ts` の責務であり、本 Issue では作らない**（AC-9）。**本仕様が要求するのは、認証の終端がこの形を前提として壊さないことまでである** |
+| 6-3 | 署名対象 | **操作者ヘッダは SigV4 の署名対象に含める**（同 AC-1-8）。**この実現は `lambda-client.ts` の責務であり、本 Issue では作らない**（AC-9。`lambda-client.ts` の仕様は `docs/specs/bff-wiring.md`）。**本仕様が要求するのは、認証の終端がこの形を前提として壊さないことまでである** |
 | 6-4 | 契約を再定義しない | ヘッダ名・エラーコード・ステータスコードの実体は `domain-api-http-contract.md` が持つ。**本仕様へ書き写さない**（ADR 0004） |
 
 ### AC-7. 依存と実装形
@@ -208,7 +208,7 @@ Issue #52 のうち **`apps/web`（BFF）に載る部分**の仕様。**方式�
 | 対象 | いつ / どこで | 根拠 |
 |---|---|---|
 | ログイン画面・ロール切替コントロールの UI | 後続のフロント Issue | `docs/specs/login-ui.md` |
-| `src/lib/lambda-client.ts`（SigV4 署名） | ドメイン API を実際に呼ぶ Issue。**スタブも置かない** | `web-app-scaffold.md` AC-9・AC-8-5 と同型 |
+| `src/lib/lambda-client.ts`（SigV4 署名） | ドメイン API を実際に呼ぶ Issue（#54。`docs/specs/bff-wiring.md`）。**スタブも置かない** | `web-app-scaffold.md` AC-9・AC-8-5 と同型 |
 | **AC-11-2 の3つ以外の Route Handler**（勤務月・締め・承認などの業務エンドポイント） | 各業務の後続 Issue。**本 Issue で発明しない** | `docs/specs/domain-api-http-contract.md`・AC-11-2 |
 | **サインアウト（セッション破棄）の経路** | 要求する仕様がまだ無い（`login-ui.md` は AC-4「ゲストとして続行」を入口として持つが、サインアウトを要求していない）。**要ると判断したら、作る前に停止して人間へ上げる** | `docs/specs/login-ui.md`・ADR 0004（仕様に無いものを発明しない） |
 | **MFA(TOTP) のチャレンジ応答・TOTP 登録の経路** | **Cognito 側が持つ**（`cognito-auth-infra.md` AC-5-6 (v)・Q-1 = (a)）。BFF に実装しない | ADR 0016・`login-ui.md` AC-2-2 の注記 |
