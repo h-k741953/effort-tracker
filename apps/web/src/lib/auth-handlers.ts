@@ -68,7 +68,7 @@ function redirectResponse(location: string, setCookies: readonly string[]): Resp
  * AC-3-4: 検証に失敗した要求への応答。**401 を返し**（(i)）、**検証に失敗した
  * セッション Cookie とロール Cookie を破棄する**（(ii)）。理由は載せない（(iii)）。
  */
-function unauthenticatedResponse(): Response {
+export function unauthenticatedResponse(): Response {
   const headers = new Headers();
   for (const cookie of expiredAuthCookies()) {
     headers.append("Set-Cookie", cookie);
@@ -82,7 +82,7 @@ function unauthenticatedResponse(): Response {
  * AC-7-7 (i): ステータスは 5xx（401・429 と同じ値にしない）。具体の値は
  * 実装側が持つ（AC-7-7 (v)・限界 10-17）。
  */
-function misconfiguredResponse(): Response {
+export function misconfiguredResponse(): Response {
   return textResponse(500, "");
 }
 
