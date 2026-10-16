@@ -7,3 +7,13 @@ useDefault = true
 
 [[allowlists]]
 paths = ['''^apps/web/\.next/''']
+
+# lambda-client.test.ts の 2-j（AWS 公開の SigV4 テストベクタの期待値）の Signature を
+# generic-api-key が誤検知するため、この 1 件だけを除外する。根拠: docs/specs/web-app-scaffold.md AC-11-11。
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+condition = "AND"
+paths = ['''^apps/web/src/lib/lambda-client\.test\.ts$''']
+regexes = ['''85d96828115b5dc0cfc3bd16ad9e210dd772bbebba041836c64533a82be05ead''']
