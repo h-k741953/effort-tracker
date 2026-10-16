@@ -16,9 +16,9 @@
 - **対象**: エンドポイントの一覧（メソッド・パス）、操作者の伝達方法、リクエスト／レスポンスの JSON フィールド名と型、ステータスコード、エラーコードと判定順序、一覧の並び順・ページング
 - **非対象**:
   - **業務ルールそのもの**（3業務仕様が持つ。参照のみ）
-  - **BFF・ブラウザ側の実装**（Issue #54。本仕様は BFF が呼ぶ相手側の契約に閉じる）
+  - **BFF・ブラウザ側の実装**（Issue #54。本仕様は BFF が呼ぶ相手側の契約に閉じる。BFF 側の実装設計は `docs/specs/bff-wiring.md`）
   - **画面の受け入れ条件**（各 UI 仕様）
-  - **SigV4 署名の実装方法**（ADR 0003 / 0014。`apps/web/src/lib/lambda-client.ts` に集約する。`docs/rules/architecture.md`）
+  - **SigV4 署名の実装方法**（ADR 0003 / 0014。`apps/web/src/lib/lambda-client.ts` に集約する。`docs/rules/architecture.md`。仕様は `docs/specs/bff-wiring.md`）
   - **Cognito のトークン検証**（BFF で終端する。ADR 0016）
 
 ---
