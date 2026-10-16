@@ -78,6 +78,11 @@ resource "aws_lambda_function" "bff_ssr" {
       # 用いる公開オリジンも、同じ environment ブロック内で注入する
       # （bff-auth-termination.md AC-7-6。要求ヘッダから導かない代わり）。
       PUBLIC_ORIGIN = var.public_origin
+      # infra-terraform.md AC-4-9（bff-wiring.md D 節 U-6）: ドメイン API の
+      # Function URL を、この構成が作る当該 Function URL の属性から注入する
+      # （リテラル・暫定値を置かない）。名は apps/web/src/lib/lambda-client.ts が
+      # 読む名と揃える。一致は機械検査されない（infra-terraform.md 12-38）。
+      DOMAIN_API_FUNCTION_URL = aws_lambda_function_url.domain_api.function_url
     }
   }
 
