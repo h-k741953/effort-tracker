@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -213,5 +213,118 @@ describe("AC-6-1・6-7: 契約のエンドポイントに対応する面（検�
       expect(surface.paramNames.join(",")).not.toMatch(/engineer/i);
       expect(surface.normalizedPath).not.toMatch(/engineer/i);
     }
+  });
+});
+
+// --- 配線の取り違え（W-1）: route.ts が呼ぶ処理を (パス, メソッド) ごとに判別する -----------
+//
+// 5-a は上限超過の 429、6-h・6-g はファイル位置とエクスポートしたメソッドしか見ない。
+// そのため own ⇄ pending-approval、approve ⇄ reject などの取り違えが素通りする。
+// route.ts は構成（環境変数）を読むためここでは呼ばず（AC-11-3: 環境変数を書き換えない）、
+// ソースを走査して、各メソッドの本体が呼ぶ work-month-handlers の処理を読む。
+//
+// 期待の出所: docs/specs/bff-wiring.md AC-6 の R-1〜R-9 と、契約の E-1・E-3〜E-7。
+// R-2・R-3 の具体のパスは実装側が持つ（6-7 (ii)）ため、現在のパス名で固定する。
+const HANDLER_BY_ENDPOINT: Readonly<Record<string, string>> = {
+  "E-1": "handleGetWorkMonth", // R-1
+  "E-3": "handlePutDailyRecord", // R-5
+  "E-4": "handleDeleteDailyRecord", // R-6
+  "E-5": "handleCloseWorkMonth", // R-7
+  "E-6": "handleApproveWorkMonth", // R-8
+  "E-7": "handleRejectWorkMonth", // R-9
+};
+
+const EXPECTED_WIRING: ReadonlyMap<string, string> = new Map([
+  ...CONTRACT_ENDPOINTS.map(
+    (e) => [`${e.method} ${bffPathOf(e.path)}`, HANDLER_BY_ENDPOINT[e.id]] as const,
+  ),
+  ["GET /api/work-months/own", "handleListOwnWorkMonths"], // R-2
+  ["GET /api/work-months/pending-approval", "handleListPendingApprovals"], // R-3
+]);
+
+/** ソースから、エクスポートされた各メソッドの本体が呼ぶ `handle*` の識別子を集める。 */
+function calledHandlers(source: string): Map<string, string[]> {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const parts = code.split(/export\s+(?:async\s+)?function\s+(\w+)/);
+  const result = new Map<string, string[]>();
+  // parts = [前置き, 名前1, 本体1, 名前2, 本体2, ...]
+  for (let i = 1; i < parts.length; i += 2) {
+    const calls = [...parts[i + 1].matchAll(/\b(handle\w+)\s*\(/g)].map((m) => m[1]);
+    result.set(parts[i], calls);
+  }
+  return result;
+}
+
+/** 期待と異なるものを文字列で返す（空なら一致）。 */
+function wiringViolations(
+  entries: ReadonlyArray<{ key: string; calls: readonly string[] }>,
+): string[] {
+  const violations: string[] = [];
+  for (const { key, calls } of entries) {
+    const expected = EXPECTED_WIRING.get(key);
+    if (expected === undefined) {
+      violations.push(`${key}: 期待に無い面`);
+    } else if (calls.length !== 1 || calls[0] !== expected) {
+      violations.push(`${key}: 期待 ${expected} / 実際 [${calls.join(",")}]`);
+    }
+  }
+  return violations;
+}
+
+function scanWiring(): Array<{ key: string; calls: string[] }> {
+  const entries: Array<{ key: string; calls: string[] }> = [];
+  for (const file of listRouteFiles(apiDir)) {
+    const { normalizedPath } = pathOf(file);
+    if (normalizedPath.startsWith("/api/auth/")) continue;
+    for (const [method, calls] of calledHandlers(readFileSync(file, "utf8"))) {
+      entries.push({ key: `${method} ${normalizedPath}`, calls });
+    }
+  }
+  return entries;
+}
+
+describe("AC-6-1・11-4: route.ts が呼ぶ処理の対応（W-1）", () => {
+  it("(パス, メソッド) → 呼ぶ処理 が R-1〜R-3・R-5〜R-9 の期待とちょうど一致する。面は 8、処理は 8 種で重複しない", () => {
+    const entries = scanWiring();
+
+    // 0件・取りこぼしの一致を一致とみなさない。
+    expect(EXPECTED_WIRING.size).toBe(8);
+    expect(entries.length).toBe(8);
+    expect(wiringViolations(entries)).toEqual([]);
+    // 1対1: 期待した面がすべて見つかり、処理が重複しない（6-1）。
+    expect(entries.map((e) => e.key).sort()).toEqual([...EXPECTED_WIRING.keys()].sort());
+    expect(new Set(entries.flatMap((e) => e.calls)).size).toBe(8);
+  });
+
+  it("陽性対照: 取り違えた・複数呼ぶ・呼ばない合成入力は違反として検出される", () => {
+    const own = "GET /api/work-months/own";
+    const approve = "POST /api/work-months/*/*/approve";
+    const swapped = [
+      { key: own, calls: ["handleListPendingApprovals"] },
+      { key: approve, calls: ["handleRejectWorkMonth"] },
+      { key: "POST /api/work-months/*/*/close", calls: [] },
+      { key: "POST /api/work-months/*/*/reject", calls: ["handleRejectWorkMonth", "handleApproveWorkMonth"] },
+      { key: "GET /api/work-months/extra", calls: ["handleGetWorkMonth"] },
+    ];
+    expect(wiringViolations(swapped).length).toBe(5);
+    // 対: 正しい合成入力は違反にならない。
+    expect(
+      wiringViolations([
+        { key: own, calls: ["handleListOwnWorkMonths"] },
+        { key: approve, calls: ["handleApproveWorkMonth"] },
+      ]),
+    ).toEqual([]);
+
+    // ソース解析の陽性対照: 本体ごとに呼び先を読み分ける。
+    const parsed = calledHandlers(`
+      import { handleA } from "x";
+      // handleCommented(
+      export async function PUT(r: Request) { return handlePutDailyRecord(r); }
+      export async function DELETE(r: Request) { return handlePutDailyRecord(r); }
+    `);
+    expect([...parsed.entries()]).toEqual([
+      ["PUT", ["handlePutDailyRecord"]],
+      ["DELETE", ["handlePutDailyRecord"]],
+    ]);
   });
 });
