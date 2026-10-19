@@ -391,9 +391,9 @@ describe("AC-6-2: lambda-client が送る要求のメソッドとパス（契約
   });
 });
 
-// --- AC-7 検査 7-d（値そのものが . / .. のセグメントと、似ているだけの値） ----
+// --- AC-7 検査 7-d（値そのものが . / .. / 空文字のセグメントと、似ているだけの値） ----
 //
-// 出所: docs/specs/bff-wiring.md AC-7-1 の補足・検査 7-d（D 節 C-1）。
+// 出所: docs/specs/bff-wiring.md AC-7-1 の補足・検査 7-d（D 節 C-1・#121）。
 // 位置の定義: パラメータ名 → 契約の形（セグメント列）の中の添字。
 type SegmentParam = "contractId" | "yearMonth" | "date";
 
@@ -454,7 +454,7 @@ const SEGMENT_REQUESTS: Array<{
   },
 ];
 
-const DOT_VALUES = [".", "..", ""] as const;
+const REJECTED_SEGMENT_VALUES = [".", "..", ""] as const;
 
 const LOOKALIKE_VALUES = [
   "%2E",
@@ -476,17 +476,20 @@ const LOOKALIKE_VALUES = [
   "..%2e",
   "%2e..",
   " ",
+  "\t",
+  "\u3000",
+  "  ",
 ] as const;
 
 describe("AC-7-1 補足・7-d (i): 値そのものが . / .. / 空文字のパラメータは送らず契約外として返す", () => {
   it("件数の下限: 位置（パラメータ）は contractId・yearMonth・date をすべて含み、組は 18 組以上", () => {
     const params = new Set(SEGMENT_REQUESTS.map((r) => r.param));
     expect([...params].sort()).toEqual(["contractId", "date", "yearMonth"]);
-    expect(SEGMENT_REQUESTS.length * DOT_VALUES.length).toBeGreaterThanOrEqual(18);
+    expect(SEGMENT_REQUESTS.length * REJECTED_SEGMENT_VALUES.length).toBeGreaterThanOrEqual(18);
   });
 
   for (const { name, build } of SEGMENT_REQUESTS) {
-    for (const value of DOT_VALUES) {
+    for (const value of REJECTED_SEGMENT_VALUES) {
       it(`7-d (i): ${name} が ${JSON.stringify(value)} → 送信 0 回・契約外（429 でない）`, async () => {
         const { send, sent } = recordingSend(() => jsonResponse(200, {}));
 
@@ -500,9 +503,9 @@ describe("AC-7-1 補足・7-d (i): 値そのものが . / .. / 空文字のパ�
 });
 
 describe("AC-7-1 補足・7-d (ii): . / .. / 空文字に似るが値そのものはそれでないものは拒否せず1つのセグメントとして送る", () => {
-  it("件数の下限: 似た値は 19 値以上（空白1文字を含む）、位置との組は 114 組以上", () => {
-    expect(LOOKALIKE_VALUES.length).toBeGreaterThanOrEqual(19);
-    expect(LOOKALIKE_VALUES.length * SEGMENT_REQUESTS.length).toBeGreaterThanOrEqual(114);
+  it("件数の下限: 似た値は 22 値以上（空白1文字・タブ・全角空白・空白2文字を含む）、位置との組は 132 組以上", () => {
+    expect(LOOKALIKE_VALUES.length).toBeGreaterThanOrEqual(22);
+    expect(LOOKALIKE_VALUES.length * SEGMENT_REQUESTS.length).toBeGreaterThanOrEqual(132);
   });
 
   for (const { name, index, segmentCount, build } of SEGMENT_REQUESTS) {
