@@ -215,14 +215,15 @@ function encodeStrict(value: string): string {
 }
 
 /**
- * パスの1セグメントとして符号化する（7-1）。値そのものが `.` `..` のものは、
- * 符号化しても WHATWG URL がドットセグメントとして畳むため、送れない。
+ * パスの1セグメントとして符号化する（7-1）。値そのものが `.` `..` `""` のものは送れない。
+ * `.` `..` は、符号化しても WHATWG URL がドットセグメントとして畳むため。
+ * `""` は、空のセグメント（`//`）になり、受け側が畳みうるうえ署名の正規パスと食い違いうるため（理由が異なる）。
  * 呼び出し側（call の catch）が契約外として返す。理由・値は載せない（AC-9）。
- * 対象はこの2値だけで、それ以外は書式を判定せず符号化して送る（7-3）。
+ * 対象はこの3値だけで、それ以外（空白だけの値を含む）は書式を判定せず符号化して送る（7-3）。
  */
 function encodeSegment(value: string): string {
-  if (value === "." || value === "..") {
-    throw new Error("dot segment");
+  if (value === "." || value === ".." || value === "") {
+    throw new Error("rejected segment");
   }
   return encodeStrict(value);
 }
