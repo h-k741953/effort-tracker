@@ -28,7 +28,11 @@ import {
   recordingSend,
   testClient,
 } from "../test-support/bff-wiring";
-import { handleGetWorkMonth, handlePutDailyRecord } from "./work-month-handlers";
+import {
+  handleDeleteDailyRecord,
+  handleGetWorkMonth,
+  handlePutDailyRecord,
+} from "./work-month-handlers";
 
 const R1 = BUSINESS_HANDLERS.filter((h) => h.route === "R-1")[0];
 const R2 = BUSINESS_HANDLERS.filter((h) => h.route === "R-2")[0];
@@ -165,6 +169,83 @@ describe("AC-7: ブラウザ入力の扱い（パス・クエリの構造を変�
     const params = new URL(sent[0].url).searchParams;
     expect(params.getAll("engineerId")).toEqual([SUB]);
     expect(params.getAll("state")).toEqual([state]);
+  });
+});
+
+describe("AC-7-1 補足・7-d (i): 値が . / .. のパラメータを Route Handler に与える（5xx・本文空・no-store・送信 0 回）", () => {
+  const R6 = BUSINESS_HANDLERS.filter((h) => h.route === "R-6")[0];
+
+  type Case = [string, string, (value: string) => Promise<{ response: Response; sentCount: number }>];
+  const cases: Case[] = [];
+  const dotValues = [".", ".."];
+
+  async function run(
+    handler: (request: Request, options: ReturnType<typeof businessOptions>) => Promise<Response>,
+    request: Request,
+  ) {
+    const { send, sent } = recordingSend(() => jsonResponse(200, {}));
+    const response = await handler(request, businessOptions(testClient({ send })));
+    return { response, sentCount: sent.length };
+  }
+
+  for (const value of dotValues) {
+    cases.push([
+      "R-1 contractId",
+      value,
+      (v) =>
+        run(
+          (request, options) =>
+            handleGetWorkMonth(request, { contractId: v, yearMonth: "2026-07" }, options),
+          requestFor(R1),
+        ),
+    ]);
+    cases.push([
+      "R-1 yearMonth",
+      value,
+      (v) =>
+        run(
+          (request, options) =>
+            handleGetWorkMonth(request, { contractId: "c-001", yearMonth: v }, options),
+          requestFor(R1),
+        ),
+    ]);
+    cases.push([
+      "R-5 date",
+      value,
+      (v) =>
+        run(
+          (request, options) => handlePutDailyRecord(request, { ...PATH_PARAMS, date: v }, options),
+          requestFor(R5),
+        ),
+    ]);
+    cases.push([
+      "R-6 date",
+      value,
+      (v) =>
+        run(
+          (request, options) =>
+            handleDeleteDailyRecord(request, { ...PATH_PARAMS, date: v }, options),
+          requestFor(R6),
+        ),
+    ]);
+  }
+
+  it("件数の下限: 4 位置 × 2 値 = 8 組", () => {
+    expect(cases.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it.each(cases)("7-d (i): %s が %j → 5xx（401・429 でない）・本文空・no-store・値を載せない・送信 0 回", async (_name, value, exec) => {
+    const { response, sentCount } = await exec(value);
+
+    expect(sentCount).toBe(0);
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(response.status).toBeLessThan(600);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.text()).toBe("");
+    for (const [, headerValue] of response.headers) {
+      expect(headerValue).not.toBe(value);
+      if (value === "..") expect(headerValue).not.toContain("..");
+    }
   });
 });
 
