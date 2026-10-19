@@ -172,12 +172,12 @@ describe("AC-7: ブラウザ入力の扱い（パス・クエリの構造を変�
   });
 });
 
-describe("AC-7-1 補足・7-d (i): 値が . / .. のパラメータを Route Handler に与える（5xx・本文空・no-store・送信 0 回）", () => {
+describe("AC-7-1 補足・7-d (i): 値が . / .. / 空文字のパラメータを Route Handler に与える（5xx・本文空・no-store・送信 0 回）", () => {
   const R6 = BUSINESS_HANDLERS.filter((h) => h.route === "R-6")[0];
 
   type Case = [string, string, (value: string) => Promise<{ response: Response; sentCount: number }>];
   const cases: Case[] = [];
-  const dotValues = [".", ".."];
+  const dotValues = [".", "..", ""];
 
   async function run(
     handler: (request: Request, options: ReturnType<typeof businessOptions>) => Promise<Response>,
@@ -230,8 +230,8 @@ describe("AC-7-1 補足・7-d (i): 値が . / .. のパラメータを Route Han
     ]);
   }
 
-  it("件数の下限: 4 位置 × 2 値 = 8 組", () => {
-    expect(cases.length).toBeGreaterThanOrEqual(8);
+  it("件数の下限: 4 位置 × 3 値 = 12 組", () => {
+    expect(cases.length).toBeGreaterThanOrEqual(12);
   });
 
   it.each(cases)("7-d (i): %s が %j → 5xx（401・429 でない）・本文空・no-store・値を載せない・送信 0 回", async (_name, value, exec) => {
