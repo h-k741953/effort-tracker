@@ -177,7 +177,7 @@ describe("AC-7-1 補足・7-d (i): 値が . / .. / 空文字のパラメータ�
 
   type Case = [string, string, (value: string) => Promise<{ response: Response; sentCount: number }>];
   const cases: Case[] = [];
-  const dotValues = [".", "..", ""];
+  const rejectedSegmentValues = [".", "..", ""];
 
   async function run(
     handler: (request: Request, options: ReturnType<typeof businessOptions>) => Promise<Response>,
@@ -188,7 +188,7 @@ describe("AC-7-1 補足・7-d (i): 値が . / .. / 空文字のパラメータ�
     return { response, sentCount: sent.length };
   }
 
-  for (const value of dotValues) {
+  for (const value of rejectedSegmentValues) {
     cases.push([
       "R-1 contractId",
       value,
