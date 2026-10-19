@@ -454,7 +454,7 @@ const SEGMENT_REQUESTS: Array<{
   },
 ];
 
-const DOT_VALUES = [".", ".."] as const;
+const DOT_VALUES = [".", "..", ""] as const;
 
 const LOOKALIKE_VALUES = [
   "%2E",
@@ -475,13 +475,14 @@ const LOOKALIKE_VALUES = [
   "a..",
   "..%2e",
   "%2e..",
+  " ",
 ] as const;
 
-describe("AC-7-1 補足・7-d (i): 値そのものが . / .. のパラメータは送らず契約外として返す", () => {
-  it("件数の下限: 位置（パラメータ）は contractId・yearMonth・date をすべて含み、組は 12 組以上", () => {
+describe("AC-7-1 補足・7-d (i): 値そのものが . / .. / 空文字のパラメータは送らず契約外として返す", () => {
+  it("件数の下限: 位置（パラメータ）は contractId・yearMonth・date をすべて含み、組は 18 組以上", () => {
     const params = new Set(SEGMENT_REQUESTS.map((r) => r.param));
     expect([...params].sort()).toEqual(["contractId", "date", "yearMonth"]);
-    expect(SEGMENT_REQUESTS.length * DOT_VALUES.length).toBeGreaterThanOrEqual(12);
+    expect(SEGMENT_REQUESTS.length * DOT_VALUES.length).toBeGreaterThanOrEqual(18);
   });
 
   for (const { name, build } of SEGMENT_REQUESTS) {
@@ -498,10 +499,10 @@ describe("AC-7-1 補足・7-d (i): 値そのものが . / .. のパラメータ�
   }
 });
 
-describe("AC-7-1 補足・7-d (ii): . / .. に似るが値そのものはそれでないものは拒否せず1つのセグメントとして送る", () => {
-  it("件数の下限: 似た値は 15 値以上、位置との組は 90 組以上", () => {
-    expect(LOOKALIKE_VALUES.length).toBeGreaterThanOrEqual(15);
-    expect(LOOKALIKE_VALUES.length * SEGMENT_REQUESTS.length).toBeGreaterThanOrEqual(90);
+describe("AC-7-1 補足・7-d (ii): . / .. / 空文字に似るが値そのものはそれでないものは拒否せず1つのセグメントとして送る", () => {
+  it("件数の下限: 似た値は 19 値以上（空白1文字を含む）、位置との組は 114 組以上", () => {
+    expect(LOOKALIKE_VALUES.length).toBeGreaterThanOrEqual(19);
+    expect(LOOKALIKE_VALUES.length * SEGMENT_REQUESTS.length).toBeGreaterThanOrEqual(114);
   });
 
   for (const { name, index, segmentCount, build } of SEGMENT_REQUESTS) {
