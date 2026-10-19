@@ -391,6 +391,138 @@ describe("AC-6-2: lambda-client が送る要求のメソッドとパス（契約
   });
 });
 
+// --- AC-7 検査 7-d（値そのものが . / .. のセグメントと、似ているだけの値） ----
+//
+// 出所: docs/specs/bff-wiring.md AC-7-1 の補足・検査 7-d（D 節 C-1）。
+// 位置の定義: パラメータ名 → 契約の形（セグメント列）の中の添字。
+type SegmentParam = "contractId" | "yearMonth" | "date";
+
+const SEGMENT_REQUESTS: Array<{
+  readonly name: string;
+  readonly param: SegmentParam;
+  readonly index: number;
+  readonly build: (value: string) => DomainApiRequest;
+  readonly segmentCount: number;
+}> = [
+  {
+    name: "E-1 contractId",
+    param: "contractId",
+    index: 2,
+    segmentCount: 4,
+    build: (value) => ({ ...getWorkMonth(), contractId: value }),
+  },
+  {
+    name: "E-1 yearMonth",
+    param: "yearMonth",
+    index: 3,
+    segmentCount: 4,
+    build: (value) => ({ ...getWorkMonth(), yearMonth: value }),
+  },
+  {
+    name: "E-3 contractId",
+    param: "contractId",
+    index: 2,
+    segmentCount: 6,
+    build: (value) => ({ ...putDailyRecord("{}"), contractId: value }),
+  },
+  {
+    name: "E-3 yearMonth",
+    param: "yearMonth",
+    index: 3,
+    segmentCount: 6,
+    build: (value) => ({ ...putDailyRecord("{}"), yearMonth: value }),
+  },
+  {
+    name: "E-3 date",
+    param: "date",
+    index: 5,
+    segmentCount: 6,
+    build: (value) => ({ ...putDailyRecord("{}"), date: value }),
+  },
+  {
+    name: "E-4 date",
+    param: "date",
+    index: 5,
+    segmentCount: 6,
+    build: (value) => ({
+      endpoint: "E-4",
+      contractId: "c-001",
+      yearMonth: "2026-07",
+      date: value,
+      actor: ACTOR,
+    }),
+  },
+];
+
+const DOT_VALUES = [".", ".."] as const;
+
+const LOOKALIKE_VALUES = [
+  "%2E",
+  "%2e",
+  "%2E%2E",
+  "%2e%2e",
+  "%2E%2e",
+  "%2e%2E",
+  ".%2e",
+  ".%2E",
+  "%2e.",
+  "%2E.",
+  "...",
+  "a..b",
+  ".a",
+  "a.",
+  "..a",
+  "a..",
+  "..%2e",
+  "%2e..",
+] as const;
+
+describe("AC-7-1 補足・7-d (i): 値そのものが . / .. のパラメータは送らず契約外として返す", () => {
+  it("件数の下限: 位置（パラメータ）は contractId・yearMonth・date をすべて含み、組は 12 組以上", () => {
+    const params = new Set(SEGMENT_REQUESTS.map((r) => r.param));
+    expect([...params].sort()).toEqual(["contractId", "date", "yearMonth"]);
+    expect(SEGMENT_REQUESTS.length * DOT_VALUES.length).toBeGreaterThanOrEqual(12);
+  });
+
+  for (const { name, build } of SEGMENT_REQUESTS) {
+    for (const value of DOT_VALUES) {
+      it(`7-d (i): ${name} が ${JSON.stringify(value)} → 送信 0 回・契約外（429 でない）`, async () => {
+        const { send, sent } = recordingSend(() => jsonResponse(200, {}));
+
+        const result = await testClient({ send }).call(build(value));
+
+        expect(sent).toHaveLength(0);
+        expect(result).toMatchObject({ kind: "unexpected", rateLimited: false });
+      });
+    }
+  }
+});
+
+describe("AC-7-1 補足・7-d (ii): . / .. に似るが値そのものはそれでないものは拒否せず1つのセグメントとして送る", () => {
+  it("件数の下限: 似た値は 15 値以上、位置との組は 90 組以上", () => {
+    expect(LOOKALIKE_VALUES.length).toBeGreaterThanOrEqual(15);
+    expect(LOOKALIKE_VALUES.length * SEGMENT_REQUESTS.length).toBeGreaterThanOrEqual(90);
+  });
+
+  for (const { name, index, segmentCount, build } of SEGMENT_REQUESTS) {
+    for (const value of LOOKALIKE_VALUES) {
+      it(`7-d (ii): ${name} が ${JSON.stringify(value)} → 送信ちょうど1回・セグメント数は契約の形のまま・復号すると元の値`, async () => {
+        const { send, sent } = recordingSend(() => jsonResponse(200, {}));
+
+        await testClient({ send }).call(build(value));
+
+        expect(sent).toHaveLength(1);
+        const url = new URL(sent[0].url);
+        expect(url.search).toBe("");
+        const segments = url.pathname.split("/");
+        expect(segments).toHaveLength(segmentCount);
+        expect(segments[1]).toBe("work-months");
+        expect(decodeURIComponent(segments[index])).toBe(value);
+      });
+    }
+  }
+});
+
 // --- AC-8 検査 8-a〜8-h（結果の分類） -----------------------------------------
 
 describe("AC-8-1: 結果の3分類（送信関数の Fake の応答を変えて分類を見る）", () => {
