@@ -23,6 +23,7 @@ import {
   SUB,
   TOKEN_MARK,
   browserRequest,
+  environmentWithout,
   headerOf,
   jsonResponse,
   recordingSend,
@@ -175,16 +176,21 @@ describe("AC-7: ブラウザ入力の扱い（パス・クエリの構造を変�
 describe("AC-7-1 補足・7-d (i): 値が . / .. / 空文字のパラメータを Route Handler に与える（5xx・本文空・no-store・送信 0 回）", () => {
   const R6 = BUSINESS_HANDLERS.filter((h) => h.route === "R-6")[0];
 
-  type Case = [string, string, (value: string) => Promise<{ response: Response; sentCount: number }>];
+  type Exec = (value: string, environment?: typeof ENVIRONMENT) => Promise<{ response: Response; sentCount: number }>;
+  type Case = [string, string, Exec, string];
   const cases: Case[] = [];
   const rejectedSegmentValues = [".", "..", ""];
 
   async function run(
     handler: (request: Request, options: ReturnType<typeof businessOptions>) => Promise<Response>,
     request: Request,
+    environment: typeof ENVIRONMENT = ENVIRONMENT,
   ) {
     const { send, sent } = recordingSend(() => jsonResponse(200, {}));
-    const response = await handler(request, businessOptions(testClient({ send })));
+    const response = await handler(
+      request,
+      businessOptions(testClient({ send, environment }), environment),
+    );
     return { response, sentCount: sent.length };
   }
 
@@ -192,41 +198,49 @@ describe("AC-7-1 補足・7-d (i): 値が . / .. / 空文字のパラメータ�
     cases.push([
       "R-1 contractId",
       value,
-      (v) =>
+      (v, env) =>
         run(
           (request, options) =>
             handleGetWorkMonth(request, { contractId: v, yearMonth: "2026-07" }, options),
           requestFor(R1),
+          env,
         ),
+      "c-001",
     ]);
     cases.push([
       "R-1 yearMonth",
       value,
-      (v) =>
+      (v, env) =>
         run(
           (request, options) =>
             handleGetWorkMonth(request, { contractId: "c-001", yearMonth: v }, options),
           requestFor(R1),
+          env,
         ),
+      "2026-07",
     ]);
     cases.push([
       "R-5 date",
       value,
-      (v) =>
+      (v, env) =>
         run(
           (request, options) => handlePutDailyRecord(request, { ...PATH_PARAMS, date: v }, options),
           requestFor(R5),
+          env,
         ),
+      "2026-07-15",
     ]);
     cases.push([
       "R-6 date",
       value,
-      (v) =>
+      (v, env) =>
         run(
           (request, options) =>
             handleDeleteDailyRecord(request, { ...PATH_PARAMS, date: v }, options),
           requestFor(R6),
+          env,
         ),
+      "2026-07-15",
     ]);
   }
 
@@ -247,6 +261,30 @@ describe("AC-7-1 補足・7-d (i): 値が . / .. / 空文字のパラメータ�
       if (value === "..") expect(headerValue).not.toContain("..");
     }
   });
+
+  // D 節 #124・7-d (i): 値と拒否の理由が無いことは、構成が欠けているとき（3-7・5-g）の
+  // 応答との全一致で判定する。比べる相手は同じ Route Handler・同じセッション・同じ他の
+  // パラメータで、当該パラメータだけを妥当な値に替え、呼び先の環境変数を未設定にした応答。
+  // 環境は呼び出しごとに新しく作った写しを渡すので、テスト間で漏れない。
+  it.each(cases)(
+    "7-d (i) 全一致: %s が %j の応答は、構成の欠落（呼び先が未設定）の応答とステータス・全ヘッダ・本文が一致する",
+    async (_name, value, exec, validValue) => {
+      const rejected = await exec(value);
+      const missing = await exec(validValue, environmentWithout("DOMAIN_API_FUNCTION_URL"));
+
+      // 相手側が構成欠落の経路を通ったこと（恒真の比較にしない）。
+      expect(missing.sentCount).toBe(0);
+      expect(missing.response.status).toBeGreaterThanOrEqual(500);
+      expect(missing.response.status).toBeLessThan(600);
+      expect(missing.response.headers.get("Cache-Control")).toBe("no-store");
+
+      const pairs = (response: Response) =>
+        [...response.headers].sort(([a, x], [b, y]) => (a + "\0" + x).localeCompare(b + "\0" + y));
+      expect(rejected.response.status).toBe(missing.response.status);
+      expect(pairs(rejected.response)).toEqual(pairs(missing.response));
+      expect(await rejected.response.text()).toBe(await missing.response.text());
+    },
+  );
 });
 
 // --- AC-8 写像 ---------------------------------------------------------------
