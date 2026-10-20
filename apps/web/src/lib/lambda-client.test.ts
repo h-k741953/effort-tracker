@@ -217,7 +217,7 @@ describe("AC-3: 呼び先と資格情報の構成", () => {
     const result = await testClient({ send, environment }).call(getWorkMonth());
 
     expect(sent).toHaveLength(0);
-    expect(result.kind).toBe("unexpected");
+    expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
   });
 
   it("3-c: 資格情報の取得が失敗する Fake（失敗の結果を返す）では送信関数が1度も呼ばれない", async () => {
@@ -233,7 +233,7 @@ describe("AC-3: 呼び先と資格情報の構成", () => {
     const result = await client.call(getWorkMonth());
 
     expect(sent).toHaveLength(0);
-    expect(result.kind).toBe("unexpected");
+    expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
   });
 
   it("3-c: 資格情報の取得が例外を投げる Fake でも送信関数は呼ばれず、例外は外へ出ない（8-3）", async () => {
@@ -251,7 +251,7 @@ describe("AC-3: 呼び先と資格情報の構成", () => {
     const result = await client.call(getWorkMonth());
 
     expect(sent).toHaveLength(0);
-    expect(result.kind).toBe("unexpected");
+    expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
   });
 
   it("3-d: 構成と資格情報がそろっていれば送信関数がちょうど1度呼ばれ、宛先のオリジンが構成の Function URL のオリジンに一致する", async () => {
@@ -306,7 +306,7 @@ describe("AC-3: 呼び先と資格情報の構成", () => {
       const result = await testClient({ send, environment }).call(getWorkMonth());
 
       expect(sent).toHaveLength(0);
-      expect(result.kind).toBe("unexpected");
+      expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
     },
   );
 
@@ -324,7 +324,7 @@ describe("AC-3: 呼び先と資格情報の構成", () => {
       const result = await testClient({ send, environment }).call(getWorkMonth());
 
       expect(sent).toHaveLength(0);
-      expect(result.kind).toBe("unexpected");
+      expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
     },
   );
 });
@@ -568,7 +568,7 @@ describe("AC-8-1: 結果の3分類（送信関数の Fake の応答を変えて�
   it("8-c: 403・IAM の拒否の形は (iii) 契約外", async () => {
     const result = await classify(() => jsonResponse(403, { Message: "Forbidden" }));
 
-    expect(result.kind).toBe("unexpected");
+    expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
   });
 
   it("8-d: 403・表に無い code は (iii) 契約外", async () => {
@@ -576,7 +576,7 @@ describe("AC-8-1: 結果の3分類（送信関数の Fake の応答を変えて�
       jsonResponse(403, { error: { code: "UNKNOWN_CODE", message: "x" } }),
     );
 
-    expect(result.kind).toBe("unexpected");
+    expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
   });
 
   it("8-e: 409・FORBIDDEN_NOT_OWNER（ステータスと code が表と食い違う）は (iii) 契約外", async () => {
@@ -584,7 +584,7 @@ describe("AC-8-1: 結果の3分類（送信関数の Fake の応答を変えて�
       jsonResponse(409, { error: { code: "FORBIDDEN_NOT_OWNER", message: "x" } }),
     );
 
-    expect(result.kind).toBe("unexpected");
+    expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
   });
 
   it("8-f: 429・本文なしは (iii) 契約外で、429 であったことが区別される", async () => {
@@ -609,7 +609,7 @@ describe("AC-8-1: 結果の3分類（送信関数の Fake の応答を変えて�
   it("8-g: 200・JSON でない本文は (iii) 契約外", async () => {
     const result = await classify(() => new Response("not json", { status: 200 }));
 
-    expect(result.kind).toBe("unexpected");
+    expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
   });
 
   it("8-h: 送信関数が例外を投げても (iii) 契約外で返り、例外は lambda-client の外へ出ない", async () => {
@@ -619,6 +619,6 @@ describe("AC-8-1: 結果の3分類（送信関数の Fake の応答を変えて�
 
     const result = await testClient({ send }).call(getWorkMonth());
 
-    expect(result.kind).toBe("unexpected");
+    expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
   });
 });
