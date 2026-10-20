@@ -82,7 +82,7 @@ export function unauthenticatedResponse(): Response {
  * AC-7-7 (i): ステータスは 5xx（401・429 と同じ値にしない）。具体の値は
  * 実装側が持つ（AC-7-7 (v)・限界 10-17）。
  */
-export function misconfiguredResponse(): Response {
+function misconfiguredResponse(): Response {
   return textResponse(500, "");
 }
 
