@@ -622,3 +622,24 @@ describe("AC-8-1: 結果の3分類（送信関数の Fake の応答を変えて�
     expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
   });
 });
+
+describe("AC-8-8: 時間切れ（検査 8-t。lambda-client の段階で結果の形を見る）", () => {
+  it("8-t: 送信関数が応答を返さない → 契約外の結果と toStrictEqual で一致し、時間切れの後に 8-a の応答が届いても同じ値のまま", async () => {
+    let release: (response: Response) => void = () => {};
+    const never = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const { send, sent } = recordingSend(() => never);
+
+    const result = await testClient({ send, timeoutMilliseconds: 20 }).call(getWorkMonth());
+
+    expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
+
+    // 時間切れの後に届いた応答（8-a の 200・JSON）を結果に用いない。
+    release(jsonResponse(200, { contractId: "c-001", yearMonth: "2026-07", state: "Draft" }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
+    expect(sent).toHaveLength(1);
+  });
+});
