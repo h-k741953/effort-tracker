@@ -10,7 +10,7 @@
 //   契約外の本文・ヘッダは写さない。
 import type { Environment } from "./auth-config";
 import { loadAuthConfig, loadRoleCookieSigningKey } from "./auth-config";
-import { misconfiguredResponse, unauthenticatedResponse } from "./auth-handlers";
+import { unauthenticatedResponse } from "./auth-handlers";
 import type { PublicKeyResolver } from "./jwt-verifier";
 import { createCognitoPublicKeyResolver } from "./jwt-verifier";
 import type {
@@ -81,6 +81,14 @@ function jsonResponse(status: number, body: unknown, headers: Headers): Response
 /** 5xx のうちの値は実装側が持つ（AC-8-7 (iv)）。401・429 と同じ値にしない。 */
 const UNEXPECTED_STATUS = 502;
 
+/**
+ * 構成の欠落（3-7・5-g）。契約外の拒否（AC-8-7 (iv)・7-1 補足）と同じ形
+ * （ステータス・ヘッダ・本文）で返す。値・理由で区別できないようにする（AC-9・7-d (i)）。
+ */
+function misconfiguredBusinessResponse(): Response {
+  return emptyResponse(UNEXPECTED_STATUS, new Headers());
+}
+
 function toBrowserResponse(result: LambdaClientResult, headers: Headers): Response {
   switch (result.kind) {
     case "success":
@@ -116,7 +124,7 @@ async function handle(
     const environment = options.environment ?? process.env;
     const config = loadAuthConfig(environment);
     if (!config.ok || !loadDomainApiUrl(environment).ok) {
-      return misconfiguredResponse();
+      return misconfiguredBusinessResponse();
     }
 
     // 順3: セッションの検証。
@@ -134,7 +142,7 @@ async function handle(
       // 順4: ロールの確定。署名鍵が無ければ Engineer へ落ちず構成欠落（5-5）。
       const signingKey = loadRoleCookieSigningKey(environment);
       if (!signingKey.ok) {
-        return misconfiguredResponse();
+        return misconfiguredBusinessResponse();
       }
       const roleCookie = parseCookieHeader(cookieHeader).get(ROLE_COOKIE_NAME);
       actor = {
