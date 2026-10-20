@@ -496,7 +496,8 @@ describe("AC-7-1 補足・7-d (i): 値そのものが . / .. / 空文字のパ�
         const result = await testClient({ send }).call(build(value));
 
         expect(sent).toHaveLength(0);
-        expect(result).toMatchObject({ kind: "unexpected", rateLimited: false });
+        // 型 LambdaClientResult の契約外の形（429 でなければ retryAfter のキーも無い）を厳密に比べる
+        expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
       });
     }
   }
@@ -506,6 +507,13 @@ describe("AC-7-1 補足・7-d (ii): . / .. / 空文字に似るが値そのも�
   it("件数の下限: 似た値は 22 値以上（空白1文字・タブ・全角空白・空白2文字を含む）、位置との組は 132 組以上", () => {
     expect(LOOKALIKE_VALUES.length).toBeGreaterThanOrEqual(22);
     expect(LOOKALIKE_VALUES.length * SEGMENT_REQUESTS.length).toBeGreaterThanOrEqual(132);
+  });
+
+  it("値の集合: 7-d (ii) が名指しする値と、見出しに挙げた値をすべて含む", () => {
+    const named = ["%2E", "%2e", "%2E%2E", ".%2e", "...", "a..b", " "];
+    const headline = [" ", "\t", "\u3000", "  "];
+    const values: readonly string[] = LOOKALIKE_VALUES;
+    expect([...named, ...headline].filter((v) => !values.includes(v))).toEqual([]);
   });
 
   for (const { name, index, segmentCount, build } of SEGMENT_REQUESTS) {
@@ -582,8 +590,8 @@ describe("AC-8-1: 結果の3分類（送信関数の Fake の応答を変えて�
   it("8-f: 429・本文なしは (iii) 契約外で、429 であったことが区別される", async () => {
     const result = await classify(() => new Response(null, { status: 429 }));
 
-    expect(result.kind).toBe("unexpected");
-    expect(result).toMatchObject({ rateLimited: true });
+    // Retry-After を付けない 429 は、型の形では retryAfter のキーを持たない
+    expect(result).toStrictEqual({ kind: "unexpected", rateLimited: true });
   });
 
   it("8-c・8-d・8-g の契約外は 429 として区別されない（8-f と対）", async () => {
@@ -594,7 +602,7 @@ describe("AC-8-1: 結果の3分類（送信関数の Fake の応答を変えて�
     ]);
 
     for (const result of results) {
-      expect(result).toMatchObject({ kind: "unexpected", rateLimited: false });
+      expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
     }
   });
 
