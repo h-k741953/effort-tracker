@@ -594,6 +594,15 @@ describe("AC-8-1: 結果の3分類（送信関数の Fake の応答を変えて�
     expect(result).toStrictEqual({ kind: "unexpected", rateLimited: true });
   });
 
+  it("8-u: 429・Retry-After: 7・本文なしは (iii) 契約外で、429 と Retry-After の値 \"7\"（文字列）が区別される", async () => {
+    const result = await classify(
+      () => new Response(null, { status: 429, headers: { "Retry-After": "7" } }),
+    );
+
+    // 8-f（Retry-After なし）の結果は retryAfter のキーを持たず、この行の結果は持つ
+    expect(result).toStrictEqual({ kind: "unexpected", rateLimited: true, retryAfter: "7" });
+  });
+
   it("8-c・8-d・8-g の契約外は 429 として区別されない（8-f と対）", async () => {
     const results = await Promise.all([
       classify(() => jsonResponse(403, { Message: "Forbidden" })),
