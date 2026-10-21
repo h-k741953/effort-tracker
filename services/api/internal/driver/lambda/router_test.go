@@ -1,6 +1,7 @@
 package lambda_test
 
-// 検証対象: docs/specs/workmonth-implementation-design.md AC-12-15①②
+// 検証対象: docs/specs/workmonth-implementation-design.md AC-12-15①②・AC-10-22 ①②・AC-12-19-g
+// （E-8・E-9 を含む9本。2026-10-21 改定）
 // （AC-10-8①「ルーティング」の境界。Lambda ランタイムも実DBも起動せず、
 // lambda.NewRouter が返す http.Handler を httptest 越しに直接叩く）。
 //
@@ -36,6 +37,8 @@ type routerSpies struct {
 	closeWorkMonth    handlerSpy
 	approveWorkMonth  handlerSpy
 	rejectWorkMonth   handlerSpy
+	listContracts     handlerSpy
+	listWorkTrends    handlerSpy
 }
 
 func (s *routerSpies) endpoints() lambda.Endpoints {
@@ -47,6 +50,8 @@ func (s *routerSpies) endpoints() lambda.Endpoints {
 		CloseWorkMonth:    &s.closeWorkMonth,
 		ApproveWorkMonth:  &s.approveWorkMonth,
 		RejectWorkMonth:   &s.rejectWorkMonth,
+		ListContracts:     &s.listContracts,
+		ListWorkTrends:    &s.listWorkTrends,
 	}
 }
 
@@ -61,6 +66,8 @@ func (s *routerSpies) named() map[string]*handlerSpy {
 		"CloseWorkMonth":    &s.closeWorkMonth,
 		"ApproveWorkMonth":  &s.approveWorkMonth,
 		"RejectWorkMonth":   &s.rejectWorkMonth,
+		"ListContracts":     &s.listContracts,
+		"ListWorkTrends":    &s.listWorkTrends,
 	}
 }
 
@@ -79,6 +86,8 @@ var endpointTable = []struct {
 	{"E-5 CloseWorkMonth", http.MethodPost, "/work-months/ctr-0001/2026-07/close", "CloseWorkMonth"},
 	{"E-6 ApproveWorkMonth", http.MethodPost, "/work-months/ctr-0001/2026-07/approve", "ApproveWorkMonth"},
 	{"E-7 RejectWorkMonth", http.MethodPost, "/work-months/ctr-0001/2026-07/reject", "RejectWorkMonth"},
+	{"E-8 ListContracts", http.MethodGet, "/contracts", "ListContracts"},
+	{"E-9 ListWorkTrends", http.MethodGet, "/work-trends", "ListWorkTrends"},
 }
 
 // TestRouter_DispatchesExactlyOneEndpoint は AC-12-15①を検査する。
@@ -118,6 +127,8 @@ func TestNewRouter_NilEndpoint_Panics(t *testing.T) {
 			CloseWorkMonth:    noopHandler,
 			ApproveWorkMonth:  noopHandler,
 			RejectWorkMonth:   noopHandler,
+			ListContracts:     noopHandler,
+			ListWorkTrends:    noopHandler,
 		}
 	}
 
@@ -132,6 +143,8 @@ func TestNewRouter_NilEndpoint_Panics(t *testing.T) {
 		{"CloseWorkMonth", func(e *lambda.Endpoints) { e.CloseWorkMonth = nil }},
 		{"ApproveWorkMonth", func(e *lambda.Endpoints) { e.ApproveWorkMonth = nil }},
 		{"RejectWorkMonth", func(e *lambda.Endpoints) { e.RejectWorkMonth = nil }},
+		{"ListContracts", func(e *lambda.Endpoints) { e.ListContracts = nil }},
+		{"ListWorkTrends", func(e *lambda.Endpoints) { e.ListWorkTrends = nil }},
 	}
 
 	for _, tt := range tests {
@@ -164,6 +177,14 @@ func TestRouter_UndefinedPathOrMethod_ReturnsNotFound(t *testing.T) {
 		{"E-5のパスに定義のないメソッド(GET)", http.MethodGet, "/work-months/ctr-0001/2026-07/close"},
 		{"E-6のパスに定義のないメソッド(GET)", http.MethodGet, "/work-months/ctr-0001/2026-07/approve"},
 		{"E-7のパスに定義のないメソッド(GET)", http.MethodGet, "/work-months/ctr-0001/2026-07/reject"},
+		{"E-8のパスに定義のないメソッド(POST)", http.MethodPost, "/contracts"},
+		{"E-8のパスに定義のないメソッド(PUT)", http.MethodPut, "/contracts"},
+		{"E-8のパスに定義のないメソッド(DELETE)", http.MethodDelete, "/contracts"},
+		{"E-9のパスに定義のないメソッド(PUT)", http.MethodPut, "/work-trends"},
+		{"E-9のパスに定義のないメソッド(POST)", http.MethodPost, "/work-trends"},
+		{"E-9のパスに定義のないメソッド(DELETE)", http.MethodDelete, "/work-trends"},
+		{"E-8のパスにぶら下がる未定義パス", http.MethodGet, "/contracts/ctr-0001"},
+		{"E-9のパスにぶら下がる未定義パス", http.MethodGet, "/work-trends/ctr-0001"},
 		{"定義のないパス", http.MethodGet, "/unknown-resource"},
 		{"登録済みパターンの部分木にぶら下がる未定義パス", http.MethodGet, "/work-months/ctr-0001/2026-07/unknown"},
 	}

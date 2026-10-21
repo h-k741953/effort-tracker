@@ -300,6 +300,82 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 				errorCode: "INVALID_STATE_FOR_REJECT",
 			},
 		},
+		{
+			// E-8: GET /contracts（契約 AC-12・AC-10-4。2026-10-21 追加）。
+			// 本人（Engineer かつ X-Actor-Id = engineerId）の要求。指定した年月の
+			// 勤務月が未生成（⑪ が nil）の契約と、終了未定の契約期間（⑨⑩ が nil）を
+			// 含めることで、"Draft"・generated:false・end:null が E-8 固有の形で
+			// 現れる（契約 AC-12-7・AC-12-10）。
+			name: "E-8 契約一覧",
+			seed: func(db *fakeDB) {
+				db.pushQuery(newFakeRows(
+					contractListRow("ctr-e8", "契約E8", 140, 0, 180, 0, intP(2025), intP(4), nil, nil, nil),
+				), nil)
+			},
+			method: http.MethodGet,
+			target: "/contracts?engineerId=eng-e8&yearMonth=2026-10",
+			headers: map[string]string{
+				"X-Actor-Id":   "eng-e8",
+				"X-Actor-Role": "Engineer",
+			},
+			want: wantResponse{
+				status: http.StatusOK,
+				bodyJSON: `{
+					"items": [
+						{
+							"contractId": "ctr-e8",
+							"contractDisplayName": "契約E8",
+							"settlementRange": {
+								"lowerBound": {"hours": 140, "minutes": 0},
+								"upperBound": {"hours": 180, "minutes": 0}
+							},
+							"contractPeriod": {"start": "2025-04", "end": null},
+							"workMonth": {"yearMonth": "2026-10", "state": "Draft", "generated": false}
+						}
+					]
+				}`,
+			},
+		},
+		{
+			// E-9: GET /work-trends（契約 AC-13・AC-10-5。2026-10-21 追加）。
+			// 締め済（Approved）の勤務月。超過／不足は行に保存された値（0:15 / 0:00）を
+			// そのまま返し、稼働実績（9時間）と精算幅から算出し直した値にならない
+			// （契約 AC-13-6）。
+			name: "E-9 稼働の推移",
+			seed: func(db *fakeDB) {
+				db.pushQuery(newFakeRows(
+					trendWorkMonthRow("ctr-e9", 2026, 8, 140, 0, 180, 0, "Approved", intP(0), intP(15), intP(0), intP(0)),
+				), nil)
+				db.pushQuery(newFakeRows(
+					trendDailyRecordRow("ctr-e9", 2026, 8, 3, [2]int{9, 0}, [2]int{18, 0}, nil),
+				), nil)
+			},
+			method: http.MethodGet,
+			target: "/work-trends?engineerId=eng-e9",
+			headers: map[string]string{
+				"X-Actor-Id":   "eng-e9",
+				"X-Actor-Role": "Engineer",
+			},
+			want: wantResponse{
+				status: http.StatusOK,
+				bodyJSON: `{
+					"items": [
+						{
+							"contractId": "ctr-e9",
+							"yearMonth": "2026-08",
+							"state": "Approved",
+							"settlementRange": {
+								"lowerBound": {"hours": 140, "minutes": 0},
+								"upperBound": {"hours": 180, "minutes": 0}
+							},
+							"totalHours": {"hours": 9, "minutes": 0},
+							"excess": {"hours": 0, "minutes": 15},
+							"shortfall": {"hours": 0, "minutes": 0}
+						}
+					]
+				}`,
+			},
+		},
 	}
 }
 
@@ -371,8 +447,8 @@ func TestFullAssembly_ExpectationsAreMutuallyDistinguishable(t *testing.T) {
 		seen[key] = tt.name
 	}
 
-	if len(cases) != 7 {
-		t.Fatalf("エンドポイントの本数 = %d, want 7（契約 E-1〜E-7）", len(cases))
+	if len(cases) != 9 {
+		t.Fatalf("エンドポイントの本数 = %d, want 9（契約 E-1〜E-9。2026-10-21 改定）", len(cases))
 	}
 }
 

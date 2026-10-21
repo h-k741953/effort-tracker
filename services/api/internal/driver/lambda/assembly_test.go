@@ -49,6 +49,8 @@ func TestAssembly_GetWorkMonth_WiresGatewayPresenterAndPathVariables(t *testing.
 		CloseWorkMonth:    noopHandler,
 		ApproveWorkMonth:  noopHandler,
 		RejectWorkMonth:   noopHandler,
+		ListContracts:     noopHandler,
+		ListWorkTrends:    noopHandler,
 	})
 
 	// 操作者ヘッダを付けない（ゲスト。契約 AC-9-7-a②・AC-8-8）。
@@ -107,6 +109,8 @@ func TestAssembly_EnterDailyRecord_WiresGatewayAndClock(t *testing.T) {
 		CloseWorkMonth:    noopHandler,
 		ApproveWorkMonth:  noopHandler,
 		RejectWorkMonth:   noopHandler,
+		ListContracts:     noopHandler,
+		ListWorkTrends:    noopHandler,
 	})
 
 	reqBody := `{"startTime":{"hour":9,"minute":0},"endTime":{"hour":17,"minute":0},"break":null}`
@@ -159,6 +163,8 @@ func TestAssembly_ListWorkMonths_WiresQueryAndListPresenter(t *testing.T) {
 		CloseWorkMonth:    noopHandler,
 		ApproveWorkMonth:  noopHandler,
 		RejectWorkMonth:   noopHandler,
+		ListContracts:     noopHandler,
+		ListWorkTrends:    noopHandler,
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/work-months?engineerId=eng-assembly-3", nil)

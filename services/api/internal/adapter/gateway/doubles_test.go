@@ -93,6 +93,13 @@ func fakeScanAssign(dest, value any) error {
 			return fmt.Errorf("value %#v is not a *int", value)
 		}
 		*d = v
+	case **string:
+		// NULL 許容の文字列列（契約一覧の勤務月の状態。AC-9-20-c ⑪）。
+		v, ok := value.(*string)
+		if !ok {
+			return fmt.Errorf("value %#v is not a *string", value)
+		}
+		*d = v
 	default:
 		return fmt.Errorf("unsupported scan destination type %T", dest)
 	}
@@ -161,6 +168,11 @@ type fakeDB struct {
 	// queryLog は Query への呼び出しを (query, args) で記録する
 	// （省略した条件が引数として渡っていないことの検証用。AC-9-18-g・AC-12-13⑤）。
 	queryLog []execCall
+	// closedBeforeQuery[i] は i 回目（0 始まり）の Query を呼んだ時点で、直前の
+	// Query が返した Rows が閉じられていたか（i=0 は常に true）。走査を閉じる前に
+	// 次の Query を呼ばないこと（AC-9-14-f・AC-9-21-c）を観測する。直前の応答が
+	// *fakeRows でない（nil 等）場合は true とする。
+	closedBeforeQuery []bool
 
 	execCalls []execCall
 
@@ -187,6 +199,13 @@ func (db *fakeDB) pushBegin(tx gateway.Tx, err error) {
 
 func (db *fakeDB) Query(_ context.Context, query string, args ...any) (gateway.Rows, error) {
 	db.queryLog = append(db.queryLog, execCall{query: query, args: args})
+	previousClosed := true
+	if db.queryCalls > 0 {
+		if prev, ok := db.queryQueue[db.queryCalls-1].rows.(*fakeRows); ok && prev != nil {
+			previousClosed = prev.closed
+		}
+	}
+	db.closedBeforeQuery = append(db.closedBeforeQuery, previousClosed)
 	if db.queryCalls >= len(db.queryQueue) {
 		return nil, fmt.Errorf("fakeDB: Query called more times (%d) than configured (%d)", db.queryCalls+1, len(db.queryQueue))
 	}
@@ -260,4 +279,27 @@ func contractRow(id, displayName, engineerID string, lowerH, lowerM, upperH, upp
 // 既存の workMonthHeaderRow と揃えるため（tester の選択）。
 func workMonthListRow(contractID, displayName string, year, month int, state string) []any {
 	return []any{contractID, displayName, year, month, state}
+}
+
+// strPtr は string のポインタを返す（NULL 許容の文字列列に値ありを表すため）。
+func strPtr(v string) *string { return &v }
+
+// contractListRow は契約一覧の行を Scan の並びどおりに組み立てる
+// （実装設計 AC-9-20-c の11列: ①契約識別子・②契約表示名・③〜⑥精算幅（下限の時・分、
+// 上限の時・分）・⑦〜⑩契約期間（開始の年・月、終了の年・月。いずれも *int）・
+// ⑪指定した年月の勤務月の状態（*string。未生成なら nil））。
+func contractListRow(
+	id, displayName string,
+	lowerH, lowerM, upperH, upperM int,
+	startYear, startMonth, endYear, endMonth *int,
+	state *string,
+) []any {
+	return []any{id, displayName, lowerH, lowerM, upperH, upperM, startYear, startMonth, endYear, endMonth, state}
+}
+
+// trendDailyRecordRow は稼働の推移の2回目の Query の行を Scan の並びどおりに
+// 組み立てる（実装設計 AC-9-21-e の12列: ①契約識別子 string に、AC-9-15-i の11列
+// （dailyRecordRow）が続く）。
+func trendDailyRecordRow(contractID string, year, month, day int, start, end [2]int, brk *[4]int) []any {
+	return append([]any{contractID}, dailyRecordRow(year, month, day, start, end, brk)...)
 }

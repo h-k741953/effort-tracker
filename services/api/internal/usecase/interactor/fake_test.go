@@ -222,3 +222,118 @@ func (s *spyListWorkMonthsOutputPort) onlyPresentedError(t *testing.T) error {
 	}
 	return s.errs[0]
 }
+
+// ---- 契約一覧参照クエリ（ContractListQuery）の Fake（AC-6-10・AC-12-19-a） ----
+
+// contractListCall は fakeContractListQuery が受け取った引数の記録。
+type contractListCall struct {
+	engineerID string
+	yearMonth  workmonth.YearMonth
+}
+
+// fakeContractListQuery は port.ContractListQuery の Fake。渡された引数を
+// calls へ記録する（AC-12-19-a ④「受け取った技術者識別子と年月が入力のまま」）。
+type fakeContractListQuery struct {
+	rows  []port.ContractListRow
+	err   error
+	calls []contractListCall
+}
+
+func (f *fakeContractListQuery) ListByEngineer(_ context.Context, engineerID string, yearMonth workmonth.YearMonth) ([]port.ContractListRow, error) {
+	f.calls = append(f.calls, contractListCall{engineerID: engineerID, yearMonth: yearMonth})
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.rows, nil
+}
+
+// ---- 稼働の推移参照クエリ（WorkTrendQuery）の Fake（AC-6-11・AC-12-19-b） ----
+
+// fakeWorkTrendQuery は port.WorkTrendQuery の Fake。渡された技術者識別子を記録する。
+type fakeWorkTrendQuery struct {
+	months []*workmonth.WorkMonth
+	err    error
+	calls  []string
+}
+
+func (f *fakeWorkTrendQuery) ListByEngineer(_ context.Context, engineerID string) ([]*workmonth.WorkMonth, error) {
+	f.calls = append(f.calls, engineerID)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.months, nil
+}
+
+// ---- 契約一覧の出力ポートの spy -------------------------------------------
+
+type spyListContractsOutputPort struct {
+	presented []port.ListContractsOutput
+	errs      []error
+}
+
+func (s *spyListContractsOutputPort) Present(output port.ListContractsOutput) {
+	s.presented = append(s.presented, output)
+}
+
+func (s *spyListContractsOutputPort) PresentError(err error) {
+	s.errs = append(s.errs, err)
+}
+
+func (s *spyListContractsOutputPort) onlyPresented(t *testing.T) port.ListContractsOutput {
+	t.Helper()
+	if len(s.errs) != 0 {
+		t.Fatalf("PresentError が呼ばれた: %v", s.errs)
+	}
+	if len(s.presented) != 1 {
+		t.Fatalf("Present の呼び出し回数 = %d, want 1", len(s.presented))
+	}
+	return s.presented[0]
+}
+
+func (s *spyListContractsOutputPort) onlyPresentedError(t *testing.T) error {
+	t.Helper()
+	if len(s.presented) != 0 {
+		t.Fatalf("Present が呼ばれた: %+v", s.presented)
+	}
+	if len(s.errs) != 1 {
+		t.Fatalf("PresentError の呼び出し回数 = %d, want 1", len(s.errs))
+	}
+	return s.errs[0]
+}
+
+// ---- 稼働の推移の出力ポートの spy -----------------------------------------
+
+type spyListWorkTrendsOutputPort struct {
+	presented []port.ListWorkTrendsOutput
+	errs      []error
+}
+
+func (s *spyListWorkTrendsOutputPort) Present(output port.ListWorkTrendsOutput) {
+	s.presented = append(s.presented, output)
+}
+
+func (s *spyListWorkTrendsOutputPort) PresentError(err error) {
+	s.errs = append(s.errs, err)
+}
+
+func (s *spyListWorkTrendsOutputPort) onlyPresented(t *testing.T) port.ListWorkTrendsOutput {
+	t.Helper()
+	if len(s.errs) != 0 {
+		t.Fatalf("PresentError が呼ばれた: %v", s.errs)
+	}
+	if len(s.presented) != 1 {
+		t.Fatalf("Present の呼び出し回数 = %d, want 1", len(s.presented))
+	}
+	return s.presented[0]
+}
+
+func (s *spyListWorkTrendsOutputPort) onlyPresentedError(t *testing.T) error {
+	t.Helper()
+	if len(s.presented) != 0 {
+		t.Fatalf("Present が呼ばれた: %+v", s.presented)
+	}
+	if len(s.errs) != 1 {
+		t.Fatalf("PresentError の呼び出し回数 = %d, want 1", len(s.errs))
+	}
+	return s.errs[0]
+}
