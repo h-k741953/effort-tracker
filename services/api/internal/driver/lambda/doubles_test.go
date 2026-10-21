@@ -115,6 +115,13 @@ func fakeScanAssign(dest, value any) error {
 			return fmt.Errorf("value %#v is not a *int", value)
 		}
 		*d = v
+	case **string:
+		// NULL 許容の文字列列（契約一覧の勤務月の状態。AC-9-20-c ⑪）。
+		v, ok := value.(*string)
+		if !ok {
+			return fmt.Errorf("value %#v is not a *string", value)
+		}
+		*d = v
 	default:
 		return fmt.Errorf("unsupported scan destination type %T", dest)
 	}
