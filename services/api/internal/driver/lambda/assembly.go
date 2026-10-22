@@ -98,3 +98,25 @@ func BuildListWorkMonthsInvoker(db gateway.DB) func(port.ListWorkMonthsOutputPor
 		return interactor.NewListWorkMonths(query, output)
 	}
 }
+
+// BuildListContractsInvoker は gateway.DB から ListContracts（E-8）の
+// interactor を組み立てる関数を返す（AC-10-22③）。port.ContractListQuery だけに
+// 依存し、Clock を渡さない（AC-7-19）。
+func BuildListContractsInvoker(db gateway.DB) func(port.ListContractsOutputPort) ListContractsInvoker {
+	query := gateway.NewContractListQuery(db)
+
+	return func(output port.ListContractsOutputPort) ListContractsInvoker {
+		return interactor.NewListContracts(query, output)
+	}
+}
+
+// BuildListWorkTrendsInvoker は gateway.DB から ListWorkTrends（E-9）の
+// interactor を組み立てる関数を返す（AC-10-22③）。port.WorkTrendQuery だけに
+// 依存し、Clock を渡さない（AC-7-20）。
+func BuildListWorkTrendsInvoker(db gateway.DB) func(port.ListWorkTrendsOutputPort) ListWorkTrendsInvoker {
+	query := gateway.NewWorkTrendQuery(db)
+
+	return func(output port.ListWorkTrendsOutputPort) ListWorkTrendsInvoker {
+		return interactor.NewListWorkTrends(query, output)
+	}
+}

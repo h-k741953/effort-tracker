@@ -50,7 +50,7 @@ interface WorkMonthKey {
   readonly actor: Actor;
 }
 
-/** 契約のエンドポイント E-1〜E-7 を表す値（1-5: 呼び先のオリジンは持たない）。 */
+/** 契約のエンドポイント E-1〜E-9 を表す値（1-5: 呼び先のオリジンは持たない）。 */
 export type DomainApiRequest =
   | ({ readonly endpoint: "E-1" } & WorkMonthKey)
   | { readonly endpoint: "E-2"; readonly query: ListQuery; readonly actor: Actor }
@@ -62,7 +62,17 @@ export type DomainApiRequest =
   | ({ readonly endpoint: "E-4"; readonly date: string } & WorkMonthKey)
   | ({ readonly endpoint: "E-5" } & WorkMonthKey)
   | ({ readonly endpoint: "E-6" } & WorkMonthKey)
-  | ({ readonly endpoint: "E-7" } & WorkMonthKey);
+  | ({ readonly endpoint: "E-7" } & WorkMonthKey)
+  | {
+      readonly endpoint: "E-8";
+      readonly query: { readonly engineerId: string; readonly yearMonth?: string };
+      readonly actor: Actor;
+    }
+  | {
+      readonly endpoint: "E-9";
+      readonly query: { readonly engineerId: string };
+      readonly actor: Actor;
+    };
 
 /** AC-8-1 の3分類。 */
 export type LambdaClientResult =
@@ -236,25 +246,49 @@ interface Target {
   readonly actor: Actor;
 }
 
-/** 契約のエンドポイント一覧（E-1〜E-7）に従ってメソッドとパスを決める（6-2）。 */
+/** 値が undefined のものを除き、与えた順にクエリ文字列へ符号化する（7-2）。 */
+function queryString(entries: ReadonlyArray<readonly [string, string | undefined]>): string {
+  const pairs: string[] = [];
+  for (const [name, value] of entries) {
+    if (value !== undefined) {
+      pairs.push(`${name}=${encodeStrict(value)}`);
+    }
+  }
+  return pairs.length === 0 ? "" : `?${pairs.join("&")}`;
+}
+
+/** 契約のエンドポイント一覧（E-1〜E-9）に従ってメソッドとパスを決める（6-2）。 */
 function targetOf(request: DomainApiRequest): Target {
   if (request.endpoint === "E-2") {
-    const pairs: string[] = [];
     const { engineerId, state, limit, offset } = request.query;
-    for (const [name, value] of [
-      ["engineerId", engineerId],
-      ["state", state],
-      ["limit", limit],
-      ["offset", offset],
-    ] as const) {
-      if (value !== undefined) {
-        pairs.push(`${name}=${encodeStrict(value)}`);
-      }
-    }
     return {
       method: "GET",
       path: "/work-months",
-      query: pairs.length === 0 ? "" : `?${pairs.join("&")}`,
+      query: queryString([
+        ["engineerId", engineerId],
+        ["state", state],
+        ["limit", limit],
+        ["offset", offset],
+      ]),
+      actor: request.actor,
+    };
+  }
+  if (request.endpoint === "E-8") {
+    return {
+      method: "GET",
+      path: "/contracts",
+      query: queryString([
+        ["engineerId", request.query.engineerId],
+        ["yearMonth", request.query.yearMonth],
+      ]),
+      actor: request.actor,
+    };
+  }
+  if (request.endpoint === "E-9") {
+    return {
+      method: "GET",
+      path: "/work-trends",
+      query: queryString([["engineerId", request.query.engineerId]]),
       actor: request.actor,
     };
   }

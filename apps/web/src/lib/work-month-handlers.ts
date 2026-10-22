@@ -289,3 +289,56 @@ export function handleListPendingApprovals(
     }),
   });
 }
+
+/**
+ * ログインしている本人の `sub` を取り出す。R-2・R-10・R-11 は access が
+ * required で、検証済みセッションが無ければ build の前に 401 で終わる（6-4）。
+ */
+function sessionSub(actor: Actor): string {
+  if (actor === null) {
+    throw new Error("a verified session is required");
+  }
+  return actor.id;
+}
+
+/**
+ * R-10: 契約一覧（E-8）。engineerId は検証済みセッションの sub だけ（6-4）。
+ * yearMonth は要求のクエリの値をそのまま渡し、無ければ補完も拒否もしない
+ * （6-9・7-3）。ロールで先回りして弾かない（6-10）。
+ */
+export function handleListContracts(
+  request: Request,
+  options: BusinessOptions,
+): Promise<Response> {
+  return handle(request, options, {
+    method: "GET",
+    access: "required",
+    build: ({ actor, request: incoming }) => ({
+      endpoint: "E-8",
+      query: {
+        engineerId: sessionSub(actor),
+        yearMonth: new URL(incoming.url).searchParams.get("yearMonth") ?? undefined,
+      },
+      actor,
+    }),
+  });
+}
+
+/**
+ * R-11: 稼働の推移（E-9）。engineerId は検証済みセッションの sub だけで、
+ * 他のクエリを送らない（6-4）。ロールで先回りして弾かない（6-10）。
+ */
+export function handleListWorkTrends(
+  request: Request,
+  options: BusinessOptions,
+): Promise<Response> {
+  return handle(request, options, {
+    method: "GET",
+    access: "required",
+    build: ({ actor }) => ({
+      endpoint: "E-9",
+      query: { engineerId: sessionSub(actor) },
+      actor,
+    }),
+  });
+}

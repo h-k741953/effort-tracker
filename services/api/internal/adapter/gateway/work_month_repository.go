@@ -166,17 +166,21 @@ func (r *WorkMonthRepository) Find(
 // scanDailyRecord は稼働実績の1行（11列。AC-9-15-i）を DailyRecord へ構築する。
 // 判定の順は AC-9-15-i: (i) 開始・終了の欠落 → (ii) 休憩の4値の揃い → (iii) 構築。
 // 構築の失敗は利用者向けの番兵ではなく ErrInvalidValue として返す（AC-9-15-h）。
-func scanDailyRecord(rows Rows) (workmonth.DailyRecord, error) {
+//
+// leading は先頭の列へ渡す Scan の宛先（稼働の推移の2回目の Query が先頭に持つ
+// 契約識別子の列。AC-9-21-e）。通常の11列だけの走査では渡さない。
+func scanDailyRecord(rows Rows, leading ...any) (workmonth.DailyRecord, error) {
 	var (
 		year, month, day           int
 		startH, startM, endH, endM *int
 		breakStartH, breakStartM   *int
 		breakEndH, breakEndM       *int
 	)
-	if err := rows.Scan(
+	dest := append(append([]any{}, leading...),
 		&year, &month, &day, &startH, &startM, &endH, &endM,
 		&breakStartH, &breakStartM, &breakEndH, &breakEndM,
-	); err != nil {
+	)
+	if err := rows.Scan(dest...); err != nil {
 		return workmonth.DailyRecord{}, err
 	}
 	if startH == nil || startM == nil || endH == nil || endM == nil {

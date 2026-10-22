@@ -10,7 +10,7 @@ import (
 // 本ファイルは AC-10-16「④ 全体の組み立て」の境界を実装する（AC-12-17 ①）。
 //
 // SQL 実行インターフェース（gateway.DB＝AC-9-14-e）と port.Clock（AC-6-5）を
-// 引数として受け取り、契約 E-1〜E-7 の7エンドポイントすべてを結線した1つの
+// 引数として受け取り、契約 E-1〜E-9 の9エンドポイントすべてを結線した1つの
 // http.Handler を返す。内側で AC-10-8 の①（NewRouter）②（各 NewXxxHandler）
 // ③（各 BuildXxxInvoker）を使うだけで、ルーティングの規則も DI の中身も
 // 本ファイルは持たない。
@@ -24,7 +24,7 @@ import (
 // Red にする手段は組み立てた http.Handler を通した振る舞いの検査だけである
 // （AC-12-17 ①。そこで区別できない組は残りうる＝AC-13-24 ②）。
 
-// NewHandler は7エンドポイントを結線した1つの http.Handler を返す（AC-10-16）。
+// NewHandler は9エンドポイントを結線した1つの http.Handler を返す（AC-10-16）。
 func NewHandler(db gateway.DB, clock port.Clock) http.Handler {
 	return NewRouter(Endpoints{
 		GetWorkMonth:      NewGetWorkMonthHandler(BuildGetWorkMonthInvoker(db)),
@@ -34,5 +34,7 @@ func NewHandler(db gateway.DB, clock port.Clock) http.Handler {
 		CloseWorkMonth:    NewCloseWorkMonthHandler(BuildCloseWorkMonthInvoker(db)),
 		ApproveWorkMonth:  NewApproveWorkMonthHandler(BuildApproveWorkMonthInvoker(db)),
 		RejectWorkMonth:   NewRejectWorkMonthHandler(BuildRejectWorkMonthInvoker(db)),
+		ListContracts:     NewListContractsHandler(BuildListContractsInvoker(db)),
+		ListWorkTrends:    NewListWorkTrendsHandler(BuildListWorkTrendsInvoker(db)),
 	})
 }
