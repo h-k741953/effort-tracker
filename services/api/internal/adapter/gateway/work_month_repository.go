@@ -21,7 +21,7 @@ func NewWorkMonthRepository(db DB) *WorkMonthRepository {
 
 // workMonthHeaderSelectQuery は勤務月のヘッダ行を取得する SQL 文（契約識別子・
 // 年・月・精算幅下限（時・分）・精算幅上限（時・分）・状態・超過（時・分。
-// NULL 許容）・不足（時・分。NULL 許容）の12列。AC-9-15-a）。
+// NULL 許容）・不足（時・分。NULL 許容）の12列。AC-9-15 の勤務月の行で、並びと型は AC-9-21-d が列挙する）。
 // SQL 文そのものの正しさは検査対象ではない（AC-13-18）。
 const workMonthHeaderSelectQuery = `
 SELECT contract_id, year, month, lower_bound_hours, lower_bound_minutes, upper_bound_hours, upper_bound_minutes,
@@ -128,7 +128,7 @@ func (r *WorkMonthRepository) Find(
 	return workmonth.Reconstruct(contractID, yearMonth, settlementRange, workmonth.State(row.state), records, excess, shortfall)
 }
 
-// workMonthHeaderRow は勤務月の行（12列。AC-9-15-a）を Scan した生の値。
+// workMonthHeaderRow は勤務月の行（12列。AC-9-15。並びと型は AC-9-21-d）を Scan した生の値。
 type workMonthHeaderRow struct {
 	contractID     string
 	year, month    int
