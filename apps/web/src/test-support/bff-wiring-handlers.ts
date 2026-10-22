@@ -8,8 +8,10 @@ import {
   handleCloseWorkMonth,
   handleDeleteDailyRecord,
   handleGetWorkMonth,
+  handleListContracts,
   handleListOwnWorkMonths,
   handleListPendingApprovals,
+  handleListWorkTrends,
   handlePutDailyRecord,
   handleRejectWorkMonth,
 } from "../lib/work-month-handlers";
@@ -48,14 +50,15 @@ export function businessOptions(
   };
 }
 
-export type RouteId = "R-1" | "R-2" | "R-3" | "R-5" | "R-6" | "R-7" | "R-8" | "R-9";
+export type RouteId =
+  | "R-1" | "R-2" | "R-3" | "R-5" | "R-6" | "R-7" | "R-8" | "R-9" | "R-10" | "R-11";
 
 export interface BusinessHandlerCase {
   readonly route: RouteId;
-  /** ブラウザが送るメソッド（AC-6-7: 契約の当該 E と同じ。R-2・R-3 は GET）。 */
+  /** ブラウザが送るメソッド（AC-6-7: 契約の当該 E と同じ。R-2・R-3・R-10・R-11 は GET）。 */
   readonly method: "GET" | "PUT" | "DELETE" | "POST";
   /** 呼ぶ契約のエンドポイント（AC-6）。 */
-  readonly endpoint: "E-1" | "E-2" | "E-3" | "E-4" | "E-5" | "E-6" | "E-7";
+  readonly endpoint: "E-1" | "E-2" | "E-3" | "E-4" | "E-5" | "E-6" | "E-7" | "E-8" | "E-9";
   readonly updates: boolean;
   readonly invoke: (
     request: Request,
@@ -119,6 +122,21 @@ export const BUSINESS_HANDLERS: readonly BusinessHandlerCase[] = [
     endpoint: "E-7",
     updates: true,
     invoke: (request, options) => handleRejectWorkMonth(request, PATH_PARAMS, options),
+  },
+  // R-10・R-11（2026-10-21 追加。D 節 #109）。処理関数名は D 節「#109（名前・置き場・パス）」(i)。
+  {
+    route: "R-10",
+    method: "GET",
+    endpoint: "E-8",
+    updates: false,
+    invoke: (request, options) => handleListContracts(request, options),
+  },
+  {
+    route: "R-11",
+    method: "GET",
+    endpoint: "E-9",
+    updates: false,
+    invoke: (request, options) => handleListWorkTrends(request, options),
   },
 ];
 

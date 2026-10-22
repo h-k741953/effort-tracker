@@ -27,6 +27,7 @@ import {
   headerOf,
   jsonResponse,
   recordingSend,
+  signedRoleCookieValue,
   testClient,
 } from "../test-support/bff-wiring";
 import {
@@ -38,6 +39,8 @@ import {
 const R1 = BUSINESS_HANDLERS.filter((h) => h.route === "R-1")[0];
 const R2 = BUSINESS_HANDLERS.filter((h) => h.route === "R-2")[0];
 const R5 = BUSINESS_HANDLERS.filter((h) => h.route === "R-5")[0];
+const R10 = BUSINESS_HANDLERS.filter((h) => h.route === "R-10")[0];
+const R11 = BUSINESS_HANDLERS.filter((h) => h.route === "R-11")[0];
 
 beforeEach(() => {
   routeHandlerRateLimiter.reset();
@@ -519,4 +522,86 @@ describe("AC-9-1: 機密をブラウザへの応答に載せない（検査 9-a�
     expect(text).not.toContain("UPSTREAM-BODY-MARK");
     expect(JSON.stringify(Object.fromEntries(response.headers))).not.toContain("UPSTREAM-BODY-MARK");
   });
+});
+
+// --- E-8・E-9 の読む口（R-10・R-11。2026-10-21 追加。D 節 #109） ---------------------
+
+describe("AC-6-2・6-k: R-10・R-11 が lambda-client を経て送るメソッドとパス・クエリ", () => {
+  // 出所: docs/specs/domain-api-http-contract.md「エンドポイント一覧」の E-8・E-9。
+  it("6-k: R-10 は GET /contracts を engineerId=sub・yearMonth=2026-10 で送る（要求の engineerId=other を使わない）", async () => {
+    const { send, sent } = recordingSend(() => jsonResponse(200, {}));
+
+    await R10.invoke(
+      requestFor(R10, { search: "?engineerId=other&yearMonth=2026-10" }),
+      businessOptions(testClient({ send })),
+    );
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].init.method).toBe("GET");
+    const url = new URL(sent[0].url);
+    expect(url.pathname).toBe("/contracts");
+    expect(url.origin).toBe(new URL(DOMAIN_API_URL).origin);
+    expect(url.search).toBe(`?engineerId=${SUB}&yearMonth=2026-10`);
+  });
+
+  it("6-k: R-11 は GET /work-trends を engineerId=sub だけで送る", async () => {
+    const { send, sent } = recordingSend(() => jsonResponse(200, {}));
+
+    await R11.invoke(
+      requestFor(R11, { search: "?engineerId=other" }),
+      businessOptions(testClient({ send })),
+    );
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].init.method).toBe("GET");
+    const url = new URL(sent[0].url);
+    expect(url.pathname).toBe("/work-trends");
+    expect(url.search).toBe(`?engineerId=${SUB}`);
+  });
+
+  it("6-l: R-10 は yearMonth を含めない要求では、yearMonth を送らない", async () => {
+    const { send, sent } = recordingSend(() => jsonResponse(200, {}));
+
+    await R10.invoke(requestFor(R10), businessOptions(testClient({ send })));
+
+    expect(sent).toHaveLength(1);
+    expect(new URL(sent[0].url).search).toBe(`?engineerId=${SUB}`);
+  });
+});
+
+describe("AC-7-2・7-e: R-10 の yearMonth はクエリの値として符号化される", () => {
+  it("7-e: yearMonth が 2026-10&engineerId=other でも、送った engineerId は sub だけ（1つ）で yearMonth は符号化された1つの値", async () => {
+    const { send, sent } = recordingSend(() => jsonResponse(200, {}));
+    const yearMonth = "2026-10&engineerId=other";
+
+    await R10.invoke(
+      requestFor(R10, { search: `?yearMonth=${encodeURIComponent(yearMonth)}` }),
+      businessOptions(testClient({ send })),
+    );
+
+    expect(sent).toHaveLength(1);
+    const params = new URL(sent[0].url).searchParams;
+    expect(params.getAll("engineerId")).toEqual([SUB]);
+    expect(params.getAll("yearMonth")).toEqual([yearMonth]);
+  });
+});
+
+describe("AC-6-10・6-m・8-7 (ii): R-10・R-11 の Approver への 403 を写す（lambda-client 経由で message が落ちる）", () => {
+  it.each([R10, R11])(
+    "6-m: $route は 403・FORBIDDEN_NOT_OWNER を error.code だけで返す",
+    async (handler) => {
+      const { send, sent } = recordingSend(() =>
+        jsonResponse(403, { error: { code: "FORBIDDEN_NOT_OWNER", message: "x" } }),
+      );
+
+      const response = await handler.invoke(
+        requestFor(handler, { roleCookieValue: signedRoleCookieValue("Approver") }),
+        businessOptions(testClient({ send })),
+      );
+
+      expect(sent).toHaveLength(1);
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: { code: "FORBIDDEN_NOT_OWNER" } });
+    },
+  );
 });
