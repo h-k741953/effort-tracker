@@ -1,7 +1,6 @@
 package presenter
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/h-k741953/effort-tracker/services/api/internal/usecase/port"
@@ -72,19 +71,7 @@ func (p *ListWorkMonthsPresenter) Present(output port.ListWorkMonthsOutput) {
 // AC-11-12・AC-11-13。errorMapping は work_month_presenter.go にある表を
 // 共有し、二重に持たない＝AC-9-13-d・AC-11-10）。
 func (p *ListWorkMonthsPresenter) PresentError(err error) {
-	for _, m := range errorMapping {
-		if errors.Is(err, m.sentinel) {
-			p.result = &Result{StatusCode: m.status, Body: ErrorResponse{Error: ErrorBody{
-				Code:    m.code,
-				Message: m.message,
-			}}}
-			return
-		}
-	}
-	p.result = &Result{StatusCode: http.StatusInternalServerError, Body: ErrorResponse{Error: ErrorBody{
-		Code:    "INTERNAL_ERROR",
-		Message: "internal error",
-	}}}
+	p.result = errorResult(err)
 }
 
 // Result は直近の Present / PresentError の呼び出し結果を返す。一度も

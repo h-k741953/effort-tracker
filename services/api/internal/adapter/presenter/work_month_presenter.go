@@ -181,16 +181,21 @@ var errorMapping = []struct {
 // INTERNAL_ERROR とする（AC-11-11）。message には受け取ったエラーの文字列を
 // そのまま入れない（AC-9-12-b・docs/rules/security.md）。
 func (p *WorkMonthPresenter) PresentError(err error) {
+	p.result = errorResult(err)
+}
+
+// errorResult はエラーを対応表（errorMapping）で Result へ写す。表に無いエラーは
+// INTERNAL_ERROR（AC-9-12-a）。
+func errorResult(err error) *Result {
 	for _, m := range errorMapping {
 		if errors.Is(err, m.sentinel) {
-			p.result = &Result{StatusCode: m.status, Body: ErrorResponse{Error: ErrorBody{
+			return &Result{StatusCode: m.status, Body: ErrorResponse{Error: ErrorBody{
 				Code:    m.code,
 				Message: m.message,
 			}}}
-			return
 		}
 	}
-	p.result = &Result{StatusCode: http.StatusInternalServerError, Body: ErrorResponse{Error: ErrorBody{
+	return &Result{StatusCode: http.StatusInternalServerError, Body: ErrorResponse{Error: ErrorBody{
 		Code:    "INTERNAL_ERROR",
 		Message: "internal error",
 	}}}
