@@ -291,7 +291,7 @@ export function handleListPendingApprovals(
 }
 
 /**
- * ログインしている本人の `sub` を取り出す。R-2・R-10・R-11 は access が
+ * ログインしている本人の `sub` を取り出す。R-10・R-11 は access が
  * required で、検証済みセッションが無ければ build の前に 401 で終わる（6-4）。
  */
 function sessionSub(actor: Actor): string {
