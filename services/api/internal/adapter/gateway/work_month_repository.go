@@ -97,47 +97,12 @@ func (r *WorkMonthRepository) Find(
 		return nil, fmt.Errorf("%w: contract %s %04d-%02d", port.ErrWorkMonthNotFound, contractID.String(), yearMonth.Year(), yearMonth.Month())
 	}
 
-	var (
-		rowContractID string
-		rowYear       int
-		rowMonth      int
-		lowerH        int
-		lowerM        int
-		upperH        int
-		upperM        int
-		state         string
-		excessH       *int
-		excessM       *int
-		shortfallH    *int
-		shortfallM    *int
-	)
-	if err := headerRows.Scan(
-		&rowContractID, &rowYear, &rowMonth, &lowerH, &lowerM, &upperH, &upperM,
-		&state, &excessH, &excessM, &shortfallH, &shortfallM,
-	); err != nil {
-		_ = headerRows.Close()
-		return nil, err
-	}
+	row, err := scanWorkMonthHeaderRow(headerRows)
 	_ = headerRows.Close()
-
-	lower, err := workmonth.NewWorkingHours(lowerH, lowerM)
 	if err != nil {
 		return nil, err
 	}
-	upper, err := workmonth.NewWorkingHours(upperH, upperM)
-	if err != nil {
-		return nil, err
-	}
-	settlementRange, err := workmonth.NewSettlementRange(lower, upper)
-	if err != nil {
-		return nil, err
-	}
-
-	excess, err := optionalWorkingHours(excessH, excessM)
-	if err != nil {
-		return nil, err
-	}
-	shortfall, err := optionalWorkingHours(shortfallH, shortfallM)
+	settlementRange, excess, shortfall, err := row.values()
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +125,57 @@ func (r *WorkMonthRepository) Find(
 		return nil, err
 	}
 
-	return workmonth.Reconstruct(contractID, yearMonth, settlementRange, workmonth.State(state), records, excess, shortfall)
+	return workmonth.Reconstruct(contractID, yearMonth, settlementRange, workmonth.State(row.state), records, excess, shortfall)
+}
+
+// workMonthHeaderRow は勤務月の行（12列。AC-9-15-a）を Scan した生の値。
+type workMonthHeaderRow struct {
+	contractID     string
+	year, month    int
+	lowerH, lowerM int
+	upperH, upperM int
+	state          string
+	excessH        *int
+	excessM        *int
+	shortfallH     *int
+	shortfallM     *int
+}
+
+// scanWorkMonthHeaderRow は勤務月の行（12列）を Scan する。
+func scanWorkMonthHeaderRow(rows Rows) (workMonthHeaderRow, error) {
+	var r workMonthHeaderRow
+	if err := rows.Scan(
+		&r.contractID, &r.year, &r.month, &r.lowerH, &r.lowerM, &r.upperH, &r.upperM,
+		&r.state, &r.excessH, &r.excessM, &r.shortfallH, &r.shortfallM,
+	); err != nil {
+		return workMonthHeaderRow{}, err
+	}
+	return r, nil
+}
+
+// values は行から精算幅・超過・不足を組み立てる（下限 → 上限 → 精算幅 → 超過 → 不足の順）。
+func (r workMonthHeaderRow) values() (workmonth.SettlementRange, *workmonth.WorkingHours, *workmonth.WorkingHours, error) {
+	lower, err := workmonth.NewWorkingHours(r.lowerH, r.lowerM)
+	if err != nil {
+		return workmonth.SettlementRange{}, nil, nil, err
+	}
+	upper, err := workmonth.NewWorkingHours(r.upperH, r.upperM)
+	if err != nil {
+		return workmonth.SettlementRange{}, nil, nil, err
+	}
+	settlementRange, err := workmonth.NewSettlementRange(lower, upper)
+	if err != nil {
+		return workmonth.SettlementRange{}, nil, nil, err
+	}
+	excess, err := optionalWorkingHours(r.excessH, r.excessM)
+	if err != nil {
+		return workmonth.SettlementRange{}, nil, nil, err
+	}
+	shortfall, err := optionalWorkingHours(r.shortfallH, r.shortfallM)
+	if err != nil {
+		return workmonth.SettlementRange{}, nil, nil, err
+	}
+	return settlementRange, excess, shortfall, nil
 }
 
 // scanDailyRecord は稼働実績の1行（11列。AC-9-15-i）を DailyRecord へ構築する。

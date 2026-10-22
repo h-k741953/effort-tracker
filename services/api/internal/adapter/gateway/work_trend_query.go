@@ -153,49 +153,20 @@ func (q *WorkTrendQuery) queryDailyRecords(ctx context.Context, engineerID strin
 
 // scanTrendHeader は勤務月の行（12列。AC-9-21-d）を構築する。
 func scanTrendHeader(rows Rows) (trendHeader, error) {
-	var (
-		contractID     string
-		year, month    int
-		lowerH, lowerM int
-		upperH, upperM int
-		state          string
-		excessH        *int
-		excessM        *int
-		shortfallH     *int
-		shortfallM     *int
-	)
-	if err := rows.Scan(
-		&contractID, &year, &month, &lowerH, &lowerM, &upperH, &upperM,
-		&state, &excessH, &excessM, &shortfallH, &shortfallM,
-	); err != nil {
+	row, err := scanWorkMonthHeaderRow(rows)
+	if err != nil {
 		return trendHeader{}, err
 	}
 
-	id, err := workmonth.NewContractID(contractID)
+	id, err := workmonth.NewContractID(row.contractID)
 	if err != nil {
 		return trendHeader{}, err
 	}
-	ym, err := workmonth.NewYearMonth(year, month)
+	ym, err := workmonth.NewYearMonth(row.year, row.month)
 	if err != nil {
 		return trendHeader{}, err
 	}
-	lower, err := workmonth.NewWorkingHours(lowerH, lowerM)
-	if err != nil {
-		return trendHeader{}, err
-	}
-	upper, err := workmonth.NewWorkingHours(upperH, upperM)
-	if err != nil {
-		return trendHeader{}, err
-	}
-	settlementRange, err := workmonth.NewSettlementRange(lower, upper)
-	if err != nil {
-		return trendHeader{}, err
-	}
-	excess, err := optionalWorkingHours(excessH, excessM)
-	if err != nil {
-		return trendHeader{}, err
-	}
-	shortfall, err := optionalWorkingHours(shortfallH, shortfallM)
+	settlementRange, excess, shortfall, err := row.values()
 	if err != nil {
 		return trendHeader{}, err
 	}
@@ -204,7 +175,7 @@ func scanTrendHeader(rows Rows) (trendHeader, error) {
 		contractID:      id,
 		yearMonth:       ym,
 		settlementRange: settlementRange,
-		state:           state,
+		state:           row.state,
 		excess:          excess,
 		shortfall:       shortfall,
 	}, nil
