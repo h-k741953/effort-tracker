@@ -52,6 +52,8 @@ function fakeClient(
 const R1 = BUSINESS_HANDLERS.filter((h) => h.route === "R-1")[0];
 const R2 = BUSINESS_HANDLERS.filter((h) => h.route === "R-2")[0];
 const R3 = BUSINESS_HANDLERS.filter((h) => h.route === "R-3")[0];
+const R10 = BUSINESS_HANDLERS.filter((h) => h.route === "R-10")[0];
+const R11 = BUSINESS_HANDLERS.filter((h) => h.route === "R-11")[0];
 const UPDATES = BUSINESS_HANDLERS.filter((h) => h.updates);
 const GUESTABLE = [R1, R3];
 
@@ -60,10 +62,10 @@ beforeEach(() => {
   routeHandlerRateLimiter.reset();
 });
 
-describe("母集団（AC-5-6: R-1〜R-3・R-5〜R-9 の 8 つ）", () => {
-  it("検査の表は 8 つの処理を持つ（0件・取りこぼしを一致とみなさない）", () => {
+describe("母集団（AC-5-6: R-1〜R-3・R-5〜R-11 の 10 個）", () => {
+  it("検査の表は 10 個の処理を持つ（0件・取りこぼしを一致とみなさない。2026-10-21 改定: 旧 8 つ）", () => {
     expect(BUSINESS_HANDLERS.map((h) => h.route)).toEqual([
-      "R-1", "R-2", "R-3", "R-5", "R-6", "R-7", "R-8", "R-9",
+      "R-1", "R-2", "R-3", "R-5", "R-6", "R-7", "R-8", "R-9", "R-10", "R-11",
     ]);
     expect(UPDATES).toHaveLength(5);
   });
@@ -308,7 +310,7 @@ describe("AC-5-7: 401 の本文は終端仕様の検証失敗の 401 と同じ�
 });
 
 describe("AC-6: 契約のエンドポイントとの対応（Fake が受け取った要求を見る）", () => {
-  it.each(BUSINESS_HANDLERS.filter((h) => h.route !== "R-2" && h.route !== "R-3"))(
+  it.each(BUSINESS_HANDLERS.filter((h) => !["R-2", "R-3", "R-10", "R-11"].includes(h.route)))(
     "6-a: $route は契約形式の識別子で $endpoint を呼ぶ",
     async (handler) => {
       const { client, calls } = fakeClient();
@@ -423,4 +425,185 @@ describe("AC-6: 契約のエンドポイントとの対応（Fake が受け取�
     expect(calls).toHaveLength(0);
     expectAuthCookiesExpired(response);
   });
+});
+
+// --- E-8・E-9 の読む口（R-10・R-11。2026-10-21 追加。D 節 #109） -----------------
+
+const REFERENCE = [R10, R11];
+
+describe("AC-5-3 順3・5-j: R-10・R-11 のセッションの扱い（検査 5-j）", () => {
+  it("母集団: R-10 は E-8、R-11 は E-9 を呼ぶ処理として表に載っている（0件を一致とみなさない）", () => {
+    expect(REFERENCE.map((h) => [h.route, h.endpoint, h.method])).toEqual([
+      ["R-10", "E-8", "GET"],
+      ["R-11", "E-9", "GET"],
+    ]);
+  });
+
+  it.each(REFERENCE)(
+    "5-j (i): $route はセッション Cookie なしで 401 になり、Fake が呼ばれず、本文は 5-i の本文と一致する",
+    async (handler) => {
+      const { client, calls } = fakeClient();
+
+      const response = await handler.invoke(
+        requestFor(handler, { session: null }),
+        businessOptions(client),
+      );
+      const callback = await handleSignInCallback(
+        new Request("https://public.example.test/api/auth/callback"),
+        { now: NOW, environment: ENVIRONMENT, publicKeyResolver: fakePublicKeySource },
+      );
+
+      expect(response.status).toBe(401);
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+      expect(calls).toHaveLength(0);
+      expect(callback.status).toBe(401);
+      expect(await response.text()).toBe(await callback.text());
+    },
+  );
+
+  it.each(REFERENCE)(
+    "5-j (ii): $route は検証に失敗するセッション Cookie で 401 になり、Fake が呼ばれず、Cookie を失効させ、本文は 5-i の本文と一致する",
+    async (handler) => {
+      const { client, calls } = fakeClient();
+
+      const response = await handler.invoke(
+        requestFor(handler, { session: buildIdTokenWithBadSignature() }),
+        businessOptions(client),
+      );
+      const callback = await handleSignInCallback(
+        new Request("https://public.example.test/api/auth/callback"),
+        { now: NOW, environment: ENVIRONMENT, publicKeyResolver: fakePublicKeySource },
+      );
+
+      expect(response.status).toBe(401);
+      expect(calls).toHaveLength(0);
+      expectAuthCookiesExpired(response);
+      expect(await response.text()).toBe(await callback.text());
+    },
+  );
+
+  it.each(REFERENCE)(
+    "5-j (iii): $route は検証済みセッションありなら Fake がちょうど1度呼ばれる（常に 401 を返す実装を緑にしない）",
+    async (handler) => {
+      const { client, calls } = fakeClient();
+
+      const response = await handler.invoke(requestFor(handler), businessOptions(client));
+
+      expect(calls).toHaveLength(1);
+      expect(response.status).toBe(200);
+    },
+  );
+});
+
+describe("AC-6-1: 1対1（検査表の 6-1）", () => {
+  it("各 R はちょうど1つの E を呼び、E-1・E-3〜E-9 にはそれぞれちょうど1つの R が対応する（E-2 は R-2・R-3）", async () => {
+    const perEndpoint = new Map<string, string[]>();
+    for (const handler of BUSINESS_HANDLERS) {
+      const { client, calls } = fakeClient();
+
+      await handler.invoke(requestFor(handler), businessOptions(client));
+
+      expect(`${handler.route}: ${calls.length}`).toBe(`${handler.route}: 1`);
+      expect(calls[0].endpoint).toBe(handler.endpoint);
+      perEndpoint.set(calls[0].endpoint, [...(perEndpoint.get(calls[0].endpoint) ?? []), handler.route]);
+    }
+
+    expect(Object.fromEntries(perEndpoint)).toEqual({
+      "E-1": ["R-1"],
+      "E-2": ["R-2", "R-3"],
+      "E-3": ["R-5"],
+      "E-4": ["R-6"],
+      "E-5": ["R-7"],
+      "E-6": ["R-8"],
+      "E-7": ["R-9"],
+      "E-8": ["R-10"],
+      "E-9": ["R-11"],
+    });
+  });
+});
+
+describe("AC-6-4・6-9・6-k・6-l: R-10・R-11 が渡す値", () => {
+  it("6-k: R-10 は要求に engineerId=other と yearMonth=2026-10 を含めても、E-8 を engineerId=sub・yearMonth=2026-10 で呼ぶ", async () => {
+    const { client, calls } = fakeClient();
+
+    await R10.invoke(
+      requestFor(R10, { search: "?engineerId=other&yearMonth=2026-10" }),
+      businessOptions(client),
+    );
+
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    expect(call.endpoint).toBe("E-8");
+    if (call.endpoint !== "E-8") throw new Error("unreachable");
+    expect(call.query).toEqual({ engineerId: SUB, yearMonth: "2026-10" });
+    expect(Object.keys(call.query).sort()).toEqual(["engineerId", "yearMonth"]);
+    expect(call.actor).toEqual({ id: SUB, role: "Engineer" });
+  });
+
+  it("6-k: R-11 は要求に engineerId=other を含めても、E-9 を engineerId=sub のキーだけで呼ぶ", async () => {
+    const { client, calls } = fakeClient();
+
+    await R11.invoke(
+      requestFor(R11, { search: "?engineerId=other&yearMonth=2026-10&state=Draft" }),
+      businessOptions(client),
+    );
+
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    expect(call.endpoint).toBe("E-9");
+    if (call.endpoint !== "E-9") throw new Error("unreachable");
+    expect(Object.keys(call.query)).toEqual(["engineerId"]);
+    expect(call.query.engineerId).toBe(SUB);
+    expect(call.actor).toEqual({ id: SUB, role: "Engineer" });
+  });
+
+  it("6-l: R-10 は yearMonth を含めない要求でも Fake が1度呼ばれ、query に yearMonth が無い（補完も拒否もしない）", async () => {
+    const { client, calls } = fakeClient();
+
+    const response = await R10.invoke(
+      requestFor(R10, { search: "?engineerId=other" }),
+      businessOptions(client),
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(response.status).not.toBe(400);
+    const call = calls[0];
+    if (call.endpoint !== "E-8") throw new Error("unreachable");
+    expect(call.query.yearMonth).toBeUndefined();
+    expect(call.query.engineerId).toBe(SUB);
+  });
+
+  it("6-l（対）: クエリが全く無い要求でも同じ", async () => {
+    const { client, calls } = fakeClient();
+
+    await R10.invoke(requestFor(R10), businessOptions(client));
+
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    if (call.endpoint !== "E-8") throw new Error("unreachable");
+    expect(call.query.yearMonth).toBeUndefined();
+  });
+});
+
+describe("AC-6-10・6-m: ロールで先回りしない（R-10・R-11 を Approver で呼ぶ）", () => {
+  it.each(REFERENCE)(
+    "6-m: $route は Approver のセッションでも Fake が1度呼ばれ（操作者のロールは Approver）、403 の FORBIDDEN_NOT_OWNER を error.code だけで写す",
+    async (handler) => {
+      const { client, calls } = fakeClient({
+        kind: "contract-error",
+        status: 403,
+        code: "FORBIDDEN_NOT_OWNER",
+      });
+
+      const response = await handler.invoke(
+        requestFor(handler, { roleCookieValue: signedRoleCookieValue("Approver") }),
+        businessOptions(client),
+      );
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].actor).toEqual({ id: SUB, role: "Approver" });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: { code: "FORBIDDEN_NOT_OWNER" } });
+    },
+  );
 });

@@ -374,6 +374,23 @@ describe("AC-6-2: lambda-client が送る要求のメソッドとパス（契約
     expect(new URL(sent[0].url).pathname).toBe(pathname);
   });
 
+  // 6-9（2026-10-21 追加）: E-8 は GET /contracts、E-9 は GET /work-trends
+  // （出所: docs/specs/domain-api-http-contract.md「エンドポイント一覧」の E-8・E-9）。
+  const referenceTable: Array<[string, DomainApiRequest, string, string]> = [
+    ["E-8", { endpoint: "E-8", query: { engineerId: "user-a", yearMonth: "2026-10" }, actor: ACTOR }, "GET", "/contracts"],
+    ["E-9", { endpoint: "E-9", query: { engineerId: "user-a" }, actor: ACTOR }, "GET", "/work-trends"],
+  ];
+
+  it.each(referenceTable)("%s のメソッドとパス（6-2・6-9）", async (_name, request, method, pathname) => {
+    const { send, sent } = recordingSend(() => jsonResponse(200, {}));
+
+    await testClient({ send }).call(request);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].init.method).toBe(method);
+    expect(new URL(sent[0].url).pathname).toBe(pathname);
+  });
+
   it("E-2 のクエリ（engineerId・state・limit・offset）が値として送られる", async () => {
     const { send, sent } = recordingSend(() => jsonResponse(200, {}));
 
@@ -650,5 +667,60 @@ describe("AC-8-8: 時間切れ（検査 8-t。lambda-client の段階で結果�
 
     expect(result).toStrictEqual({ kind: "unexpected", rateLimited: false });
     expect(sent).toHaveLength(1);
+  });
+});
+
+// --- AC-6-9・7-2・7-e: E-8・E-9 のクエリの組み立て ------------------------------
+
+describe("AC-6-9・7-2・7-e: E-8・E-9 のクエリ（engineerId → yearMonth の順、undefined は送らない、値は符号化）", () => {
+  it("6-9: E-8 は engineerId → yearMonth の順でクエリに載せる", async () => {
+    const { send, sent } = recordingSend(() => jsonResponse(200, {}));
+
+    await testClient({ send }).call({
+      endpoint: "E-8",
+      query: { engineerId: "user-a", yearMonth: "2026-10" },
+      actor: ACTOR,
+    });
+
+    expect(new URL(sent[0].url).search).toBe("?engineerId=user-a&yearMonth=2026-10");
+  });
+
+  it("6-9: E-8 の yearMonth が undefined のとき送らない（補完しない）", async () => {
+    const { send, sent } = recordingSend(() => jsonResponse(200, {}));
+
+    await testClient({ send }).call({
+      endpoint: "E-8",
+      query: { engineerId: "user-a", yearMonth: undefined },
+      actor: ACTOR,
+    });
+
+    expect(new URL(sent[0].url).search).toBe("?engineerId=user-a");
+  });
+
+  it("6-9: E-9 は engineerId だけをクエリに載せる", async () => {
+    const { send, sent } = recordingSend(() => jsonResponse(200, {}));
+
+    await testClient({ send }).call({
+      endpoint: "E-9",
+      query: { engineerId: "user-a" },
+      actor: ACTOR,
+    });
+
+    expect(new URL(sent[0].url).search).toBe("?engineerId=user-a");
+  });
+
+  it("7-e: E-8 の yearMonth が 2026-10&engineerId=other でも engineerId は 1 つだけで、yearMonth は符号化された 1 つの値", async () => {
+    const { send, sent } = recordingSend(() => jsonResponse(200, {}));
+
+    await testClient({ send }).call({
+      endpoint: "E-8",
+      query: { engineerId: "user-a", yearMonth: "2026-10&engineerId=other" },
+      actor: ACTOR,
+    });
+
+    const params = new URL(sent[0].url).searchParams;
+    expect(params.getAll("engineerId")).toEqual(["user-a"]);
+    expect(params.getAll("yearMonth")).toEqual(["2026-10&engineerId=other"]);
+    expect([...params.keys()]).toEqual(["engineerId", "yearMonth"]);
   });
 });
