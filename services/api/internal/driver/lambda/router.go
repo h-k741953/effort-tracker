@@ -17,7 +17,7 @@ import (
 // 404 / NOT_FOUND（AC-1-11・AC-9・AC-11-13）に揃えるため。メソッドの判定は
 // 本ファイルの methodDispatch が担う。
 
-// Endpoints は7エンドポイント分の http.Handler をまとめる（AC-10-8①）。
+// Endpoints は9エンドポイント分の http.Handler をまとめる（AC-10-8①）。
 // 各フィールドの実体（②リクエストごとの結線・③具体型の結線）は本パッケージの
 // 他のファイルが提供する。
 type Endpoints struct {
@@ -28,6 +28,8 @@ type Endpoints struct {
 	CloseWorkMonth    http.Handler
 	ApproveWorkMonth  http.Handler
 	RejectWorkMonth   http.Handler
+	ListContracts     http.Handler
+	ListWorkTrends    http.Handler
 }
 
 // NewRouter は Endpoints をパス・メソッドへ振り分ける http.Handler を返す
@@ -49,6 +51,8 @@ func NewRouter(endpoints Endpoints) http.Handler {
 	requireEndpoint("CloseWorkMonth", endpoints.CloseWorkMonth)
 	requireEndpoint("ApproveWorkMonth", endpoints.ApproveWorkMonth)
 	requireEndpoint("RejectWorkMonth", endpoints.RejectWorkMonth)
+	requireEndpoint("ListContracts", endpoints.ListContracts)
+	requireEndpoint("ListWorkTrends", endpoints.ListWorkTrends)
 
 	mux := http.NewServeMux()
 
@@ -70,6 +74,12 @@ func NewRouter(endpoints Endpoints) http.Handler {
 	}))
 	mux.Handle("/work-months/{contractId}/{yearMonth}/reject", methodDispatch(map[string]http.Handler{
 		http.MethodPost: endpoints.RejectWorkMonth,
+	}))
+	mux.Handle("/contracts", methodDispatch(map[string]http.Handler{
+		http.MethodGet: endpoints.ListContracts,
+	}))
+	mux.Handle("/work-trends", methodDispatch(map[string]http.Handler{
+		http.MethodGet: endpoints.ListWorkTrends,
 	}))
 	// 上記以外のすべてのパスの受け皿（"/" は末尾スラッシュのため部分木として
 	// 全パスにマッチするが、より具体的な登録済みパターンが優先されるため
