@@ -1,7 +1,6 @@
 package presenter
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/h-k741953/effort-tracker/services/api/internal/usecase/port"
@@ -9,29 +8,12 @@ import (
 
 // 本ファイルは契約一覧（E-8）・稼働の推移（E-9）の presenter を置く
 // （実装設計 AC-9-10-e・AC-9-11-h・AC-9-13-e）。エラー → code・ステータスの
-// 対応表（errorMapping）は work_month_presenter.go の1つを共有する。
+// 対応表（errorMapping）と errorResult は work_month_presenter.go の1つを共有する。
 
 var (
 	_ port.ListContractsOutputPort  = (*ListContractsPresenter)(nil)
 	_ port.ListWorkTrendsOutputPort = (*ListWorkTrendsPresenter)(nil)
 )
-
-// errorResult はエラーを対応表（errorMapping）で Result へ写す。表に無いエラーは
-// INTERNAL_ERROR（AC-9-12-a）。
-func errorResult(err error) *Result {
-	for _, m := range errorMapping {
-		if errors.Is(err, m.sentinel) {
-			return &Result{StatusCode: m.status, Body: ErrorResponse{Error: ErrorBody{
-				Code:    m.code,
-				Message: m.message,
-			}}}
-		}
-	}
-	return &Result{StatusCode: http.StatusInternalServerError, Body: ErrorResponse{Error: ErrorBody{
-		Code:    "INTERNAL_ERROR",
-		Message: "internal error",
-	}}}
-}
 
 // ContractPeriodViewModel は契約 AC-10-4 の `contractPeriod`。End は null を取りうる。
 type ContractPeriodViewModel struct {
