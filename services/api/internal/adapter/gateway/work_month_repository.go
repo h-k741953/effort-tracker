@@ -303,7 +303,7 @@ func (r *WorkMonthRepository) Save(ctx context.Context, target *workmonth.WorkMo
 		return err
 	}
 
-	if err := r.writeWithinTx(ctx, tx, target); err != nil {
+	if err := writeWorkMonthWithinTx(ctx, tx, target); err != nil {
 		_ = tx.Rollback(ctx)
 		return err
 	}
@@ -311,9 +311,11 @@ func (r *WorkMonthRepository) Save(ctx context.Context, target *workmonth.WorkMo
 	return tx.Commit(ctx)
 }
 
-// writeWithinTx は Save の書き込み本体。Tx を使ってヘッダ行・稼働実績の行を
+// writeWorkMonthWithinTx は Save の書き込み本体。Tx を使ってヘッダ行・稼働実績の行を
 // 書く。呼び出し順の取り決めは doubles_test.go の前書きを参照。
-func (r *WorkMonthRepository) writeWithinTx(ctx context.Context, tx Tx, target *workmonth.WorkMonth) error {
+// デモのリセット（DemoResetter。AC-15-5）も同じ文の並びで集約を保存するため、
+// 行の写し方を2か所に書かないよう Save から切り出している。
+func writeWorkMonthWithinTx(ctx context.Context, tx Tx, target *workmonth.WorkMonth) error {
 	contractID := target.ContractID().String()
 	year := target.YearMonth().Year()
 	month := target.YearMonth().Month()
