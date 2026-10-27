@@ -21,6 +21,7 @@ variables {
   bff_ssr_lambda_artifact_path               = "testdata/bff-ssr.zip"
   domain_api_lambda_artifact_path            = "testdata/domain-api.zip"
   cloudfront_killswitch_lambda_artifact_path = "testdata/cloudfront-killswitch.zip"
+  demo_data_reset_lambda_artifact_path       = "testdata/demo-data-reset.zip"
   bff_ssr_lambda_runtime                     = "nodejs20.x"
   google_client_id                           = "000000000000-dummy.apps.googleusercontent.com"
   google_client_secret                       = "dummy-google-client-secret"
@@ -38,6 +39,7 @@ run "three_lambdas_use_distinct_artifact_variables" {
     bff_ssr_lambda_artifact_path               = "testdata/a-bff-ssr.zip"
     domain_api_lambda_artifact_path            = "testdata/b-domain-api.zip"
     cloudfront_killswitch_lambda_artifact_path = "testdata/c-cloudfront-killswitch.zip"
+    demo_data_reset_lambda_artifact_path       = "testdata/d-demo-data-reset.zip"
   }
 
   assert {
@@ -58,5 +60,28 @@ run "three_lambdas_use_distinct_artifact_variables" {
   assert {
     condition     = aws_lambda_function.cloudfront_killswitch.filename != aws_lambda_function.domain_api.filename
     error_message = "CloudFront 遮断 Lambda はドメイン API と同じ成果物を指してはならない（AC-4-8・D-13。ドメイン API の zip を使い回さない）"
+  }
+
+  # 2026-10-27 改訂（#56・ADR 0022）: リセット用 Lambda を含む4本が、それぞれ別の
+  # 変数から受け取る。リセット用 Lambda はドメイン API とも遮断 Lambda とも
+  # （BFF/SSR とも）同じ成果物を指さない（demo-data-reset.md AC-12-7）。
+  assert {
+    condition     = aws_lambda_function.demo_data_reset.filename == "testdata/d-demo-data-reset.zip"
+    error_message = "リセット用 Lambda は変数 demo_data_reset_lambda_artifact_path から成果物パスを受け取らなければならない（AC-12-7）"
+  }
+
+  assert {
+    condition     = aws_lambda_function.demo_data_reset.filename != aws_lambda_function.domain_api.filename
+    error_message = "リセット用 Lambda はドメイン API と同じ成果物を指してはならない（AC-12-7）"
+  }
+
+  assert {
+    condition     = aws_lambda_function.demo_data_reset.filename != aws_lambda_function.cloudfront_killswitch.filename
+    error_message = "リセット用 Lambda は CloudFront 遮断 Lambda と同じ成果物を指してはならない（AC-12-7）"
+  }
+
+  assert {
+    condition     = aws_lambda_function.demo_data_reset.filename != aws_lambda_function.bff_ssr.filename
+    error_message = "リセット用 Lambda は BFF/SSR Lambda と同じ成果物を指してはならない（AC-12-7）"
   }
 }

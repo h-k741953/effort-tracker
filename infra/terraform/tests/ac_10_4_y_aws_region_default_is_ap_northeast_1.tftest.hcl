@@ -48,6 +48,7 @@ variables {
   bff_ssr_lambda_artifact_path               = "testdata/bff-ssr.zip"
   domain_api_lambda_artifact_path            = "testdata/domain-api.zip"
   cloudfront_killswitch_lambda_artifact_path = "testdata/cloudfront-killswitch.zip"
+  demo_data_reset_lambda_artifact_path       = "testdata/demo-data-reset.zip"
   google_client_id                           = "000000000000-dummy.apps.googleusercontent.com"
   google_client_secret                       = "dummy-google-client-secret"
   cognito_callback_urls                      = ["https://example.test/api/auth/callback"]

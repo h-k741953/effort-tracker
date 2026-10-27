@@ -21,6 +21,7 @@ variables {
   bff_ssr_lambda_artifact_path               = "testdata/bff-ssr.zip"
   domain_api_lambda_artifact_path            = "testdata/domain-api.zip"
   cloudfront_killswitch_lambda_artifact_path = "testdata/cloudfront-killswitch.zip"
+  demo_data_reset_lambda_artifact_path       = "testdata/demo-data-reset.zip"
   bff_ssr_lambda_runtime                     = "nodejs20.x"
   google_client_id                           = "000000000000-dummy.apps.googleusercontent.com"
   google_client_secret                       = "dummy-google-client-secret"
@@ -47,5 +48,11 @@ run "log_group_name_matches_function_name" {
   assert {
     condition     = aws_cloudwatch_log_group.cloudfront_killswitch.name == "/aws/lambda/${aws_lambda_function.cloudfront_killswitch.function_name}"
     error_message = "CloudFront 遮断 Lambda のロググループ名は関数名から導出された /aws/lambda/<関数名> と一致しなければならない（AC-6-3）"
+  }
+
+  # 2026-10-27 改訂（#56・ADR 0022）: リセット用 Lambda も関数名との対応を持つ。
+  assert {
+    condition     = aws_cloudwatch_log_group.demo_data_reset.name == "/aws/lambda/${aws_lambda_function.demo_data_reset.function_name}"
+    error_message = "リセット用 Lambda のロググループ名は関数名から導出された /aws/lambda/<関数名> と一致しなければならない（AC-6-3・demo-data-reset.md AC-12-5）"
   }
 }

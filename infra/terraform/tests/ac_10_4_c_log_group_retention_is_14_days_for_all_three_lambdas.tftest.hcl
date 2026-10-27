@@ -21,6 +21,7 @@ variables {
   bff_ssr_lambda_artifact_path               = "testdata/bff-ssr.zip"
   domain_api_lambda_artifact_path            = "testdata/domain-api.zip"
   cloudfront_killswitch_lambda_artifact_path = "testdata/cloudfront-killswitch.zip"
+  demo_data_reset_lambda_artifact_path       = "testdata/demo-data-reset.zip"
   bff_ssr_lambda_runtime                     = "nodejs20.x"
   google_client_id                           = "000000000000-dummy.apps.googleusercontent.com"
   google_client_secret                       = "dummy-google-client-secret"
@@ -47,5 +48,11 @@ run "log_group_retention_is_14_days_for_all_three_lambdas" {
   assert {
     condition     = aws_cloudwatch_log_group.cloudfront_killswitch.retention_in_days == 14
     error_message = "CloudFront 遮断 Lambda のロググループ保持期間は 14 日（cost-guardrails.md）"
+  }
+
+  # 2026-10-27 改訂（#56・ADR 0022）: リセット用 Lambda を含む4本すべて（AC-6）。
+  assert {
+    condition     = aws_cloudwatch_log_group.demo_data_reset.retention_in_days == 14
+    error_message = "リセット用 Lambda のロググループ保持期間は 14 日（cost-guardrails.md の全 Lambda の値。AC-6・demo-data-reset.md AC-12-5）"
   }
 }

@@ -20,6 +20,7 @@ variables {
   bff_ssr_lambda_artifact_path               = "testdata/bff-ssr.zip"
   domain_api_lambda_artifact_path            = "testdata/domain-api.zip"
   cloudfront_killswitch_lambda_artifact_path = "testdata/cloudfront-killswitch.zip"
+  demo_data_reset_lambda_artifact_path       = "testdata/demo-data-reset.zip"
   bff_ssr_lambda_runtime                     = "nodejs20.x"
   google_client_id                           = "000000000000-dummy.apps.googleusercontent.com"
   google_client_secret                       = "dummy-google-client-secret"
@@ -46,5 +47,12 @@ run "no_lambda_has_vpc_config" {
   assert {
     condition     = length(aws_lambda_function.cloudfront_killswitch.vpc_config) == 0
     error_message = "CloudFront 遮断 Lambda は VPC に配置してはならない（AC-4-6）"
+  }
+
+  # 2026-10-27 改訂（#56・ADR 0022）: リセット用 Lambda も VPC に置かない
+  # （demo-data-reset.md AC-12-8。infra-terraform.md AC-4-6 の対象は全 Lambda）。
+  assert {
+    condition     = length(aws_lambda_function.demo_data_reset.vpc_config) == 0
+    error_message = "リセット用 Lambda は VPC に配置してはならない（AC-4-6・demo-data-reset.md AC-12-8）"
   }
 }

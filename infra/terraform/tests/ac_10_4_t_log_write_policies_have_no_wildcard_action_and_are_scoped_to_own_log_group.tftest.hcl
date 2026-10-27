@@ -19,6 +19,7 @@ variables {
   bff_ssr_lambda_artifact_path               = "testdata/bff-ssr.zip"
   domain_api_lambda_artifact_path            = "testdata/domain-api.zip"
   cloudfront_killswitch_lambda_artifact_path = "testdata/cloudfront-killswitch.zip"
+  demo_data_reset_lambda_artifact_path       = "testdata/demo-data-reset.zip"
   bff_ssr_lambda_runtime                     = "nodejs20.x"
   google_client_id                           = "000000000000-dummy.apps.googleusercontent.com"
   google_client_secret                       = "dummy-google-client-secret"
@@ -58,6 +59,15 @@ run "log_write_policies_have_no_wildcard_action_and_are_scoped_to_own_log_group"
     target = aws_cloudwatch_log_group.cloudfront_killswitch
     values = {
       arn = "arn:aws:logs:ap-northeast-1:123456789012:log-group:/aws/lambda/effort-tracker-cloudfront-killswitch-test"
+    }
+    override_during = plan
+  }
+
+  # 2026-10-27 改訂（#56・ADR 0022）: リセット用 Lambda（4本目）。他の3本と異なる値にする。
+  override_resource {
+    target = aws_cloudwatch_log_group.demo_data_reset
+    values = {
+      arn = "arn:aws:logs:ap-northeast-1:123456789012:log-group:/aws/lambda/effort-tracker-demo-data-reset-test"
     }
     override_during = plan
   }
@@ -117,5 +127,30 @@ run "log_write_policies_have_no_wildcard_action_and_are_scoped_to_own_log_group"
       stmt.Resource != "*" && startswith(stmt.Resource, aws_cloudwatch_log_group.cloudfront_killswitch.arn)
     ])
     error_message = "遮断 Lambda 実行ロールのログ書き込みポリシーの Resource は自身のロググループに限定しなければならず、\"*\" にしてはならず、他の関数のロググループへ届いてはならない（AC-7-4）"
+  }
+
+  assert {
+    condition = alltrue([
+      for stmt in jsondecode(aws_iam_role_policy.demo_data_reset_logs.policy).Statement :
+      alltrue([
+        for action in try(tolist(stmt.Action), [stmt.Action]) :
+        !strcontains(action, "*")
+      ])
+    ])
+    error_message = "リセット用 Lambda 実行ロールのログ書き込みポリシーは、いずれの文も Action にワイルドカード（*）を含んではならない（AC-7-4）"
+  }
+
+  assert {
+    condition = alltrue([
+      for stmt in jsondecode(aws_iam_role_policy.demo_data_reset_logs.policy).Statement :
+      stmt.Resource != "*" && startswith(stmt.Resource, aws_cloudwatch_log_group.demo_data_reset.arn)
+    ])
+    error_message = "リセット用 Lambda 実行ロールのログ書き込みポリシーの Resource は自身のロググループに限定しなければならず、\"*\" にしてはならず、他の関数のロググループへ届いてはならない（AC-7-4）"
+  }
+
+  # 空集合で緑にならないこと: 文が1つ以上あること（for が空を回って恒真になる形を避ける）。
+  assert {
+    condition     = length(jsondecode(aws_iam_role_policy.demo_data_reset_logs.policy).Statement) > 0
+    error_message = "リセット用 Lambda 実行ロールのログ書き込みポリシーは、文を1つ以上持たなければならない（AC-7-4）"
   }
 }
