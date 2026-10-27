@@ -220,6 +220,8 @@ DOMAIN_API_BUILD_DIR      := $(LAMBDA_ARTIFACT_DIR)/domain-api
 DOMAIN_API_ZIP            := $(DOMAIN_API_BUILD_DIR)/bootstrap.zip
 KILLSWITCH_BUILD_DIR      := $(LAMBDA_ARTIFACT_DIR)/cloudfront-killswitch
 KILLSWITCH_ZIP            := $(KILLSWITCH_BUILD_DIR)/bootstrap.zip
+DEMO_DATA_RESET_BUILD_DIR := $(LAMBDA_ARTIFACT_DIR)/demo-data-reset
+DEMO_DATA_RESET_ZIP       := $(DEMO_DATA_RESET_BUILD_DIR)/bootstrap.zip
 
 .PHONY: build-lambda-domain-api
 build-lambda-domain-api: ## ドメイン API Lambda を Linux 向けにクロスコンパイルし zip 化（AC-9-2・AC-9-3）
@@ -244,6 +246,18 @@ build-lambda-cloudfront-killswitch: ## CloudFront 遮断 Lambda を Linux 向け
 	@rm -f $(KILLSWITCH_ZIP)
 	@cd $(KILLSWITCH_BUILD_DIR) && python3 -m zipfile -c bootstrap.zip bootstrap
 	@echo "  -> $(KILLSWITCH_ZIP)"
+
+.PHONY: build-lambda-demo-data-reset
+build-lambda-demo-data-reset: ## デモデータ日次リセット Lambda を Linux 向けにクロスコンパイルし zip 化（#56）
+	@echo "==> build-lambda-demo-data-reset"
+	@mkdir -p $(DEMO_DATA_RESET_BUILD_DIR)
+	@# go build -o は出力先に既存ファイルがあるとその権限モードを引き継ぐため、
+	@# 事前に削除して「実行ビット付きの新規ファイル」を毎回保証する。
+	@rm -f $(DEMO_DATA_RESET_BUILD_DIR)/bootstrap
+	@cd $(API_DIR) && GOOS=linux GOARCH=amd64 go build -o ../../$(DEMO_DATA_RESET_BUILD_DIR)/bootstrap ./cmd/demo-data-reset
+	@rm -f $(DEMO_DATA_RESET_ZIP)
+	@cd $(DEMO_DATA_RESET_BUILD_DIR) && python3 -m zipfile -c bootstrap.zip bootstrap
+	@echo "  -> $(DEMO_DATA_RESET_ZIP)"
 
 # =============================================================================
 # .github/scripts のロジック

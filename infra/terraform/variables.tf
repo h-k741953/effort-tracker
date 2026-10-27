@@ -46,6 +46,23 @@ variable "cloudfront_killswitch_lambda_artifact_path" {
   type        = string
 }
 
+variable "demo_data_reset_lambda_artifact_path" {
+  description = "デモデータ日次リセット Lambda の成果物パス（demo-data-reset.md AC-12。他3本とは別ファイル）"
+  type        = string
+}
+
+variable "demo_engineer_id" {
+  description = "デモの技術者識別子（demo-data-reset.md AC-7-1。BFF/SSR とリセット用 Lambda の両方へ同じ値を注入する）"
+  type        = string
+  default     = "demo-engineer"
+
+  validation {
+    # AC-7-2: Cognito の sub が取りうる UUID の形と衝突させない。
+    condition     = !can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.demo_engineer_id))
+    error_message = "demo_engineer_id は UUID の形であってはならない（Cognito の sub と衝突させない。AC-7-2）。"
+  }
+}
+
 variable "bff_ssr_lambda_runtime" {
   description = "BFF/SSR Lambda のランタイム識別子（AC-4-7・D-16。Node のマネージドランタイム。版は apps/web が固定する）"
   type        = string

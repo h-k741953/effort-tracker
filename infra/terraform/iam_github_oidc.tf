@@ -80,6 +80,20 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
           "logs:*",
         ]
         Resource = "*"
+      },
+      {
+        # D-15・AC-7-8（2026-10-27 改訂・ADR 0022）: Scheduler はスケジュールを
+        # 管理する4つに限る。scheduler:*・ScheduleGroup・タグ操作を含めない。
+        # スケジュールグループは作らない（既定グループを使う）。
+        Sid    = "DeployScheduler"
+        Effect = "Allow"
+        Action = [
+          "scheduler:CreateSchedule",
+          "scheduler:GetSchedule",
+          "scheduler:UpdateSchedule",
+          "scheduler:DeleteSchedule",
+        ]
+        Resource = "*"
       }
     ]
   })
