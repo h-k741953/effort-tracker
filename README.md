@@ -153,12 +153,12 @@ ADR は Nygard 形式。**書き換えず、覆すときは新しい ADR で置�
 
 | 項目 | 設定 |
 |---|---|
-| Lambda 予約同時実行数 | `5`（**BFF / SSR・ドメイン API の両 Lambda** に効く。課金の最悪値を構造的に固定する） |
+| Lambda 予約同時実行数 | `5`（**BFF / SSR・ドメイン API の両 Lambda** に効く。課金の最悪値を構造的に固定する）。CloudFront 遮断 Lambda とデモデータのリセット用 Lambda は `1` |
 | AWS Budgets | 月 $5 で2本（実績80% / 予測100%） |
 | Budget Actions | 閾値到達で IAM / SCP の deny を適用し、新規リソース作成を凍結（翌予算期に自動リバート） |
 | CloudFront | ディストリビューション単位のハード上限は無い（**最弱点**）。従量遮断は Budget → SNS → Lambda によるカスタム回路で、**数時間の遅延**がある。`docs/rules/cost-guardrails.md` の Route Handler レート制限が CloudFront 帯域への一次防御（WAF は $5 予算と二律背反のため非必須） |
 | 使用禁止 | NAT Gateway / ALB / RDS / ECS |
-| デモデータ | 日次リセット |
+| デモデータ | 日次リセット（EventBridge Scheduler から呼ぶリセット専用の Lambda で行う） |
 
 ### セキュリティ
 
