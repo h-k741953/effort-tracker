@@ -6,4 +6,5 @@ locals {
   bff_ssr_function_name               = "effort-tracker-bff-ssr"
   domain_api_function_name            = "effort-tracker-domain-api"
   cloudfront_killswitch_function_name = "effort-tracker-cloudfront-killswitch"
+  demo_data_reset_function_name       = "effort-tracker-demo-data-reset"
 }

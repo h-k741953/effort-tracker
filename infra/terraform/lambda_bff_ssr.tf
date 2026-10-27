@@ -83,6 +83,9 @@ resource "aws_lambda_function" "bff_ssr" {
       # （リテラル・暫定値を置かない）。名は apps/web/src/lib/lambda-client.ts が
       # 読む名と揃える。一致は機械検査されない（infra-terraform.md 12-38）。
       DOMAIN_API_FUNCTION_URL = aws_lambda_function_url.domain_api.function_url
+      # demo-data-reset.md AC-7-1: デモの技術者識別子。リセット用 Lambda と
+      # 同じ変数から注入する（出所を1つにする）。
+      DEMO_ENGINEER_ID = var.demo_engineer_id
     }
   }
 
