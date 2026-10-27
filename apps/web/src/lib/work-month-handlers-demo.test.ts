@@ -7,8 +7,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 //
 // - 技術者識別子の値と環境変数名は構成側（Terraform）が持つ（7-3）。値はダミー。
 //   共有の ENVIRONMENT には足さず、本ファイルで組み立てる（他の検査の母集団を動かさない）。
-// - 7-6 が定めないこと（limit・offset の扱い、検証済みセッションありのときの操作者）は
-//   期待値に埋めない。
+// - 2026-10-27 人間決定（#56。bff-wiring.md D 節 #56 (3)）: R-4 は要求から何も取らない。
+//   limit・offset・操作者のヘッダを渡さず、セッションの有無で振る舞いを変えない。
 // - AC-11-3: 外部へ通信しない。環境変数は引数で与える。
 import { routeHandlerRateLimiter } from "./rate-limit";
 import type { DomainApiRequest, LambdaClient, LambdaClientResult } from "./lambda-client";
@@ -18,6 +18,7 @@ import {
   ENVIRONMENT,
   browserRequest,
   buildIdTokenWithBadSignature,
+  signedRoleCookieValue,
 } from "../test-support/bff-wiring";
 
 const DEMO_ENGINEER_ID = "demo-engineer-dummy-0001";
@@ -85,6 +86,71 @@ describe("AC-7-6: R-4 は E-2 を、技術者識別子にデモ用の値を指�
     });
   }
 
+  // 7-6（2026-10-27 決定）: 要求に other / Approved / limit=5 / offset=10 を含め、4通りで呼ぶ。
+  const HOSTILE_SEARCH = "?engineerId=other&state=Approved&limit=5&offset=10";
+  const FOUR_WAYS = [
+    ["(i) セッション Cookie なし", { session: null }],
+    ["(ii) 検証に失敗するセッション Cookie", { session: buildIdTokenWithBadSignature() }],
+    ["(iii) Engineer の検証済みセッション", { roleCookieValue: signedRoleCookieValue("Engineer") }],
+    ["(iv) Approver の検証済みセッション", { roleCookieValue: signedRoleCookieValue("Approver") }],
+  ] as const;
+  const E2_BODY = { items: [{ contractId: "contract-dummy-1", yearMonth: "2026-10" }], total: 1 };
+
+  for (const [label, options] of FOUR_WAYS) {
+    it(`7-6: ${label}で、Fake がちょうど1度、{ endpoint: "E-2", query: { engineerId: <デモ値> }, actor: null } と厳密に一致する値で呼ばれる`, async () => {
+      const { client, calls } = fakeClient();
+
+      await handleListDemoWorkMonths(
+        browserRequest("GET", {
+          ...options,
+          search: HOSTILE_SEARCH,
+          headers: { "X-Engineer-Id": "other", "X-Actor-Id": "other" },
+        }),
+        businessOptions(client, DEMO_ENVIRONMENT),
+      );
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toStrictEqual({
+        endpoint: "E-2",
+        query: { engineerId: DEMO_ENGINEER_ID },
+        actor: null,
+      });
+    });
+
+    it(`7-6: ${label}で、Cookie を失効させる Set-Cookie を持たない`, async () => {
+      const { client } = fakeClient();
+
+      const response = await handleListDemoWorkMonths(
+        browserRequest("GET", { ...options, search: HOSTILE_SEARCH }),
+        businessOptions(client, DEMO_ENVIRONMENT),
+      );
+
+      expect(response.status).toBe(200);
+      const expiring = response.headers
+        .getSetCookie()
+        .filter((cookie) => /Max-Age=0|Expires=/i.test(cookie));
+      expect(expiring).toEqual([]);
+    });
+  }
+
+  it("7-6: 4通りの応答は、ステータスも本文も互いに一致する（Fake の本文をそのまま返す）", async () => {
+    const results: Array<{ status: number; body: unknown }> = [];
+    for (const [, options] of FOUR_WAYS) {
+      const { client } = fakeClient({ kind: "success", status: 200, body: E2_BODY });
+
+      const response = await handleListDemoWorkMonths(
+        browserRequest("GET", { ...options, search: HOSTILE_SEARCH }),
+        businessOptions(client, DEMO_ENVIRONMENT),
+      );
+      results.push({ status: response.status, body: await response.json() });
+    }
+
+    expect(results).toHaveLength(4);
+    for (const result of results) {
+      expect(result).toEqual({ status: 200, body: E2_BODY });
+    }
+  });
+
   it("7-6: 検証に失敗するセッション Cookie でもゲストとして続け、E-2 を1度呼ぶ（401 にしない）", async () => {
     const { client, calls } = fakeClient();
 
@@ -128,6 +194,7 @@ describe("AC-7-7: R-4 で技術者識別子の環境変数が未設定・空", (
 
         expect(response.status).toBeGreaterThanOrEqual(500);
         expect(response.status).toBeLessThan(600);
+        expect(await response.text()).toBe("");
         expect(calls).toHaveLength(0);
       });
     }

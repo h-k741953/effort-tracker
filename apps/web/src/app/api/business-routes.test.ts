@@ -133,11 +133,11 @@ describe("AC-5-1・5-6: すべての Route Handler が入口でレート制限�
     routeHandlerRateLimiter.reset();
   });
 
-  it("5-a: 走査で列挙したすべてのメソッドが、上限を使い切ったキーで 429・Retry-After・no-store になる。業務のメソッドは 10 以上ある", async () => {
+  it("5-a: 走査で列挙したすべてのメソッドが、上限を使い切ったキーで 429・Retry-After・no-store になる。業務のメソッドは 11 以上ある（2026-10-27 改定（#56）: 旧 10）", async () => {
     const surfaces = await scanSurfaces();
 
     // 0件・取りこぼしの一致を一致とみなさない。
-    expect(surfaces.filter(isBusiness).length).toBeGreaterThanOrEqual(10);
+    expect(surfaces.filter(isBusiness).length).toBeGreaterThanOrEqual(11);
     expect(surfaces.filter((s) => !isBusiness(s)).length).toBeGreaterThanOrEqual(3);
 
     for (const surface of surfaces) {
@@ -169,7 +169,7 @@ describe("AC-6-1・6-7: 契約のエンドポイントに対応する面（検�
     }
   });
 
-  it("6-g（route.ts 側）: R-2・R-3・R-10・R-11 は互いに別のパスの GET で、E-1 のパスとも別（業務の GET が E-1 を含め 5 つ以上ある）", async () => {
+  it("6-g（route.ts 側）: R-2・R-3・R-4・R-10・R-11 は互いに別のパスの GET で、E-1 のパスとも別（業務の GET が E-1 を含め 6 つ以上ある）", async () => {
     const surfaces = await scanSurfaces();
     const e1 = bffPathOf(CONTRACT_ENDPOINTS[0].path);
 
@@ -178,8 +178,8 @@ describe("AC-6-1・6-7: 契約のエンドポイントに対応する面（検�
       businessGets.filter((s) => s.normalizedPath !== e1).map((s) => s.normalizedPath),
     );
 
-    expect(businessGets.length).toBeGreaterThanOrEqual(5);
-    expect(listPaths.size).toBeGreaterThanOrEqual(4);
+    expect(businessGets.length).toBeGreaterThanOrEqual(6);
+    expect(listPaths.size).toBeGreaterThanOrEqual(5);
   });
 
   it("6-6: 状態を変える R-5〜R-9 の面（E-3〜E-7 のパス）を GET で受けない", async () => {
@@ -196,7 +196,7 @@ describe("AC-6-1・6-7: 契約のエンドポイントに対応する面（検�
     expect(gets.map((s) => `${s.method} ${s.normalizedPath}`)).toEqual([]);
   });
 
-  it("6-3・6-7 (iii): 業務の面は契約の E-1・E-3〜E-7 と R-2・R-3・R-10・R-11 の GET 4 つだけで、ブラウザが engineerId を指定するパスの口を持たない", async () => {
+  it("6-3・6-7 (iii): 業務の面は契約の E-1・E-3〜E-7 と R-2・R-3・R-4・R-10・R-11 の GET 5 つだけで、ブラウザが engineerId を指定するパスの口を持たない", async () => {
     const surfaces = await scanSurfaces();
     const contractPairs = new Set(
       CONTRACT_ENDPOINTS.map((e) => `${e.method} ${bffPathOf(e.path)}`),
@@ -206,10 +206,11 @@ describe("AC-6-1・6-7: 契約のエンドポイントに対応する面（検�
       .filter(isBusiness)
       .filter((s) => !contractPairs.has(`${s.method} ${s.normalizedPath}`));
 
-    // R-2・R-3・R-10・R-11 の 4 つだけ（それ以外のドメイン API を呼ぶ Route Handler を作らない＝AC-6 前文）。
+    // R-2・R-3・R-4・R-10・R-11 の 5 つだけ（それ以外のドメイン API を呼ぶ Route Handler を作らない＝AC-6 前文）。
     // 2026-10-21 改定: 旧 2 つ（R-10・R-11 は D 節 #109 で追加）。
-    expect(extra.map((s) => s.method)).toEqual(["GET", "GET", "GET", "GET"]);
-    expect(new Set(extra.map((s) => s.normalizedPath)).size).toBe(4);
+    // 2026-10-27 改定（#56）: 旧 4 つ（R-4 は E-2 を呼ぶ業務の Route Handler に数える）。
+    expect(extra.map((s) => s.method)).toEqual(["GET", "GET", "GET", "GET", "GET"]);
+    expect(new Set(extra.map((s) => s.normalizedPath)).size).toBe(5);
     for (const surface of extra) {
       expect(surface.paramNames.join(",")).not.toMatch(/engineer/i);
       expect(surface.normalizedPath).not.toMatch(/engineer/i);
@@ -241,6 +242,8 @@ const EXPECTED_WIRING: ReadonlyMap<string, string> = new Map([
   ),
   ["GET /api/work-months/own", "handleListOwnWorkMonths"], // R-2
   ["GET /api/work-months/pending-approval", "handleListPendingApprovals"], // R-3
+  // R-4（2026-10-27 追加、#56）。パスは demo-data-reset.md AC-7-6 の実装側の定め（work-months/demo）。
+  ["GET /api/work-months/demo", "handleListDemoWorkMonths"], // R-4
   // R-10・R-11（2026-10-21 追加）。パスと処理関数名は D 節「#109（名前・置き場・パス）」。
   ["GET /api/contracts", "handleListContracts"], // R-10
   ["GET /api/work-trends", "handleListWorkTrends"], // R-11
@@ -288,16 +291,16 @@ function scanWiring(): Array<{ key: string; calls: string[] }> {
 }
 
 describe("AC-6-1・11-4: route.ts が呼ぶ処理の対応（W-1）", () => {
-  it("(パス, メソッド) → 呼ぶ処理 が R-1〜R-3・R-5〜R-11 の期待とちょうど一致する。面は 10、処理は 10 種で重複しない", () => {
+  it("(パス, メソッド) → 呼ぶ処理 が R-1〜R-11 の期待とちょうど一致する。面は 11、処理は 11 種で重複しない", () => {
     const entries = scanWiring();
 
     // 0件・取りこぼしの一致を一致とみなさない。
-    expect(EXPECTED_WIRING.size).toBe(10);
-    expect(entries.length).toBe(10);
+    expect(EXPECTED_WIRING.size).toBe(11);
+    expect(entries.length).toBe(11);
     expect(wiringViolations(entries)).toEqual([]);
     // 1対1: 期待した面がすべて見つかり、処理が重複しない（6-1）。
     expect(entries.map((e) => e.key).sort()).toEqual([...EXPECTED_WIRING.keys()].sort());
-    expect(new Set(entries.flatMap((e) => e.calls)).size).toBe(10);
+    expect(new Set(entries.flatMap((e) => e.calls)).size).toBe(11);
   });
 
   it("陽性対照: 取り違えた・複数呼ぶ・呼ばない合成入力は違反として検出される", () => {
