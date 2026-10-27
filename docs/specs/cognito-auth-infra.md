@@ -52,7 +52,7 @@ Issue #52 のうち **`infra/terraform` に載る部分**の仕様。**方式の
 | P-5 | **#8 との分界は docs 側で確定済み** —— `infra-terraform.md` 非スコープ冒頭が「Cognito（エンドユーザー認証）の構成 — Issue #52 が持つ」と明示し、#8 は Cognito のリソース・環境変数・IAM を定義しない。本 Issue は `infra/terraform` へ**足す**側である | `infra-terraform.md` 非スコープ |
 | P-6 | 同じ `infra/terraform` に載る以上、**#8 の構成全体に掛かる要求は本 Issue の追加分にも効く** —— とくに **AC-1-10（provider の版の持ち主と制約の形）・AC-1-15（両構成の版・制約の形・provider 集合の一致）・AC-1-7（実行時にネットへ出ずに初期化）・AC-3-2（provider alias を置かない）・AC-3-3（特定リージョンを要するリソースを持ち込まない）・AC-10-1 / AC-10-2（検査は `.tftest.hcl` と `mock_provider` のみ）**。**本仕様はこれらを書き写さず、参照する**（ADR 0004） |
 | P-7 | 公開ドメインは **CloudFront の既定ドメイン**。ACM 証明書も Route 53 のホストゾーンも作らない | `infra-terraform.md` D-14・AC-4-2 |
-| P-8 | #8 が定義する Lambda は **3本**（BFF/SSR・ドメイン API・CloudFront 遮断）であり、いずれにも予約同時実行数とログ保持が掛かる | `infra-terraform.md` 非スコープ・AC-5-1・AC-6 |
+| P-8 | #8 が定義する Lambda は **3本**（BFF/SSR・ドメイン API・CloudFront 遮断）であり、いずれにも予約同時実行数とログ保持が掛かる。**2026-10-27 改訂（#56・ADR 0022）**: この3本に加え、#56 がデモデータのリセット用 Lambda を足す（`docs/specs/demo-data-reset.md` AC-12）。同じ `infra/terraform` に載る Lambda は**4本**になり、リセット用 Lambda にも予約同時実行数とログ保持が掛かる。**AC-7-3（Cognito のトリガーに Lambda を作らない）は変わらない** —— リセット用 Lambda は Cognito のトリガーではなく、本仕様の Lambda を増やすものでもない | `infra-terraform.md` 非スコープ・AC-5-1・AC-6／`demo-data-reset.md` |
 | P-9 | 検証は **`terraform test`**（`.tftest.hcl`）。新しいテスト用ライブラリ・外部ツールを導入しない | `infra-terraform.md` D-6・AC-10-1 |
 
 ---
