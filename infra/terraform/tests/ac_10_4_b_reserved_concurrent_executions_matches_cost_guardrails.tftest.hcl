@@ -22,6 +22,7 @@ variables {
   bff_ssr_lambda_artifact_path               = "testdata/bff-ssr.zip"
   domain_api_lambda_artifact_path            = "testdata/domain-api.zip"
   cloudfront_killswitch_lambda_artifact_path = "testdata/cloudfront-killswitch.zip"
+  demo_data_reset_lambda_artifact_path       = "testdata/demo-data-reset.zip"
   bff_ssr_lambda_runtime                     = "nodejs20.x"
   google_client_id                           = "000000000000-dummy.apps.googleusercontent.com"
   google_client_secret                       = "dummy-google-client-secret"
@@ -48,5 +49,13 @@ run "reserved_concurrent_executions_matches_cost_guardrails" {
   assert {
     condition     = aws_lambda_function.cloudfront_killswitch.reserved_concurrent_executions == 1
     error_message = "CloudFront 遮断 Lambda の reserved_concurrent_executions は 1（cost-guardrails.md）"
+  }
+
+  # 2026-10-27 改訂（#56・ADR 0022）: リセット用 Lambda（4本目）。値は
+  # docs/rules/cost-guardrails.md を読んで書いている。ほかの3本とは個別に assert する
+  # （demo-data-reset.md AC-12-4・12-10 ①）。== 1 は「未設定（null）でない」も兼ねる。
+  assert {
+    condition     = aws_lambda_function.demo_data_reset.reserved_concurrent_executions == 1
+    error_message = "リセット用 Lambda の reserved_concurrent_executions は 1（cost-guardrails.md。未設定を残さない＝AC-5-1・demo-data-reset.md AC-12-4）"
   }
 }
