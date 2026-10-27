@@ -9,6 +9,7 @@ import {
   handleDeleteDailyRecord,
   handleGetWorkMonth,
   handleListContracts,
+  handleListDemoWorkMonths,
   handleListOwnWorkMonths,
   handleListPendingApprovals,
   handleListWorkTrends,
@@ -51,7 +52,7 @@ export function businessOptions(
 }
 
 export type RouteId =
-  | "R-1" | "R-2" | "R-3" | "R-5" | "R-6" | "R-7" | "R-8" | "R-9" | "R-10" | "R-11";
+  | "R-1" | "R-2" | "R-3" | "R-4" | "R-5" | "R-6" | "R-7" | "R-8" | "R-9" | "R-10" | "R-11";
 
 export interface BusinessHandlerCase {
   readonly route: RouteId;
@@ -66,6 +67,11 @@ export interface BusinessHandlerCase {
   ) => Promise<Response>;
 }
 
+/**
+ * R-1〜R-3・R-5〜R-11 の 10 個（**R-4 を除く**）。ロールを使う処理の表で、5-h など
+ * R-4 を対象としない検査が回す（bff-wiring.md AC-5 の 5-h。2026-10-27 人間決定、#56）。
+ * R-4 を含む 11 は {@link ALL_BUSINESS_HANDLERS}。
+ */
 export const BUSINESS_HANDLERS: readonly BusinessHandlerCase[] = [
   {
     route: "R-1",
@@ -138,6 +144,36 @@ export const BUSINESS_HANDLERS: readonly BusinessHandlerCase[] = [
     updates: false,
     invoke: (request, options) => handleListWorkTrends(request, options),
   },
+];
+
+/** R-4 を呼ぶとき環境変数に与えるデモの技術者識別子（値はダミー。demo-data-reset.md AC-7-1・7-3）。 */
+export const DEMO_ENGINEER_ID = "demo-engineer-dummy-0001";
+
+/**
+ * R-4（ゲスト向けデモ勤務月群。E-2）。呼び先の環境変数の検査（5-g）でデモの技術者識別子の
+ * 欠落と混ざらないよう、invoke がデモの技術者識別子を与えたうえで呼ぶ
+ * （bff-wiring.md 5-g。与え方は仕様工程の定め）。
+ */
+export const DEMO_HANDLER: BusinessHandlerCase = {
+  route: "R-4",
+  method: "GET",
+  endpoint: "E-2",
+  updates: false,
+  invoke: (request, options) =>
+    handleListDemoWorkMonths(request, {
+      ...options,
+      environment: { ...options.environment, DEMO_ENGINEER_ID },
+    }),
+};
+
+/**
+ * R-4 を含む R-1〜R-11 の 11 個（bff-wiring.md AC-5 の 5-6・5-a・5-b・5-g の母集団。
+ * 2026-10-27 改定、#56）。
+ */
+export const ALL_BUSINESS_HANDLERS: readonly BusinessHandlerCase[] = [
+  ...BUSINESS_HANDLERS.slice(0, 3),
+  DEMO_HANDLER,
+  ...BUSINESS_HANDLERS.slice(3),
 ];
 
 /** R-5 の本文（契約 AC-4 の形。値の正否は問わない）。 */

@@ -16,7 +16,10 @@ import { routeHandlerRateLimiter } from "./rate-limit";
 import type { DomainApiRequest, LambdaClient, LambdaClientResult } from "./lambda-client";
 import { handleSignInCallback } from "./auth-handlers";
 import {
+  ALL_BUSINESS_HANDLERS,
   BUSINESS_HANDLERS,
+  DEMO_ENGINEER_ID,
+  DEMO_HANDLER,
   businessOptions,
   requestFor,
 } from "../test-support/bff-wiring-handlers";
@@ -62,12 +65,18 @@ beforeEach(() => {
   routeHandlerRateLimiter.reset();
 });
 
-describe("母集団（AC-5-6: R-1〜R-3・R-5〜R-11 の 10 個）", () => {
-  it("検査の表は 10 個の処理を持つ（0件・取りこぼしを一致とみなさない。2026-10-21 改定: 旧 8 つ）", () => {
+describe("母集団（AC-5-6: R-4 を含む R-1〜R-11 の 11 個）", () => {
+  it("検査の表は 11 個の処理を持つ（0件・取りこぼしを一致とみなさない。2026-10-27 改定（#56）: 旧 10）", () => {
+    expect(ALL_BUSINESS_HANDLERS.map((h) => h.route)).toEqual([
+      "R-1", "R-2", "R-3", "R-4", "R-5", "R-6", "R-7", "R-8", "R-9", "R-10", "R-11",
+    ]);
+    expect(UPDATES).toHaveLength(5);
+  });
+
+  it("5-h の表は R-4 を除く 10 個のまま（R-4 はロールを使わない。2026-10-27 人間決定（#56））", () => {
     expect(BUSINESS_HANDLERS.map((h) => h.route)).toEqual([
       "R-1", "R-2", "R-3", "R-5", "R-6", "R-7", "R-8", "R-9", "R-10", "R-11",
     ]);
-    expect(UPDATES).toHaveLength(5);
   });
 });
 
@@ -143,7 +152,7 @@ describe("AC-4: 操作者ヘッダの組み立て（Fake が受け取った操�
 });
 
 describe("AC-5-1: 入口のレート制限（検査 5-b）", () => {
-  it.each(BUSINESS_HANDLERS)(
+  it.each(ALL_BUSINESS_HANDLERS)(
     "5-b: $route は上限を使い切ったキーでは 429 と Retry-After で終わり、lambda-client の Fake を1度も呼ばない",
     async (handler) => {
       const { client, calls } = fakeClient();
@@ -159,7 +168,7 @@ describe("AC-5-1: 入口のレート制限（検査 5-b）", () => {
     },
   );
 
-  it.each(BUSINESS_HANDLERS)(
+  it.each(ALL_BUSINESS_HANDLERS)(
     "5-b（対）: $route は上限に達していなければ 429 にならない（常に 429 を返す実装を緑にしない）",
     async (handler) => {
       const { client } = fakeClient();
@@ -244,13 +253,15 @@ describe("AC-5-4・5-5: 構成と署名鍵の欠落（検査 5-g・5-h）", () =
   ] as const;
 
   for (const [label, environment] of missingUrl) {
-    it.each(BUSINESS_HANDLERS)(
+    // R-4 はセッションなしで呼び、デモの技術者識別子は与えたまま呼び先だけを欠かす
+    // （bff-wiring.md 5-g。2026-10-27 改定（#56）: 旧 10）。
+    it.each(ALL_BUSINESS_HANDLERS)(
       `5-g: 呼び先が${label}のとき $route は 5xx（401・429 でない）・本文が空・Fake が呼ばれない・no-store`,
       async (handler) => {
         const { client, calls } = fakeClient();
 
         const response = await handler.invoke(
-          requestFor(handler),
+          requestFor(handler, handler.route === "R-4" ? { session: null } : {}),
           businessOptions(client, environment),
         );
 
@@ -280,6 +291,38 @@ describe("AC-5-4・5-5: 構成と署名鍵の欠落（検査 5-g・5-h）", () =
         expect(calls).toHaveLength(0);
       },
     );
+  }
+});
+
+describe("AC-5-5 (R-4): 署名鍵が欠けていても R-4 は通る（検査 5-h の (R-4)。2026-10-27 追加、#56）", () => {
+  const missingKey = [
+    ["未設定", environmentWithout("ROLE_COOKIE_SIGNING_KEY")],
+    ["空", environmentWithEmpty("ROLE_COOKIE_SIGNING_KEY")],
+  ] as const;
+  // 契約 E-2 の成功の形の本文（値はダミー。Fake が返したものと深く等しいかだけを見る）。
+  const E2_BODY = {
+    items: [{ contractId: "contract-dummy-1", yearMonth: "2026-10", state: "Draft" }],
+    total: 1,
+  };
+
+  for (const [label, environment] of missingKey) {
+    it(`5-h (R-4): 検証済みセッションありで署名鍵が${label}でも Fake がちょうど1度呼ばれ、200 で、本文は Fake の本文と深く等しい`, async () => {
+      const { client, calls } = fakeClient({ kind: "success", status: 200, body: E2_BODY });
+
+      const response = await DEMO_HANDLER.invoke(
+        requestFor(DEMO_HANDLER),
+        businessOptions(client, environment),
+      );
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toStrictEqual({
+        endpoint: "E-2",
+        query: { engineerId: DEMO_ENGINEER_ID },
+        actor: null,
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(E2_BODY);
+    });
   }
 });
 
