@@ -145,7 +145,7 @@ func buildWorkMonth(resetDate workmonth.Date, contractID workmonth.ContractID, r
 	}
 
 	// 当月は、リセット日の前日まで（AC-9-7）。過去の月は月末まで。
-	// monthEnd は月末日。k の数え方のためループは常に月末まで回し、lastDay は記録を置く打ち切り日。
+	// monthEnd は月末日。lastDay は記録を置く打ち切り日（当月はリセット日の前日）。
 	monthEnd := lastDayOf(ym.Year(), ym.Month())
 	lastDay := monthEnd
 	if s.monthsAgo == 0 {
