@@ -342,3 +342,30 @@ export function handleListWorkTrends(
     }),
   });
 }
+
+/**
+ * R-4: ゲスト向けデモ勤務月群（E-2）。要求のクエリ・ヘッダ・Cookie から何も取らず、
+ * セッションの検証もロールの確定もしない（Cookie も破棄しない）。engineerId は環境変数
+ * DEMO_ENGINEER_ID だけ（demo-data-reset.md AC-7-6・7-7、bff-wiring.md 5-g）。
+ */
+export function handleListDemoWorkMonths(
+  request: Request,
+  options: BusinessOptions,
+): Promise<Response> {
+  return withRequestRateLimit(request.headers, new Date(), async () => {
+    if (request.method !== "GET") {
+      return emptyResponse(405, new Headers());
+    }
+    const environment = options.environment ?? process.env;
+    const demoEngineerId = environment.DEMO_ENGINEER_ID;
+    if (!loadDomainApiUrl(environment).ok || !demoEngineerId) {
+      return misconfiguredBusinessResponse();
+    }
+    const result = await options.lambdaClient.call({
+      endpoint: "E-2",
+      query: { engineerId: demoEngineerId },
+      actor: null,
+    });
+    return toBrowserResponse(result, new Headers());
+  });
+}
