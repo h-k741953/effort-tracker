@@ -2,7 +2,7 @@
 // 回すものが共有する補助。アプリの実装からは import しない（検査専用）。
 import type { Environment } from "../lib/auth-config";
 import type { PublicKeyResolver } from "../lib/jwt-verifier";
-import type { LambdaClient } from "../lib/lambda-client";
+import type { DomainApiRequest, LambdaClient, LambdaClientResult } from "../lib/lambda-client";
 import {
   handleApproveWorkMonth,
   handleCloseWorkMonth,
@@ -24,6 +24,20 @@ import {
   fakePublicKeySource,
   type BrowserRequestOptions,
 } from "./bff-wiring";
+
+/** 受け取った要求を記録し、与えた結果を返す lambda-client の Fake。 */
+export function fakeClient(
+  result: LambdaClientResult = { kind: "success", status: 200, body: {} },
+): { readonly client: LambdaClient; readonly calls: DomainApiRequest[] } {
+  const calls: DomainApiRequest[] = [];
+  const client: LambdaClient = {
+    async call(request) {
+      calls.push(request);
+      return result;
+    },
+  };
+  return { client, calls };
+}
 
 // --- 業務の処理の表（R-1〜R-3・R-5〜R-9） -----------------------------------
 

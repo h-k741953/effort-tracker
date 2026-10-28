@@ -13,7 +13,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 // レート制限の状態はテストごとに初期化する（終端仕様 AC-11-7 (iv)）。
 // AC-10-4: Vitest 標準の expect だけを使う。
 import { routeHandlerRateLimiter } from "./rate-limit";
-import type { DomainApiRequest, LambdaClient, LambdaClientResult } from "./lambda-client";
 import { handleSignInCallback } from "./auth-handlers";
 import {
   ALL_BUSINESS_HANDLERS,
@@ -21,6 +20,7 @@ import {
   DEMO_ENGINEER_ID,
   DEMO_HANDLER,
   businessOptions,
+  fakeClient,
   requestFor,
 } from "../test-support/bff-wiring-handlers";
 import {
@@ -37,20 +37,6 @@ import {
   signedRoleCookieValue,
   tamperedRoleCookieValue,
 } from "../test-support/bff-wiring";
-
-/** 受け取った要求を記録し、与えた結果を返す lambda-client の Fake。 */
-function fakeClient(
-  result: LambdaClientResult = { kind: "success", status: 200, body: {} },
-): { readonly client: LambdaClient; readonly calls: DomainApiRequest[] } {
-  const calls: DomainApiRequest[] = [];
-  const client: LambdaClient = {
-    async call(request) {
-      calls.push(request);
-      return result;
-    },
-  };
-  return { client, calls };
-}
 
 const R1 = BUSINESS_HANDLERS.filter((h) => h.route === "R-1")[0];
 const R2 = BUSINESS_HANDLERS.filter((h) => h.route === "R-2")[0];
