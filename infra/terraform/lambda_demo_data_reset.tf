@@ -62,6 +62,7 @@ resource "aws_lambda_function" "demo_data_reset" {
   runtime       = "provided.al2023"
   handler       = "bootstrap"
   filename      = var.demo_data_reset_lambda_artifact_path
+  timeout       = 60 # AC-12-12: 既定の 3 秒に任せず明示する
 
   reserved_concurrent_executions = 1 # docs/rules/cost-guardrails.md（遮断 Lambda と同じ1）
 
