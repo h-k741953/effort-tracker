@@ -11,9 +11,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 //   limit・offset・操作者のヘッダを渡さず、セッションの有無で振る舞いを変えない。
 // - AC-11-3: 外部へ通信しない。環境変数は引数で与える。
 import { routeHandlerRateLimiter } from "./rate-limit";
-import type { DomainApiRequest, LambdaClient, LambdaClientResult } from "./lambda-client";
 import { handleListDemoWorkMonths } from "./work-month-handlers";
-import { businessOptions } from "../test-support/bff-wiring-handlers";
+import { DEMO_ENGINEER_ID, businessOptions, fakeClient } from "../test-support/bff-wiring-handlers";
 import {
   ENVIRONMENT,
   browserRequest,
@@ -21,21 +20,7 @@ import {
   signedRoleCookieValue,
 } from "../test-support/bff-wiring";
 
-const DEMO_ENGINEER_ID = "demo-engineer-dummy-0001";
 const DEMO_ENVIRONMENT = { ...ENVIRONMENT, DEMO_ENGINEER_ID };
-
-function fakeClient(
-  result: LambdaClientResult = { kind: "success", status: 200, body: {} },
-): { readonly client: LambdaClient; readonly calls: DomainApiRequest[] } {
-  const calls: DomainApiRequest[] = [];
-  const client: LambdaClient = {
-    async call(request) {
-      calls.push(request);
-      return result;
-    },
-  };
-  return { client, calls };
-}
 
 beforeEach(() => {
   routeHandlerRateLimiter.reset();
