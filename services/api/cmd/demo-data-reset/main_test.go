@@ -2,7 +2,7 @@ package main
 
 // 検証対象: docs/specs/demo-data-reset.md の単位2「cmd の起動と手順」（AC-14-2 のうち cmd に掛かるもの）。
 // AC-7-4（デモの技術者識別子の環境変数が未設定・空）・AC-10（DDL の適用の順序・失敗）・
-// AC-11（11-1 リセット日・11-3 失敗でロールバック・11-6 文言・11-7 接続文字列の取得・11-8 同じ日の再実行）・
+// AC-11（11-1 リセット日・11-3 失敗の書き分け（①トランザクションに入る前の失敗は入らずに終える・②中の失敗はロールバック）・11-6 文言・11-7 接続文字列の取得・11-8 同じ日の再実行）・
 // AC-6-2/6-3/6-5/6-7（cmd が gateway へ渡す値と手順）・AC-1（破棄が選り分けない）。
 //
 // 実 DB・実 AWS・実時計を呼ばない。SQL 実行の受け口（gateway.DB）・接続文字列の解決・環境変数の探索・
@@ -901,9 +901,9 @@ func assertNoLeak(t *testing.T, err error, events []rtCall) {
 // ---- 組み立ての失敗（AC-9-3・AC-9-3-a） -------------------------------------------
 
 // 組み立ての関数がエラーを返したとき、ハンドラは失敗として終え（①）、Commit を呼ばず（②）、
-// トランザクションを開いていたなら Rollback を1回呼び（③）、契約の書き込み・破棄・集約の保存の文を
-// 1つも発行しない（④。DDL は対象外）。組み立てをトランザクションの前に行うか後に行うかは固定しない
-// （Begin の回数と Rollback の回数が一致することで③を表す）。
+// トランザクションに入らずに終える（③。Begin を呼ばない＝Commit・Rollback も呼ばない）。
+// 契約の書き込み・破棄・集約の保存の文と DDL の適用の文を1つも発行しない（④。DDL の Exec も0件）。
+// 組み立ては Tx の前、かつ DDL の適用の前に行う（AC-9-3・AC-9-3-a）。
 func TestHandler_BuildFailure_FailsWithoutCommitAndWritesNothing(t *testing.T) {
 	injected := errors.New("injected build failure")
 	h := startedRTHarness(t)
@@ -942,18 +942,21 @@ func TestHandler_BuildFailure_FailsWithoutCommitAndWritesNothing(t *testing.T) {
 		case "tx.exec":
 			// ④ 契約の書き込み・破棄・集約の保存はいずれも Tx の中の Exec。
 			t.Errorf("組み立ての失敗の後に契約の書き込み・破棄・集約の保存の文を発行してはならない: %v", e)
+		case "db.exec":
+			// ④ DDL の適用は Tx の外の Exec。組み立ての失敗では DDL の適用へ進まない。
+			t.Errorf("組み立ての失敗の後に DDL の適用の文を発行してはならない: %v", e)
 		}
 	}
 	// ② Commit を呼ばない。
 	if commits != 0 {
 		t.Errorf("Commit = %d, want 0", commits)
 	}
-	// ③ トランザクションを開いていたなら Rollback を1回呼ぶ（開いていなければ呼ばない）。
-	if rollbacks != begins {
-		t.Errorf("Begin=%d Rollback=%d, want 開いた回数と同じ（開いていたなら1回）", begins, rollbacks)
+	// ③ トランザクションに入らずに終える（Begin を呼ばない。したがって Commit・Rollback も呼ばない）。
+	if begins != 0 {
+		t.Errorf("Begin = %d, want 0", begins)
 	}
-	if begins > 1 {
-		t.Errorf("Begin = %d, want 高々1回", begins)
+	if rollbacks != 0 {
+		t.Errorf("Rollback = %d, want 0", rollbacks)
 	}
 	assertNoLeak(t, err, events)
 }
