@@ -33,7 +33,7 @@ Issue #56「デモデータの生成と日次リセット」の仕様である�
   - **ログインした技術者に契約を用意すること**。Q-4 の決定により #56 では扱わない（AC-13-1。別の discussion Issue へ委ねる。**2026-10-27 起票: #142**）
   - **契約の管理（CRUD）**。契約を作成・更新する手段（エンドポイント・ポートのメソッド・画面）は作らない（`docs/rules/scope.md`、`workmonth-implementation-design.md` AC-10-21 ②）
   - **リセットの失敗を知らせる仕組み**（アラーム・メール等）。Q-8 の決定により足さない
-  - **#137 の I-6**。AC-10-21 ③「契約期間を持たない既存の契約の行は E-8 で 500 になる」の記述を見直す件である。見直しは #137 が持つ
+  - **#137 の I-6**。AC-10-21 ③「契約期間を持たない既存の契約の行は E-8 で 500 になる」の記述を見直す件である。見直しは #137 が持つ。**2026-10-28 改訂**: 見直しは済んだ（`workmonth-implementation-design.md` AC-10-21 ③ の 2026-10-28 改訂（#137 I-6））。本仕様の P-8 は、出典の改訂に合わせて要旨を改めた
   - 契約のエンドポイント（`domain-api-http-contract.md`）の変更。デモデータの投入と日次リセットはその契約の対象外である（P-9）
   - 画面の仕様。ゲスト向けデモ勤務月群をどう見せるかは `work-month-listing-ui.md` AC-3 が持つ
 
@@ -52,7 +52,7 @@ Issue #56「デモデータの生成と日次リセット」の仕様である�
 | P-5 | 再投入する稼働実績は、時刻を持つ形に限る。開始時刻・終了時刻は NULL を取らない。休憩の2列は、ともに NULL か、ともに値ありのどちらかである。旧形式（稼働の量）の列は持たない | `workmonth-implementation-design.md` AC-10-5・AC-10-20 ②③／`daily-record-entry.md` D-15・AC-2-5 |
 | P-6 | 契約は契約期間を持つ。開始の年・月は NULL を取らない。終了の年・月は、ともに NULL（終了未定）か、ともに値ありのどちらかである。開始が終了より後の行は不正であり、開始と終了が同じ年月の行は有効である | `workmonth-implementation-design.md` AC-10-5・AC-10-21 ①／`domain-api-http-contract.md` 決定10 |
 | P-7 | 契約期間の値はデモデータとして投入する。投入の手段と、デモの各契約の契約期間の値は本 Issue が持つ。契約を作成・更新する手段は作らない | `workmonth-implementation-design.md` AC-10-21 ②／`contracts-ui.md` P-7／ユビキタス言語「契約が持つもの（参照系）」 |
-| P-8 | 契約期間を持たない（開始の年月が NULL の）契約の行は、手段が入るまで E-8 で 500 を返しうる。E-1〜E-7・E-9 はこの影響を受けない | `workmonth-implementation-design.md` AC-10-21 ③／`domain-api-http-contract.md` AC-11-14 |
+| P-8 | 契約期間を持たない（開始の年月が NULL の）契約の行は、E-8 で 500 を返す。E-1〜E-7・E-9 はこの影響を受けない。**2026-10-28 改訂（#137 I-6）**: 出典の AC-10-21 ③ の改訂に合わせ、要旨を改めた。旧: 「手段が入るまで E-8 で 500 を返しうる」 | `workmonth-implementation-design.md` AC-10-21 ③／`domain-api-http-contract.md` AC-11-14 |
 | P-9 | ゲスト向けデモ勤務月群のための専用エンドポイントは設けない。BFF がデモ用の技術者識別子を `engineerId` に指定し、E-2 を呼ぶ。デモデータの投入と日次リセットは HTTP 契約の対象外である | `domain-api-http-contract.md` AC-3-10・AC-11-8 |
 | P-10 | ゲスト向けデモ勤務月群の経路（BFF の R-4）と、その技術者識別子の出所は、本 Issue で決める | `bff-wiring.md` 非スコープ・D 節 U-4 = (c)・AC-6 の R-4 行 |
 | P-11 | 勤務月の取得（E-1）と `engineerId` 指定の一覧（E-2）は操作者で絞らない（ゲストでも 200）。承認待ち一覧（`engineerId` 省略 + `state=PendingApproval`）は `Approver` を要求し、技術者で絞らない | `domain-api-http-contract.md` D-12・AC-2-5 |
