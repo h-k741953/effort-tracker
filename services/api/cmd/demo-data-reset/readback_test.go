@@ -1,7 +1,7 @@
 package main
 
 // 検証対象: docs/specs/demo-data-reset.md AC-4-3（デモデータの各勤務月・各稼働実績を gateway で
-// 読み出したとき、ErrInvalidValue にならない＝P-16 の 500 を生まない）。検査の単位は AC-14-2。
+// 読み出したとき、ErrInvalidValue にならない＝P-16 の 500 を生まない）。検査の単位は AC-14-1。
 //
 // 手順: ハンドラを1回呼び、リセットの手段が Fake に書いた勤務月・稼働実績の行を記録する。
 // その行を、WorkMonthRepository.Find（読み出しの gateway 経路）が受け取る行として与え直し、

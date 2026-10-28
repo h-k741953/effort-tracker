@@ -22,7 +22,7 @@ package gateway_test
 // 契約期間の型に usecase/port の ContractPeriod を使わないのは、リセット用 cmd が
 // usecase を import できないため（AC-12-11 ④）。
 //
-// Fake に対して固定する文の並び（Tx 越し。SQL 文そのものは検査しない＝AC-13-18）:
+// Fake に対して固定する文の並び（Tx 越し。SQL 文そのものは検査しない＝docs/specs/workmonth-implementation-design.md の AC-13-18）:
 //
 //	① 契約ごとに、この順で:
 //	   Query（引数は契約識別子の1つ。応答の行は「技術者識別子」の1列＝string。行が無ければ契約が無い）
