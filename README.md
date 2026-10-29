@@ -137,6 +137,7 @@ ADR は Nygard 形式。**書き換えず、覆すときは新しい ADR で置�
 | [0020](docs/adr/0020-dom-testing-library-for-web-tests.md) | Web のテストに DOM 検証ライブラリを追加する | 人間 |
 | [0021](docs/adr/0021-mvp-scope-expansion-and-self-hosted-fonts.md) | MVP スコープに閲覧系の画面を加え、フォントと祝日データを同梱する | 人間 |
 | [0022](docs/adr/0022-scheduled-demo-data-reset-lambda.md) | デモデータの日次リセットを、EventBridge Scheduler から呼ぶ専用の Lambda で行う | 人間 |
+| [0023](docs/adr/0023-auto-provision-contract-on-first-login.md) | ログインした技術者に、初回ログイン時にシステムが契約を1件自動で用意する（提案中） | 人間 |
 
 **承認済みの ADR はすべて人間が決定者である。** これは偶然ではなく、`CLAUDE.md` が「技術選定の変更（ADR が必要な判断）」を人間の責務に置いているためである。AI が単独で「承認済み」の ADR を起票することを禁じている。
 
