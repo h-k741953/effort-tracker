@@ -585,7 +585,7 @@ sequenceDiagram
 | 14-7 | 永続化の失敗 | **500 `INTERNAL_ERROR`**（AC-9。原因を応答に含めない） | 帰結 |
 | 14-8 | `GET`・`PUT`・`DELETE` 等、`POST` 以外のメソッド | **404 `NOT_FOUND`**（AC-1-11） | 帰結 |
 | 14-9 | 複数の条件が同時に該当する場合 | ゲストかつ不正な本文 → **401**。ゲストかつ `X-Actor-Role` の値が不正は起こらない（ゲストは両ヘッダ不在）。`X-Actor-Role` の値が不正かつ不正な本文 → **400**（本文は読まない＝14-2） | 仕様工程の定め（判定順序の当てはめ＝D-23 ⑦） |
-| 14-10 | 呼ぶ側 | **BFF のサインインの戻りだけ**が呼ぶ（`engineer-contract-provisioning.md` AC-2-6・AC-7）。`bff-wiring.md` の業務の Route Handler（R-1〜R-11）は呼ばない | 人間の明示選択（同 Q-3 (ii)） |
+| 14-10 | 呼ぶ側 | **BFF のサインインの戻りだけ**が呼ぶ（`engineer-contract-provisioning.md` AC-2-6・AC-7）。`bff-wiring.md` の業務の Route Handler（R-1〜R-11）は呼ばない。**検査は BFF の側にあり、`engineer-contract-provisioning.md` AC-7 の 7-i〜7-l（ファイル走査）が持つ**（ドメイン API の側は、呼び元が BFF の実行ロールであることしか見えず、BFF の中のどの処理が呼んだかを区別できない。限界は同 AC-5-12） | 人間の明示選択（同 Q-3 (ii)）。検査の置き場所と形は仕様工程の定め |
 
 ### AC-12. 契約一覧（E-8。**2026-10-21 追加**）
 
