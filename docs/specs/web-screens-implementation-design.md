@@ -4,20 +4,20 @@
 
 **要求（受け入れ条件）はこの仕様へ書き写さない。** 正解は各 UI 仕様（`login-ui.md` ほか）と `design-system.md`・`bff-auth-termination.md` にあり、本仕様は AC 番号で参照するだけである（ADR 0004）。本仕様が決めるのは実装設計に限る。
 
-- **決定者**: 実装設計の各決定は仕様工程（AI 起案。**人間の承認前**）。ただし文言・ログインの入口の行き先・ログイン失敗の担い手・区分の解決が失敗したときの扱い（本仕様の Q-1〜Q-4）は、**2026-10-29 に人間が明示選択で決めた**。決定は該当の節の本文に、出所「2026-10-29 人間の明示選択（Q-n = …）」を添えて置く。ここでいう Q-n は**本仕様の論点の番号**であり、P-1 が引く `cognito-auth-infra.md` の Q-1 とは別物である
-- **日付**: 2026-10-29（画面1 の節を起こし、同日に Q-1〜Q-4 の決定を反映した。画面2・3 の節は後で追記する）
-- **前提の仕様**: `login-ui.md`／`design-system.md`（AC-5・AC-6・AC-8・AC-12）／`bff-auth-termination.md`（AC-5-5・AC-5-11・AC-11-2）／`work-month-listing-ui.md` AC-10（サイドバーの項目。画面2 の節で扱う）
+- **決定者**: 実装設計の各決定は仕様工程（AI 起案。**人間の承認前**）。ただし文言・ログインの入口の行き先・ログイン失敗の担い手・区分の解決が失敗したときの扱い（本仕様の Q-1〜Q-4）と、画面2 の絞り込みの置き場・ハンドオフに無い文言・閲覧系の3画面のパス・「今月の入力」で契約が複数あるときの形（Q-5〜Q-8）、初回入力の部品の置き場（Q-9）、「今月の入力」と初回入力の行き先を年月を含まない経路にすること（Q-10）、テストの差し替えの方針（T-0）は、**2026-10-29 に人間が明示選択で決めた**。決定は該当の節の本文に、出所「2026-10-29 人間の明示選択（Q-n = …）」を添えて置く。ここでいう Q-n は**本仕様の論点の番号**であり、P-1 が引く `cognito-auth-infra.md` の Q-1 とは別物である
+- **日付**: 2026-10-29（画面1 の節を起こし、同日に Q-1〜Q-4 の決定を反映した。同日、画面2 の節＝W 節を足し、同日に Q-5〜Q-8 とテストの差し替えの方針の決定を反映した。Q-8 に伴い `design-system.md` 6-13 を改定した。同日、Q-9・Q-10 の決定を反映し、月の境目に合わせたタイマーで描き直す設計を取り下げた。Q-10 のうち経路の置き場と本人の契約の確かめ方は Q-11 として未決である。W 節のうち出所を書いていない決定は AI 起案で人間の承認前である。画面3 の節は後で追記する）
+- **前提の仕様**: `login-ui.md`／`design-system.md`（AC-5・AC-6（6-13 は 2026-10-29 改定後）・AC-8・AC-12）／`bff-auth-termination.md`（AC-5-5・AC-5-11・AC-11-2）／`work-month-listing-ui.md`（AC-1〜AC-10。W 節）／`bff-wiring.md` AC-6 の R-2〜R-4・R-10／`domain-api-http-contract.md` AC-3・AC-10-2・AC-12
 
 ---
 
 ## スコープ
 
-- **対象**: 画面1（ログイン画面・デモ用ロール切替・ヘッダー）と、画面1 が最初に要する**画面間で共有する土台**（C 節: ルート表のうち既定の画面、利用者の区分の解決、開ける画面の判定、置き場所の規則）
+- **対象**: 画面1（ログイン画面・デモ用ロール切替・ヘッダー）と、画面1 が最初に要する**画面間で共有する土台**（C 節: ルート表のうち既定の画面、利用者の区分の解決、開ける画面の判定、置き場所の規則）。画面2（本人の勤務月一覧・承認待ち一覧・デモ勤務月群と、ログイン画面を除く各画面に共通のサイドバー。W 節）
 - **非対象**:
   - 受け入れ条件そのもの（各 UI 仕様が持つ）
   - BFF の Route Handler（`/api/auth/*`・業務の経路）。既存のものを使うだけで、本仕様では変えない（`bff-auth-termination.md`・`bff-wiring.md`）
-  - 画面2・3（各一覧・勤務月画面・サイドバー）。後で節を足す
-  - ヘルプ・契約一覧・稼働の推移の画面。C-3 の判定で画面の識別子として名前が出るだけで、ページの設計は持たない
+  - 画面3（勤務月画面）。後で節を足す。ただし勤務月画面のパスは、画面2 のリンクが要するため C-2 で定める
+  - ヘルプ・契約一覧・稼働の推移の画面。C-4 の判定で画面の識別子として名前が出ることと、C-2 でパスを定めること（サイドバーの項目の行き先として要るため）だけで、ページの設計は持たない
   - ユーザー・ロール管理画面（非スコープ。`docs/rules/scope.md`・`login-ui.md` AC-8-1）
   - サインアウト（要求する仕様が無い。`bff-auth-termination.md` の非対象表）
 
@@ -62,10 +62,17 @@
 | 本人の勤務月一覧（技術者の既定の画面。`login-ui.md` 6-7-a） | `/work-months` | 画面2 の節で置く | C-3 の遷移先として本節で決める |
 | 承認待ち一覧（承認者の既定の画面） | `/pending-approvals` | 同上 | 同上 |
 | デモ勤務月群（ゲストの既定の画面） | `/demo` | 同上 | 同上 |
+| 勤務月画面 | `/work-months/[contractId]/[yearMonth]`（`yearMonth` は `YYYY-MM`） | 画面3 の節で置く | W-1（画面2 の行のリンク・直近・今月の入力が行き先として要するため、本節で決める） |
+| ヘルプ | `/help` | 本仕様では置かない（ページが入るまで 404） | W-6 のサイドバーの項目の `href` として要るため本節で決める。出所: 2026-10-29 人間の明示選択（Q-7 = (a)） |
+| 契約一覧 | `/contracts` | 同上 | 同上 |
+| 稼働の推移 | `/work-trends` | 同上 | 同上 |
+| 今月の入力の経路（画面ではない。何も表示せず、勤務月画面へ送るだけ） | `/this-month?contract=<契約ID>` | **Q-11 待ち**（Route Handler か、`redirect()` するページか） | W-7。経路を置くことは 2026-10-29 人間の明示選択（Q-10）。**パスとクエリの名前は AI の起案** |
 
-- **`/work-months`・`/pending-approvals`・`/demo` のパスの文字列は AI の起案であり、人間の承認前である。** 2026-10-29 の明示選択（Q-1〜Q-4）はこれらのパスを決めていない。**レビューで人間が確かめる対象として残す**（パスは UI 仕様で固定されていない＝P-7。変えるときは `screen-routes.ts` の定数と本表を改める）。ログイン画面を `/` に置くことは、P-2 の戻り先からの帰結である（次項）
+- **勤務月画面のパスを画面3 ではなく本節で決める理由**: 画面2 の4つの導線（行＝`work-month-listing-ui.md` AC-5-1、直近＝AC-6-1、初回入力＝AC-7-1、今月の入力＝AC-10-9）がいずれもこのパスを要し、画面2 のテストの期待値になるため。画面3 の節はページを置くだけで、パスを変えない。形は BFF の R-1 のパス（`/api` を除いたもの）に揃えた。**AI の起案であり、人間の承認前である**（次項と同じ扱い）。`screen-routes.ts` に `workMonthPath(contractId, yearMonth)` として持ち、各セグメントを `encodeURIComponent` で符号化する
+- **`/work-months`・`/pending-approvals`・`/demo` のパスの文字列は AI の起案であり、人間の承認前である。** 2026-10-29 の明示選択（Q-1〜Q-8）はこれらのパスと勤務月画面のパスを決めていない（Q-7 が決めたのはヘルプ・契約一覧・稼働の推移の3つだけである）。**レビューで人間が確かめる対象として残す**（パスは UI 仕様で固定されていない＝P-7。変えるときは `screen-routes.ts` の定数と本表を改める）。ログイン画面を `/` に置くことは、P-2 の戻り先からの帰結である（次項）
 - **ログイン画面を `/` に置く理由**: サインインの戻りは `/` へ着く（P-2）。`/` をログイン画面にすると、ログイン済みの利用者は 6-10 によりそのロールの既定の画面へ移り、`design-system.md` 8-1-b（ログイン後に本人の勤務月一覧）が `auth-handlers.ts` を変えずに成り立つ。ゲストが `/` を開いたときはログイン画面が出る（6-10-a）
-- 勤務月画面・ヘルプ・契約一覧・稼働の推移のパスは、それぞれの画面の節が決める（本節では決めない）
+- **ヘルプ・契約一覧・稼働の推移のパス `/help`・`/contracts`・`/work-trends` は、AI の起案ではなく人間の決定である。** 出所: 2026-10-29 人間の明示選択（Q-7 = (a) パスは `/help`・`/contracts`・`/work-trends`。サイドバーには仕様（`work-month-listing-ui.md` 10-2〜10-4）どおり項目を出し、ページが入るまで行き先が 404 になることを受け入れる）。ページは本仕様の対象外であり、各画面の Issue が置く。404 の期間は限界として T-2 に記録する
+- **今月の入力の経路のパス `/this-month` とクエリの名前 `contract` は AI の起案であり、人間の承認前である。** 2026-10-29 の明示選択（Q-10）が決めたのは「年月を含まない経路を行き先にし、押された時点でサーバーが JST の当月を計算して、その契約 × 当月の勤務月画面へ 302 で送る」ことであり、パスの文字列は決めていない（`/this-month?contract=<契約ID>` は Q-10 を諮った際の例である）。レビューで人間が確かめる対象として残す。`screen-routes.ts` に `thisMonthPath(contractId)` として持ち、契約 ID をクエリの値として符号化する
 - パスの文字列は `apps/web/src/lib/screen-routes.ts` に定数として1か所で持ち、ページ・判定・リンクはそれを参照する
 - 画面2 が入るまで `/work-months`・`/pending-approvals`・`/demo` はページを持たない（遷移先が 404 になる期間がある）。同じブランチで画面2 が入ることを前提とする
 
@@ -218,7 +225,199 @@ sequenceDiagram
 
 ---
 
-## T. テストの置き場（画面1）
+## W. 画面2 — 勤務月一覧（本人一覧・承認待ち一覧・デモ勤務月群）とサイドバー
+
+本節で AC 番号だけを書いたものは `work-month-listing-ui.md` の AC である。**本節の決定は、出所「2026-10-29 人間の明示選択（Q-n = …）」を添えたものを除き、AI 起案であり人間の承認前である。** Q-11 の決定を待つ箇所は「Q-11 待ち」と書き、推測で埋めていない。文言のうち出所を「ハンドオフ」と書いたものは `design/handoff/2026-10-theme-b/` の該当ファイルの字面をそのまま採ったもので、本節では作っていない。
+
+### W-1. 構成
+
+```mermaid
+flowchart TD
+  OwnPage["app/work-months/page.tsx（薄い層）"] -->|"serverScreenDeps を渡す"| OwnScreen["_components/own-work-months-screen.tsx"]
+  PendPage["app/pending-approvals/page.tsx（薄い層）"] -->|同上| PendScreen["_components/pending-approvals-screen.tsx"]
+  DemoPage["app/demo/page.tsx（薄い層）"] -->|同上| DemoScreen["_components/demo-work-months-screen.tsx"]
+  OwnScreen -->|"deps.getCurrentViewer + decideScreen"| Shell
+  PendScreen -->|同上| Shell
+  DemoScreen -->|同上| Shell
+  Shell["_components/app-shell.tsx（サーバー）"] --> SiteHeader["_components/site-header.tsx（既存。screen=app）"]
+  Shell --> AppSideNav["_components/app-side-nav.tsx（クライアント）"]
+  Shell --> View["一覧の中身（クライアント）"]
+  AppSideNav --> SideNav["components/side-nav.tsx（既存）"]
+  AppSideNav -->|"技術者のとき GET /api/contracts（R-10）"| BFF["BFF Route Handler（既存）"]
+  View --> OwnView["_components/own-work-months-view.tsx"]
+  View --> PendView["_components/pending-approvals-view.tsx"]
+  View --> DemoView["_components/demo-work-months-view.tsx"]
+  OwnView -->|"R-2・R-10"| BFF
+  PendView -->|"R-3"| BFF
+  DemoView -->|"R-4"| BFF
+  OwnView --> Table["_components/work-month-table.tsx"]
+  PendView --> Table
+  DemoView --> Table
+  OwnView --> Filters["_components/work-month-filters.tsx"]
+  PendView --> Filters
+  OwnView -->|"0件のとき"| Initial["_components/initial-entry-action.tsx"]
+  AppSideNav --> Entry["lib/this-month-entry.ts"]
+  Initial --> Entry
+  Entry -.->|"リンクの行き先（押されたとき）"| ThisMonth["/this-month の経路（W-7。置き場は Q-11 待ち）"]
+  ThisMonth -->|"302: その契約 × JST の当月"| WorkMonth["勤務月画面（画面3）"]
+```
+
+| ファイル | 種別 | 責務 | 主に担う AC |
+|---|---|---|---|
+| `app/work-months/page.tsx`・`app/pending-approvals/page.tsx`・`app/demo/page.tsx` | サーバー（async。薄い層） | 対応する画面の本体へ `serverScreenDeps`（T-0-2）と、Next が渡す `searchParams` を待った値を渡し、その戻り値を返すだけ。判定も描画の組み立ても持たない（T-0-2） | — |
+| `app/_components/own-work-months-screen.tsx` | サーバー（async 関数。依存を引数で受ける） | `ownWorkMonthsScreen(deps, searchParams)`。`deps.getCurrentViewer()` が `misconfigured` なら例外（C-3）。`decideScreen("own-work-months")` が `redirect` なら移す。`show` なら `AppShell`（選択中＝本人の勤務月一覧）と `OwnWorkMonthsView` を描く。`searchParams` の `contract` が文字列1つのときだけそれを `initialContractId` として渡し、それ以外（無い・配列）は渡さない（W-4） | 2-4・3-3・9-12、`login-ui.md` 6-9 |
+| `app/_components/pending-approvals-screen.tsx` | 同上 | `pendingApprovalsScreen(deps)`。同上。画面は `pending-approvals`、中身は `PendingApprovalsView` | 2-4・3-3 |
+| `app/_components/demo-work-months-screen.tsx` | 同上 | `demoWorkMonthsScreen(deps)`。同上。画面は `demo-work-months`、中身は `DemoWorkMonthsView` | 3-1・3-3 |
+| `app/_lib/screen-deps.ts` | サーバー専用 | 型 `ScreenDeps` と、本物の依存 `serverScreenDeps`（T-0-2） | — |
+| `app/_components/app-shell.tsx` | サーバー（同期。値は props で受ける） | `SiteHeader`（`screen="app"`）・`AppSideNav`・`<main>` を並べる。ログイン画面からは使わない。画面3 も使う | 10-1 |
+| `app/_components/app-side-nav.tsx` | クライアント | 技術者のとき自分の契約を取得し、`thisMonthEntry` と `sideNavItems`（W-6）で項目を決めて `SideNav` へ渡す | 10-1〜10-9-g |
+| `app/_components/own-work-months-view.tsx` | クライアント | 本人一覧の取得・絞り込み・ページ・表示（W-4） | AC-1・AC-4・AC-5・AC-6・7-1・7-3・AC-9 |
+| `app/_components/pending-approvals-view.tsx` | クライアント | 承認待ち一覧（W-5） | AC-2・AC-4・AC-5・7-2・7-3・AC-9 |
+| `app/_components/demo-work-months-view.tsx` | クライアント | デモ勤務月群（W-5） | AC-3・5-1・7-3・9-3 |
+| `app/_components/work-month-table.tsx` | フックを持たない（どちらからも使える） | 行の表。各行に契約表示名・対象年月・`StatusBadge`・勤務月画面へのリンク | 1-2・2-3・5-1 |
+| `app/_components/work-month-filters.tsx` | フックを持たない（値とハンドラを props で受ける） | `SelectField` で条件を出し、条件の解除の操作を出す。出す条件の集合を props で受ける | 9-1・9-2・9-11・9-14 |
+| `lib/work-month-list.ts` | 純粋 | 行の型、絞り込み、選択肢、ページ分け、直近、年月の表示、1ページの件数の定数（W-3・W-4） | 4-1・4-2・6-3・9-4〜9-9・9-11 |
+| `lib/work-month-list-client.ts` | 純粋（ブラウザで動く） | R-2〜R-4・R-10 を呼び、結果を分類する（W-2・W-3） | 1-1・7-3 |
+| `lib/side-nav-items.ts` | 純粋 | サイドバーの項目（W-6） | 10-2〜10-6・10-9-a〜10-9-d |
+| `lib/this-month-entry.ts` | 純粋 | `thisMonthEntry(contracts)`。自分の契約の件数で、当月の入力の導線を `hidden` / `link` / `choice` に分ける（W-6）。行き先は年月を含まない `thisMonthPath(contractId)`（W-7）で、年月を受け取らない。サイドバーの「今月の入力」と、本人一覧の0件の初回入力（W-4）が同じものを使う。出所: 2026-10-29 人間の明示選択（Q-9 = (a) 共有するのは出し分けの関数と開いたときの見え方だけ）・（Q-10 = 年月を含まない経路を行き先にする） | 6-2・7-1・10-9-a〜10-9-d |
+| `app/_components/initial-entry-action.tsx` | クライアント | 本人一覧の0件の `EmptyState` の `action`。`thisMonthEntry` の結果で、何も出さない／リンク／選択肢を開く操作を出す（W-4）。画面固有の部品であり、`design-system.md` の台帳（AC-5-1）に載せない。出所: 2026-10-29 人間の明示選択（Q-9 = (a) 初回入力の部品は画面固有の `app/_components/initial-entry-action.tsx` に置く。台帳は変えない） | 6-2・7-1 |
+| `lib/jst-month.ts` | 純粋 | `currentJstYearMonth(now)`。与えた時刻の JST の年月（`YYYY-MM`）を返す。W-7 の経路が当月を決めるのと、R-10 の `yearMonth`（W-3）に使う | 10-9 |
+| 今月の入力の経路（`/this-month`。**置くファイルは Q-11 待ち**） | サーバー | 押された時点の JST の当月を決め、本人の契約であることを確かめてから、その契約 × 当月の勤務月画面へ 302 で送る（W-7）。何も表示しない | 10-9・10-9-a・10-9-c・10-9-g |
+| `lib/screen-routes.ts`（既存へ追加） | 純粋 | `workMonthPath(contractId, yearMonth)`（C-2）、`thisMonthPath(contractId)`（C-2・W-7）、`ownWorkMonthsPath({ contractId? })`（9-12 の受け口のクエリを組み立てる） | 5-1・9-12・10-9 |
+
+- `_components` に置くのは P-6 のため（`src/components/` の台帳を増やさない）。既存部品で使うのは `SideNav`・`Card`・`StatusBadge`・`SelectField`・`Button`・`Pagination`・`EmptyState`・`ErrorBanner`・`AppHeader`（`SiteHeader` 経由）で、**部品の props を変えない**。例外は `SideNav` で、`design-system.md` 6-13 の 2026-10-29 改定（選択肢を開く項目。6-13-v）に従って `components/side-nav.tsx` の `SideNavItem` に形を1つ足す（props のキーは変えない）。出所: 2026-10-29 人間の明示選択（Q-8）
+- 遷移はいずれも `next/link` のリンクで行う（行・直近・初回入力・サイドバーの項目と、それらが開く契約の選択肢）。初回入力と「今月の入力」のリンクは勤務月画面を直接指さず、W-7 の経路を指す（Q-10）。遷移は GET だけで、勤務月の状態を変えない（5-2・9-13・10-7）
+
+### W-2. データを取る側と状態を持つ側
+
+**一覧のデータはブラウザ（クライアント部品）が BFF の Route Handler から取る。** サーバーのページでは取らない。理由:
+
+1. ページ・`_components` は `lambda-client` を輸入しない（C-1。`docs/rules/architecture.md` の「Route Handler 以外から Lambda を呼ばない」）
+2. サーバーのページから自分の Route Handler を HTTP で呼ぶと、オリジンの解決と Cookie の転送が要るうえ、レート制限の鍵（`rate-limit.ts` は閲覧者のアドレスのヘッダで数える）が閲覧者のものでなくなり、全員が1つの鍵を共有する
+3. 絞り込みの選択肢と直近は一覧の全体を要し、絞り込みはブラウザで行う（W-3。2026-10-29 人間の明示選択（Q-5 = (a)））
+
+| 状態 | 持ち主 | 内容 |
+|---|---|---|
+| 利用者の区分・ロール | **サーバー**（C-3） | ページが解決し、props で渡す。クライアントで持たない |
+| 取得の結果 | クライアント（`useState`） | `loading` / `failed` / `loaded`（行の配列。本人一覧は自分の契約の配列も持つ） |
+| 絞り込みの条件 | クライアント（`useState`） | `{ contractId, yearMonth, state }`。空文字が「すべて」（9-4） |
+| ページ | クライアント（`useState`） | 1 始まり。条件を変えたら 1 へ戻す（9-9） |
+
+- **条件とページを URL に書き戻さない**（`router.push`・`replace` を呼ばない）。再読み込みすると既定へ戻る。例外は 9-12 の受け口のクエリ `contract` で、ページが読んで初期値として渡す（W-4）
+- 取得中は一覧の領域に `aria-busy="true"` を付け、文言を出さない（取得中の文言を定める仕様が無いため）
+- 応答の分類（`work-month-list-client.ts`）: 200 → `ok`、401 と 403 → `refresh`、それ以外の応答（429 を含む）・例外 → `failed`。`refresh` は L-4 と同じく `router.refresh()` を呼び、区分の判定をサーバーに任せる（C-4。別タブでのロール切替やセッションの失効のあと、開けない画面から既定の画面へ移る）。`failed` は `ErrorBanner` に `onRetry` を付けて出し、再試行は同じ GET をやり直すだけである（7-3）
+
+### W-3. 取得と絞り込みの置き場
+
+**事実**: ドメイン API の E-2 が受けるクエリは `engineerId`・`state`・`limit`・`offset` だけで（`domain-api-http-contract.md` AC-3）、BFF の R-2・R-3 が渡すのも `state`・`limit`・`offset` だけである（`bff-wiring.md` AC-6 の R-2・R-3 の行、`work-month-handlers.ts` の `listParameters`）。**契約・対象年月で絞る条件は、BFF にもドメイン API にも無い。** R-4 は要求から何も取らない（`demo-data-reset.md` AC-7-6）。絞り込みの置き場は 8-6 が実装工程に委ねている。
+
+**絞り込みはブラウザで行い、一覧は全件を取得する。BFF とドメイン API は変えない。** 出所: 2026-10-29 人間の明示選択（Q-5 = (a)）。以下はその設計である（全件の取り方・並び・選択肢・ページの分け方は AI 起案）。
+
+- **全件の取得**: `fetchAllWorkMonths(path, fetchImpl)` は `path?offset=N` を GET し、`limit` を送らない（上限はドメイン API の実装の値であり契約で固定されていない＝同 AC-3-5。既定の件数で返った分を受け取る）。次の `offset` は「今の `offset` ＋ 受け取った `items` の件数」とし、`offset` が `total` 以上になるか `items` が空になったら止める。行は `(contractId, yearMonth)` で重複を除き、先に来たものを残す
+- **並び**: 応答の並び（対象年月の降順、同じ年月は契約識別子の昇順。同 AC-3-4）を保ち、ブラウザで並べ替えない。絞り込みは並びを保つ（4-1・9-8）
+- **絞り込み**: 状態を含むすべての条件をブラウザで当てる（R-2 に `state` を送らない。選択肢と直近が絞る前の全体を要するため）
+- **選択肢**: 本人一覧の契約は R-10（`GET /api/contracts?yearMonth=<JST の当月>`）の `items`。E-8 は `yearMonth` を必須とするが、返す契約の集合は `yearMonth` によらない（`domain-api-http-contract.md` 12-3・12-16）。承認待ち一覧の契約と、両一覧の対象年月は取得した行から作る（9-6・9-6-a）
+- **ページ**: 絞った後の行を `WORK_MONTH_LIST_PAGE_SIZE` 件ずつに分ける。値は `lib/work-month-list.ts` の定数で持ち、仕様の値ではない（4-2・8-4 が実装工程に委ねた）。テストは定数を輸入して使い、数値を書かない
+- **デモ勤務月群**: R-4 を1回呼ぶだけで、ページを送らない（R-4 はクエリを読まない）。絞り込みもページも置かない（9-3。AC-4 は本人一覧と承認待ち一覧が対象）
+
+### W-4. 本人一覧（`own-work-months-view.tsx`）
+
+並びはハンドオフ `My Months (Engineer).dc.html` に倣う —— 見出し → (取得エラー | 0件 | 通常: 直近 → 絞り込み → (絞り込みの結果が0件 | 表と `Pagination`))。
+
+| 要素 | 部品 | 文言・内容 | 出所 | AC |
+|---|---|---|---|---|
+| 見出し | `<h1>` と説明 | 「自分の勤務月」／「担当しているすべての契約の勤務月です。」 | ハンドオフ 25・26 行 | — |
+| 取得エラー | `ErrorBanner`（`onRetry` 付き） | 「勤務月を読み込めませんでした。通信状態を確認して、もう一度お試しください。」 | ハンドオフ 31 行 | 7-3 |
+| 0件 | `EmptyState` | title「勤務月がまだありません」、description「稼働実績を入力すると、その月の勤務月がここに表示されます。」、action は `initial-entry-action.tsx`（下の「初回入力の導線」） | ハンドオフ 36・158 行 | 6-2・7-1 |
+| 直近 | `Card` | 「直近の勤務月」の見出しに、直近の行の対象年月・契約表示名・`StatusBadge` を添え、リンク「直近の勤務月を開く」→ `workMonthPath`。直近は絞る前の全体の先頭（`latestRow`）。ハンドオフの状態ごとの補足文（122 行）は採らない（要求が無い） | ハンドオフ 46・54 行 | 6-1・6-3 |
+| 絞り込み | `role="search"` の領域と `work-month-filters.tsx` | 領域の名「勤務月の絞り込み」。`SelectField` 3つ（ラベル「契約」「対象年月」「状態」、`placeholder`「すべて」＝値は空文字）。状態の選択肢の表示は `StatusBadge` と同じ語。条件が1つ以上あるときだけ `Button`「条件をクリア」 | ハンドオフ 60・63・69・75・81・160 行 | 9-1・9-4・9-6・9-6-a・9-6-b・9-11・9-14 |
+| 絞り込みの結果が0件 | `EmptyState` | title「条件に合う勤務月はありません」、description「絞り込みの条件を変えるか、クリアしてください。」、action は `Button`「条件をクリア」。初回入力のリンクを出さない | ハンドオフ 88・184 行 | 9-10 |
+| 表 | `Card` と `work-month-table.tsx` | 名「すべての勤務月」の `<table>`。列見出し「契約」「対象年月」「状態」と、視覚的に隠した「操作」。各行のリンク「開く」のアクセシブル名は「`<契約表示名>` × `<対象年月>`を開く」→ `workMonthPath` | ハンドオフ 94・96・103・171 行 | 1-2・5-1 |
+| 対象年月の表示 | `formatYearMonth` | `2026-07` → 「2026年7月」 | ハンドオフ 155 行 | 1-2・9-6-a |
+| ページ | `Pagination` | 表があるときに出す。`pageCount` は `max(1, ceil(件数 / WORK_MONTH_LIST_PAGE_SIZE))` | — | 4-2・9-9 |
+
+- **初回入力の導線**（`initial-entry-action.tsx`）: サイドバーの「今月の入力」と同じ `thisMonthEntry(自分の契約)`（W-6）の結果で出し分ける。出所: 2026-10-29 人間の明示選択（Q-8 = 初回入力のリンクにも同じ選択の部品を使い回す。契約が0件の技術者には初回入力のリンクを出さない）
+  - **共有するもの**: 出し分けの関数 `thisMonthEntry` と、開いたときの見え方（`design-system.md` 6-13-v と同じ観測可能な形）だけである。部品は `SideNav` と共有せず、画面固有の `app/_components/initial-entry-action.tsx` に置く（`SideNav` は `<nav>` を出すため `EmptyState` の中に置けない）。`design-system.md` の部品台帳（AC-5-1）と AC-6 の表は変えない。出所: 2026-10-29 人間の明示選択（Q-9 = (a)）
+  - `hidden`（自分の契約が0件）: action を**出さない**。`EmptyState` の title と description だけを示し、押すと行き止まりになる導線を作らない
+  - `link`（1件）: リンク「稼働実績を入力する」→ その契約の `thisMonthPath`（W-7）
+  - `choice`（2件以上）: `button`「稼働実績を入力する」（`aria-expanded`）を押すと、自分の契約の選択肢（契約表示名のリンク。それぞれ その契約の `thisMonthPath`）を開く。選ぶ前に勤務月画面を開かない（10-9-b と同じ）。開いたときの見え方は `design-system.md` 6-13-v と同じ（描画した直後は閉じていて選択肢のリンクが文書に無い、押すと `aria-expanded="true"` になり選択肢が `options` の順で `button` より後に現れる、再び押すと閉じる）。出所: 2026-10-29 人間の明示選択（Q-9 = (a)）。**6-13-v の観測可能な形そのものは AI の起案である**（`design-system.md` 6-13-v）
+  - 当月は描画の時点で決めない。リンクが押された時点で W-7 の経路が決める（Q-10）
+- 件数の表示（ハンドオフ 183 行の「全 N 件」）は出さない（8-7 が要求しない）
+- **9-12 の受け口**: クエリ `contract`（`ownWorkMonthsPath({ contractId })` が組み立てる）。自分の契約の取得が済んでから、値が契約の選択肢にあれば契約の条件の初期値とし、**無ければ無視して「すべて」とする**（`SelectField` が選択肢の外の値を表せないため。AI 起案）。クエリの名前は 9-12 が固定しない（`design-system.md` 8-4）
+- 自分の契約（R-10）の取得に失敗したときも、取得エラーとして扱う（行だけを出して契約の選択肢を欠いた状態にしない）
+
+### W-5. 承認待ち一覧・デモ勤務月群
+
+**承認待ち一覧（`pending-approvals-view.tsx`）** —— 本人一覧から直近を除き、条件を契約・対象年月の2つにしたもの。
+
+| 要素 | 文言・内容 | 出所 | AC |
+|---|---|---|---|
+| 見出し | 「承認待ちの勤務月」／「勤務月を開いて内容を確認し、承認または差し戻しをしてください。」 | ハンドオフ `Pending Approvals (Approver).dc.html` 25・26 行 | — |
+| 取得エラー | `ErrorBanner`（`onRetry` 付き）。本人一覧と同じ「勤務月を読み込めませんでした。通信状態を確認して、もう一度お試しください。」 | 2026-10-29 人間の明示選択（Q-6 = (a) 本人一覧の文言を流用） | 7-3 |
+| 0件 | `EmptyState` title「承認待ちの勤務月はありません」、description「技術者が勤務月を締めると、ここに表示されます。」。action を持たない | 同 31 行 | 7-2 |
+| 絞り込み | 領域の名「勤務月の絞り込み」、`SelectField`「契約」「対象年月」、「条件をクリア」。状態の条件を出さない | 同 37・40・46・52 行 | 9-2・9-6・9-6-a・9-11・9-14 |
+| 絞り込みの結果が0件 | 本人一覧と同じ文言 | 同 59 行 | 9-10 |
+| 表 | 名「承認待ちの勤務月」。列と行のリンクは本人一覧と同じ。状態の列に `StatusBadge`（`PendingApproval`） | 同 65・67・74 行 | 2-3・5-1 |
+
+- R-3 が返した行をそのまま載せ、自分が技術者である勤務月を除かない（2-5）。行に技術者の識別子は無い（`domain-api-http-contract.md` AC-10-2）
+- `PendingApproval` 以外を載せないことは R-3 が `state` を固定することで担保される（`bff-wiring.md` 6-c）。画面は状態で行を除かない
+
+**デモ勤務月群（`demo-work-months-view.tsx`）**
+
+| 要素 | 文言・内容 | 出所 | AC |
+|---|---|---|---|
+| 注記 | `role="note"` に「デモ用のサンプルです（閲覧のみ・毎日リセットされます）」「ゲストとして閲覧しています。入力・締め・承認はできません。」 | ハンドオフ `Guest Demo List.dc.html` 25〜27 行 | 3-2・3-5 |
+| 見出し・表の名 | 「サンプル勤務月」 | 同 31・35 行 | — |
+| 表 | 列は本人一覧と同じ。各行のリンクは勤務月画面へ。リンクの文言は本人一覧と同じ「開く」で、アクセシブル名は「`<契約表示名>` × `<対象年月>`を開く」（ハンドオフの「表示する」は採らない） | 2026-10-29 人間の明示選択（Q-6 = (a) 行のリンクは「開く」） | 3-1・3-2・5-1 |
+| 取得エラー | `ErrorBanner`（`onRetry` 付き）。本人一覧と同じ「勤務月を読み込めませんでした。通信状態を確認して、もう一度お試しください。」 | 2026-10-29 人間の明示選択（Q-6 = (a) 本人一覧の文言を流用） | 7-3 |
+| 0件 | `EmptyState` の title「サンプル勤務月はありません」。description と action を持たない | 2026-10-29 人間の明示選択（Q-6 = (a) デモ0件は「サンプル勤務月はありません」） | — |
+
+- 絞り込み・ページ・直近を置かない（9-3）
+
+### W-6. サイドバー（`side-nav-items.ts`・`app-side-nav.tsx`）
+
+`sideNavItems({ viewer, current, thisMonth })` が `SideNav` の `items` と `footerItems` を返す純粋な関数である。
+
+- `current` は開いている画面のキー（`this-month` / `own-work-months` / `contracts` / `work-trends` / `pending-approvals` / `demo-work-months` / `help`）。一覧の3画面はそれぞれのキーを渡す。勤務月画面での選び方（10-5 の後半）は画面3 の節が決め、同じ関数へキーを渡す
+- 項目の集合・文言・並びは 10-2〜10-4・10-6 をそのまま表にする（最下部の「ヘルプ」は `footerItems`）。承認担当者一覧の項目を作らない（10-4-a）
+- `href`: 本人の勤務月一覧・承認待ち一覧・デモ勤務月群・ヘルプ・契約一覧・稼働の推移は C-2。ヘルプ・契約一覧・稼働の推移はページが入るまで行き先が 404 になるが、項目は 10-2〜10-4 どおり出す。出所: 2026-10-29 人間の明示選択（Q-7 = (a)）
+- **今月の入力**（技術者だけ）: `thisMonth` は `thisMonthEntry(自分の契約)` の結果で、`{ kind: "hidden" }`・`{ kind: "link"; href }`・`{ kind: "choice"; options: { label; href }[] }` のいずれか。`app-side-nav.tsx` が R-10 で自分の契約を取り、0件なら `hidden`（10-9-d）、1件ならその契約の `thisMonthPath`（W-7）の `link`（10-9-a）、2件以上なら `choice`（10-9-b）。`choice` の `options` は R-10 の `items` の全部を応答の順のまま並べ、`label` は契約表示名、`href` はその契約の `thisMonthPath` とする（10-9-c。契約期間で絞らない）。取得中と取得の失敗のときは `hidden` とする（AI 起案）。行き先に年月を含めないのは、当月を押された時点でサーバーが決めるためである。出所: 2026-10-29 人間の明示選択（Q-10 = 「今月の入力」と初回入力のリンクは年月を含まない経路を行き先にする。`SideNav` はリンク（`href`）のまま。`design-system.md` 6-13 は再改定しない）
+  - `sideNavItems` は `link` を `SideNavItem` の `{ label: "今月の入力", href, current }` に、`choice` を選択肢を開く項目 `{ label: "今月の入力", options, current }` に写す。`SideNav` が「今月の入力」の下に契約の選択肢を開く（`design-system.md` 6-13-v）。**選択の画面は挟まない**。出所: 2026-10-29 人間の明示選択（Q-8 = 契約が複数あるときは SideNav の「今月の入力」の下に契約の選択肢を開く。選択の画面を挟まないため `docs/rules/scope.md`「列挙に無い画面は加えない」に当たらない）
+  - **契約が0件の技術者には「今月の入力」を出さない**（10-9-d。押すと行き止まりになる導線を作らない）。出所: 2026-10-29 人間の明示選択（Q-8 付随）
+- **当月の決め方**: サイドバーと初回入力は当月を持たない。当月は W-7 の経路が、押された時点で決める。**月の境目に合わせたタイマーで描き直す設計は取り下げた**。出所: 2026-10-29 人間の明示選択（Q-10）
+- 選択中は `current` に対応する項目だけ（10-5）
+- ロール切替の後（10-8）は、L-4 の `router.refresh()` でページが新しい区分を props で渡し直すため、項目も描き直される。サイドバー自身はロールを持たない
+
+### W-7. 今月の入力の経路（`/this-month`）
+
+出所: 2026-10-29 人間の明示選択（Q-10 = 「今月の入力」と初回入力のリンクは、年月を含まない経路を行き先にする。押された時点でサーバーが JST（`Asia/Tokyo`）の当月を計算し、その契約 × 当月の勤務月画面へ 302 で送る。この経路は何も表示せず、送り先へ回すだけで画面を増やさない。契約 ID はクエリで受け取るが、それが本人の契約かをサーバー側で確かめずに送らない（他人の契約・ゲスト・未認証には送らない））。パスとクエリの名前は C-2 のとおり AI の起案である。
+
+- **画面ではない**: 何も表示せず、`ScreenId`（C-4）に加えない。`login-ui.md` 6-7 の画面の集合を増やさない（`docs/rules/scope.md`「列挙に無い画面は加えない」に当たらない）
+- **当月**: 要求を受けた時点の時刻で `currentJstYearMonth(now)` を呼ぶ。`now` は注入できる形にする（T-2 の境目のテストのため）。`currentJstYearMonth(now)` は `now` に 9 時間を足した UTC の年月を返す（JST は夏時間を持たない。AI 起案）。これにより、当月の判定が「選んだ時点の JST の日付による」（10-9）
+- **送り先**: 本人の契約であると確かめられたとき、`workMonthPath(contractId, 当月)` へ 302 で送る（10-9・10-9-a・10-9-c）。当月の勤務月が未生成でも送る（10-9-e。生成は勤務月画面でもしない）
+- **状態を変えない**: GET だけを受け、勤務月の状態・稼働実績を変えない（10-9-g）
+- **Q-11 待ち（推測で埋めていない）**: (1) 経路を Route Handler とページのどちらで置くか、(2) 本人の契約であることをどう確かめるか、(3) 本人の契約でない・契約 ID が無い／不正・ゲスト・未認証・取得エラー・認証の構成の欠落のときの応答。既存の仕様の条文だけでは決まらない（下の「人間の決定を待っている論点」の Q-11）
+
+---
+
+## T. テストの置き場
+
+### T-0. 差し替えの方針（全画面）
+
+出所: 2026-10-29 人間の明示選択（テストの差し替えの方針）。画面1〜画面3 のすべてのテストに掛かる。
+
+- **T-0-1. `vi.mock` は Next のランタイムのモジュール（`next/headers`・`next/navigation` など）の差し替えに限って使ってよい。** 自前のモジュール（`@/lib/*`・`./_lib/*`・`./_components/*` など）を `vi.mock` で差し替えない。自前のモジュールは、手書きの Fake を引数・props で注入して差し替える（`docs/rules/development-process.md` の「テストダブルは手書きのインメモリ Fake」と同じ考え方）。ブラウザの大域（`fetch`・時計）はモジュールではないため `vi.mock` の対象にならない。手書きの Fake を `globalThis.fetch` に代入して後で戻す・`vi.useFakeTimers` で時計を進める形で差し替える（この1文は方針からの帰結として AI が書いた）。2026-10-29 の時点で T-0-1 に反するのは `apps/web/src/app/page.test.tsx` だけである（T-0-3）
+- **T-0-2. 注入の形** —— App Router の `page.tsx` の default export は、Next が渡す `params`・`searchParams` 以外の props を受け取れない。また `page.tsx` は default export と Next が定める名前（`metadata` 等）以外を輸出できない。そこで、ページを**薄い層**と**本体**に分ける:
+  - `app/_lib/screen-deps.ts`（サーバー専用）に型 `ScreenDeps = { getCurrentViewer: () => Promise<ResolveViewerResult>; getTheme: () => Promise<Theme> }` と、本物の依存 `serverScreenDeps`（`getCurrentViewer` は `current-viewer.ts` のもの、`getTheme` は `cookies()` → `resolveTheme`）を置く
+  - 本体は `app/_components/<画面>-screen.tsx` に置く async 関数で、`ScreenDeps`（と、要る画面は `searchParams` を待った値）を引数で受け、判定（C-3・C-4）と描画の組み立てを持つ。本体は `screen-deps.ts` も `current-viewer.ts` も輸入しない（輸入すると `next/headers` がテストへ入る）
+  - `page.tsx` は `serverScreenDeps` を本体へ渡して戻り値を返すだけにする。テストは本体を輸入し、手書きの Fake の `ScreenDeps` を渡して呼ぶ。`redirect` は `next/navigation` なので `vi.mock` してよい（T-0-1）
+  - 薄い層（`page.tsx`・`screen-deps.ts`・`current-viewer.ts`）はテストしない。分岐を持たない配線であり、限界として記録する
+- **T-0-3. 画面1 の是正（範囲外。後続で行う）** —— コミット済みの `apps/web/src/app/page.test.tsx` は、自前のモジュール `./_lib/current-viewer` を `vi.mock` しており、T-0-1 に反する。**本 Issue の画面2 の工程の範囲外とし、後続の `test:`／`refactor:` で是正する。** 是正の形は T-0-2 のとおりで、設計の変更点は次のとおり:
+  - **L-1**: `app/page.tsx` の責務（判定・描画）を新しい本体 `app/_components/login-screen.tsx` の `loginScreen(deps: ScreenDeps)` へ移し、`app/page.tsx` は `loginScreen(serverScreenDeps)` を返すだけにする。テストは `page.test.tsx` を `app/_components/login-screen.test.tsx` へ移し、`vi.mock("./_lib/current-viewer")` と `vi.mock("next/headers")` をやめて Fake の `ScreenDeps` を渡す（`next/navigation` の `vi.mock` は残してよい）。担う AC（6-10・6-10-a・9-1）は変えない
+  - **C-3**: `getCurrentViewer()` は `current-viewer.ts` のまま変えない。変えるのは「ページから `getCurrentViewer()` を呼ぶ」の箇所で、本体は `deps.getCurrentViewer()` を呼び、`serverScreenDeps` が `getCurrentViewer` を束ねる形にする（React の `cache` による1要求1回は保たれる）
+  - 是正が入るまで、L-1・C-3・T-1 の本文は画面1 のコミット済みの実装の形のまま置く
+
+### T-1. 画面1
 
 | テストファイル | 担う AC | 備考 |
 |---|---|---|
@@ -230,7 +429,7 @@ sequenceDiagram
 | `apps/web/src/app/_components/role-switch-control.test.tsx` | 6-1・6-2・6-6・7-2・9-5 | 204 で `refresh` がちょうど1回・`push`/`replace` は0回、失敗で `role="alert"` が「ロールを切り替えられませんでした。」を持って出て `refresh` 0回、通信中の再入を無視、`et_theme` を変えない。`next/navigation` は差し替える |
 | `apps/web/src/app/_components/theme-control.test.tsx` | 9-4、`design-system.md` 12-3 | 選択後に `data-theme` と保存の文字列が変わる。jsdom は既定の http の URL で `Secure` 付き Cookie を保存しないことがあるため、`document.cookie` を読むなら https の URL で動かすか、書き込みを差し替えて観測する（手段は tester が選ぶ） |
 | `apps/web/src/app/_components/login-entries.test.tsx` | 1-1・1-2・2-3・3-1・4-1・4-3 | 入口がちょうど3つ、SMS を出さない、パスワード欄・フォームが無い、各入口の行き先、注記「入力・締め・承認はできません。」が出る。**入口はアクセシブル名で引いて区別する**（L-2。(b)(c) は同じ `href` のため行き先では区別できない）—— 「ゲストとして続行（閲覧のみ）」→ `/demo`、「メールアドレスでログイン」→ `/api/auth/sign-in`、「Google でログイン」→ `/api/auth/sign-in` がそれぞれちょうど1つ |
-| `apps/web/src/app/page.test.tsx` | 6-10・6-10-a・9-1 | `getCurrentViewer` と `next/navigation` の `redirect` を差し替え、技術者・承認者で既定の画面へ `redirect`、ゲスト（検証に失敗したセッションを含む＝`resolveViewer` が `guest` を返した場合）で描画されること、`misconfigured` で例外を投げ `redirect` も描画もしないこと（C-3。Q-4 (ii) = (a)）を読む |
+| `apps/web/src/app/page.test.tsx`（T-0-3 の是正で `app/_components/login-screen.test.tsx` へ移す） | 6-10・6-10-a・9-1 | `getCurrentViewer` と `next/navigation` の `redirect` を差し替え（`getCurrentViewer` の `vi.mock` は T-0-1 に反し、T-0-3 で Fake の注入へ改める）、技術者・承認者で既定の画面へ `redirect`、ゲスト（検証に失敗したセッションを含む＝`resolveViewer` が `guest` を返した場合）で描画されること、`misconfigured` で例外を投げ `redirect` も描画もしないこと（C-3。Q-4 (ii) = (a)）を読む |
 | `apps/web/src/lib/session-cookie.test.ts`（既存へ追加、無ければ新規） | 9-5 | `expiredAuthCookies()` に `et_theme` が含まれない |
 
 テストで担保しないもの（限界）: ホストされたサインイン画面の中身（2-1 の新規登録・2-2 の TOTP・3-2 のシークレット。`cognito-auth-infra.md` 11-11）、実ブラウザでの Cookie の保存と送信（`design-system.md` 11-43）、`router.refresh()` の後に Next がサーバーの `redirect()` を実際の遷移にすること（Next の振る舞い）。6-2・6-4・6-6 のうち操作要素の出し分けは画面2・3 の節が担う。
@@ -241,10 +440,56 @@ sequenceDiagram
 - **Google の入口は Google へ直接は届かない（3-1 の経路）。** (c) は (b) と同じ `/api/auth/sign-in` へ遷移し、Google の選択肢はホストされた画面が出す。`login-entries.test.tsx` が確かめるのは (c) が文言で区別されて存在し `/api/auth/sign-in` を指すことまでで、その先で Google が選べることは見ない。出所: 2026-10-29 人間の明示選択（Q-2 = (a)）
 - **検証に失敗したセッション Cookie は、ページを開いただけでは消えない。** ページはゲストとして描くが Cookie を書けず、破棄は次に Route Handler を通る要求まで遅れる。出所: 2026-10-29 人間の明示選択（Q-4 (i) = (a)）
 
+### T-2. 画面2
+
+AC 番号は、ことわりの無いものは `work-month-listing-ui.md` のもの。差し替えは T-0 に従う（`vi.mock` は `next/navigation` 等の Next のランタイムのモジュールに限る。`fetch` は手書きの Fake を `globalThis.fetch` に代入し、時刻は引数で注入するか `vi.useFakeTimers` で固める）。「Q-11 待ち」の部分は、Q-11 が決まるまで tester へ渡さない（その行の他の部分は渡してよい）。
+
+| テストファイル | 担う AC | 備考 |
+|---|---|---|
+| `apps/web/src/lib/work-month-list.test.ts` | 4-1・4-2・6-3・9-4・9-5・9-6・9-6-a・9-6-b・9-7・9-8・9-11 | 純粋関数を表で読む。絞り込みは既定で入力と同じ行を同じ順で返す（9-4）、条件の積（9-5）、絞った後も入力の順を保つ（4-1・9-8）。対象年月の選択肢は重複なし・降順（9-6-a）、承認待ちの契約の選択肢は重複なし（9-6）。状態の選択肢は3つで、表示が `StatusBadge` の描く語と一致する（9-6-b。期待値を字面で書かず、`StatusBadge` を描いて比べる）。ページ分けは `WORK_MONTH_LIST_PAGE_SIZE` を輸入し、境界（ちょうど1ページ・1件超え・0件で `pageCount` が 1）を読む。直近は条件を指定しても絞る前の先頭（6-3）。`formatYearMonth`（`2026-07` → 「2026年7月」） |
+| `apps/web/src/lib/work-month-list-client.test.ts` | 1-1・7-3 | 本人一覧のパスに `engineerId` を付けない、`limit` も `state` も送らない（W-3）、`offset` を `total` まで送る（2ページ・`items` が空で止まる・重複の除去で先に来た行を残す）、承認待ち・デモのパス（デモは1回だけ送る）、R-10 に JST の当月の `yearMonth` を付ける。200・401・403・429・500・例外の分類（`ok`／`refresh`／`failed`） |
+| `apps/web/src/lib/jst-month.test.ts` | 10-9 | `currentJstYearMonth` の境界: `2026-10-31T14:59:59Z` → `2026-10`、`2026-10-31T15:00:00Z` → `2026-11`、年をまたぐ `2026-12-31T14:59:59Z` → `2026-12`、`2026-12-31T15:00:00Z` → `2027-01` |
+| `apps/web/src/lib/screen-routes.test.ts` | 5-1・9-12・10-9 | `workMonthPath` が各セグメントを符号化する、`ownWorkMonthsPath({ contractId })` がクエリ `contract` を持つ・指定が無ければクエリを持たない。`thisMonthPath("c-001")` が `/this-month?contract=c-001` と一致する（パス `/this-month` とクエリ `contract` だけを持ち、年月を含まない）。契約 ID に `&`・`=`・`/` を含めても、クエリ `contract` の値1つとして復号でき、別のパラメータを生じない（C-2。パスとクエリの名前は AI 起案）。ヘルプ・契約一覧・稼働の推移のパスが `/help`・`/contracts`・`/work-trends`（C-2。Q-7 = (a)） |
+| `apps/web/src/lib/this-month-entry.test.ts` | 6-2・7-1・10-9-a・10-9-b・10-9-c・10-9-d | 契約0件 → `hidden`、1件 → `link`（その契約の `thisMonthPath`）、2件と3件 → `choice`（`options` の数が契約の数と同じ、並びが入力の順、`label` が契約表示名、`href` がそれぞれの契約の `thisMonthPath`）。入力の契約を除かない（10-9-c。契約期間で絞らない）。`thisMonthEntry` は年月を引数に取らない（Q-10） |
+| `apps/web/src/lib/side-nav-items.test.ts` | 10-2・10-3・10-4・10-4-a・10-5（一覧の3画面）・10-6・10-9-a〜10-9-d | 区分3種 × 開いている画面のキーの表で、項目の文言・並び・`footerItems`・`current` がちょうど1つ真であることを読む。`href` は C-2 の6つ（ヘルプ・契約一覧・稼働の推移を含む）。承認者・ゲストに「今月の入力」が無い。技術者で `thisMonth` が `hidden` のとき「今月の入力」が無く、`link` のとき `href` を持つ項目、`choice` のとき `href` を持たず `options` を持つ項目になる |
+| `apps/web/src/app/_components/app-side-nav.test.tsx` | 10-1・10-7・10-9-a・10-9-b・10-9-c・10-9-d・10-9-g | 技術者で契約1件 → 「今月の入力」がリンクで、行き先がその契約の `thisMonthPath`（W-7）。契約2件 → 「今月の入力」が `button` のロールで `aria-expanded="false"`、押す前に「今月の入力」の選択肢のリンク（`thisMonthPath` を指すもの）も勤務月画面へのリンクも文書に無い（10-9-b）、押すと契約表示名の `link` が契約の数だけ R-10 の順で現れ、それぞれがその契約の `thisMonthPath` を指す（10-9-c）。0件・取得の失敗 → 「今月の入力」が無い（10-9-d）。承認者・ゲストは契約を取得しない（`fetch` が呼ばれない）。開閉と描画で GET 以外を送らない（10-7・10-9-g）。描画したまま時計を JST の月の境目（`2026-10-31T15:00:00Z`）の前後へ進めても、行き先の文字列が変わらない（行き先は年月を含まない。Q-10） |
+| `apps/web/src/components/side-nav.test.tsx`（既存へ追加） | `design-system.md` 6-13-iii・6-13-v（10-6-q） | 10-6-q の追記どおり。`href` を持つ項目と `options` を持つ項目を混ぜた描画で、閉じた並び・`button` の名・`aria-expanded`・開いた後の選択肢の `link` の数・順・名・`href`・位置・再び押して閉じること、`current` が真のとき `button` に `aria-current="page"` |
+| `apps/web/src/components/side-nav-marker-color.test.tsx`（既存へ追加） | `design-system.md` 6-13-iv（10-3-p） | 10-3-p の追記どおり。`options` を持つ項目を1つ加えた閉じた描画で、その `button` の丸印を読み、(iii) を `link` と `button` の数の和で読む。改定前の2通りの描画は変えない |
+| `apps/web/src/app/_components/work-month-table.test.tsx` | 1-2・2-3・5-1 | 各行に契約表示名・「YYYY年M月」・状態バッジ、リンクの文言「開く」とアクセシブル名「`<契約表示名>` × `<対象年月>`を開く」と行き先（`workMonthPath`） |
+| `apps/web/src/app/_components/initial-entry-action.test.tsx` | 6-2・7-1・10-9-b・10-9-c | 契約0件で何も出さない（`container.innerHTML` が空）、1件でリンク「稼働実績を入力する」がその契約の `thisMonthPath` を指す。2件以上で、`button`「稼働実績を入力する」が `aria-expanded="false"` で出て、押す前に選択肢のリンクが文書に無い（`link` のロールで問い合わせられない）、押すと `aria-expanded="true"` になり、契約表示名の `link` が契約の数だけ入力の順で、文書の順で `button` より後に現れ、それぞれがその契約の `thisMonthPath` を指す、再び押すと `aria-expanded="false"` に戻り選択肢のリンクが文書から消える（W-4。Q-9 = (a)。見え方は `design-system.md` 6-13-v と同じ）。開閉で `fetch` を呼ばない |
+| 今月の入力の経路のテスト（**ファイルの置き場と、本人の契約の確かめ方・確かめられなかったときの応答の行は Q-11 待ち**） | 10-9・10-9-a・10-9-c・10-9-g | 時刻を注入して、本人の契約 `c-001` について、`2026-10-31T14:59:59Z` → `workMonthPath("c-001", "2026-10")` へ 302、`2026-10-31T15:00:00Z` → `workMonthPath("c-001", "2026-11")` へ 302、`2026-12-31T15:00:00Z` → `workMonthPath("c-001", "2027-01")` へ 302（JST の境目で当月が切り替わる。Q-10）。302 のほかに本文を描かない。勤務月の状態を変える呼び出しをしない（10-9-g）。**本人の契約でない・契約 ID が無い／不正・ゲスト・未認証・取得エラー・構成の欠落の各行は Q-11 待ち** |
+| `apps/web/src/app/_components/own-work-months-view.test.tsx` | 1-2・1-3・4-1・4-2・5-1・6-1・6-2・7-1・7-3・9-1・9-4・9-9・9-10・9-11・9-12・9-13・9-14 | 3つの状態の行がすべて載る（1-3）、直近のリンクが絞り込みに関わらず先頭の勤務月を指す、勤務月0件で `EmptyState` が出て、契約1件なら初回入力のリンクがあり、契約0件なら初回入力の導線が無い（6-2・7-1。Q-8 付随）、絞り込みの結果0件のときは初回入力の導線が無い（9-10）、条件を変えると1ページ目へ戻る（9-9）、条件の解除の出し分け（9-11）、クエリ `contract` の初期値（選択肢にある値・無い値）、R-2 と R-10 のどちらの失敗でも `role="alert"` が「勤務月を読み込めませんでした。通信状態を確認して、もう一度お試しください。」を持って出て、再試行で再び GET する（7-3）、401 で `refresh` がちょうど1回、どの操作でも GET 以外を送らない（9-13） |
+| `apps/web/src/app/_components/pending-approvals-view.test.tsx` | 2-1・2-3・2-5・4-1・4-2・5-1・7-2・7-3・9-2・9-6・9-9・9-10・9-11 | 返った行をすべて載せる（2-5）、状態の条件が無い（9-2）、0件の文言と action が無い（7-2）、失敗で `role="alert"` が本人一覧と同じ文言を持って出て再試行で再び GET する（7-3。Q-6 = (a)） |
+| `apps/web/src/app/_components/demo-work-months-view.test.tsx` | 3-1・3-2・5-1・7-3・9-3 | 3状態の行が載る、各行のリンクが「開く」でアクセシブル名に契約表示名を含み勤務月画面を指す（Q-6 = (a)）、`role="search"` も `Pagination` も無い（9-3）、注記が出る、0件で title「サンプル勤務月はありません」だけの `EmptyState`（description・action が無い）、失敗で `role="alert"` が本人一覧と同じ文言を持って出て再試行で再び GET する（7-3。Q-6 = (a)） |
+| `apps/web/src/app/_components/own-work-months-screen.test.tsx`・`pending-approvals-screen.test.tsx`・`demo-work-months-screen.test.tsx` | 2-4・3-3・9-12、`login-ui.md` 6-9 | T-0-2 の形。本体へ手書きの Fake の `ScreenDeps` を渡し、`next/navigation` だけを `vi.mock` する（自前のモジュールを `vi.mock` しない）。開けない区分で既定の画面へ `redirect`、開ける区分で描く、`misconfigured` で例外を投げ `redirect` も描画もしない。本人一覧は `searchParams` の `contract` が文字列1つのときだけ `initialContractId` として渡し、無いとき・配列のときは渡さない |
+
+テストで担保しないもの（限界）:
+
+- 本人一覧に他の技術者の勤務月が載らないこと（1-1）と、承認待ち一覧に `PendingApproval` 以外が載らないこと（2-1・2-2・9-7）は、BFF とドメイン API が担保する（`bff-wiring.md` 6-b・6-c、`domain-api-http-contract.md` AC-3）。画面のテストが読むのは、要求に `engineerId` を付けないことまでである
+- 全件の取得の途中で一覧が変わると、行の抜け・重複が起こりうる（重複は除くが、抜けは検出しない）。取得の要求は件数に比例して増え、BFF のレート制限を他の要求と分け合う。出所: 2026-10-29 人間の明示選択（Q-5 = (a)）から生じる帰結
+- R-4 は要求を読まないため、デモ勤務月群はドメイン API の既定の件数までしか出ない。デモデータの勤務月はそれより少ない（`demo-data-reset.md`「デモデータの値」節）が、件数の比較はテストしない
+- 条件とページを URL に残さないため、再読み込みで既定へ戻る（W-2）
+- **ヘルプ・契約一覧・稼働の推移の項目は、各画面のページが入るまで 404 へ遷移する。** テストは `href` の文字列までを読み、遷移先のページの有無は読まない。出所: 2026-10-29 人間の明示選択（Q-7 = (a)。404 を受け入れた）
+- `SideNav` の選択肢を開く項目（6-13-v）を、外側を押したときや `Esc` で閉じるか、ページを移った後に開閉を保つかは定めておらず、読まない（`design-system.md` 6-13-v）
+
 ---
 
 ## 人間の決定を待っている論点
 
-**残る未決は無い。** Q-1〜Q-4 は 2026-10-29 に人間が明示選択で決め、各節へ反映した（Q-1 → L-2・L-3・L-4、Q-2 → L-2・T 節、Q-3 → L-2・T 節の限界、Q-4 → C-3・L-1・T 節）。
+Q-1〜Q-4 は 2026-10-29 に人間が明示選択で決め、各節へ反映した（Q-1 → L-2・L-3・L-4、Q-2 → L-2・T 節、Q-3 → L-2・T 節の限界、Q-4 → C-3・L-1・T 節）。
 
-ただし **C-2 の `/work-months`・`/pending-approvals`・`/demo` のパスは AI の起案のまま人間の承認前であり、レビューで人間が確かめる対象として残る**（C-2）。
+Q-5〜Q-8 とテストの差し替えの方針も 2026-10-29 に人間が明示選択で決め、各節へ反映した（Q-5 → W-2・W-3・T-2 の限界、Q-6 → W-5・T-2、Q-7 → C-2・W-6・T-2、Q-8 → W-1・W-4・W-6・T-2 と `design-system.md` 6-13 の改定（6-13 の行・6-13-ii〜6-13-v・10-3-p・10-6・10-6-q・11-7）、差し替えの方針 → T-0）。
+
+Q-9・Q-10 も 2026-10-29 に人間が明示選択で決め、各節へ反映した（Q-9 = (a) → W-1・W-4・T-2、Q-10 → C-2・W-1・W-4・W-6・W-7・T-2。Q-10 により、月の境目に合わせたタイマーで描き直す設計を W-6・T-2 の限界から取り下げた。`design-system.md` 6-13 は再改定していない）。
+
+C-2 の `/work-months`・`/pending-approvals`・`/demo`・`/work-months/[contractId]/[yearMonth]`・`/this-month?contract=<契約ID>` のパスと、W 節のうち出所を書いていない決定は AI の起案のまま人間の承認前であり、レビューで人間が確かめる対象として残る。`design-system.md` 6-13-v の観測可能な形（`button` のロール・`aria-expanded`・現れる位置・閉じると消えること）も AI の起案である。
+
+画面2 について、次の Q-11 が未決である。決まった時点で該当の節へ反映し、ここから消す。
+
+- **Q-11. 今月の入力の経路（W-7）の置き場と、本人の契約の確かめ方・確かめられなかったときの応答**（C-2・W-1・W-7・T-2 の経路のテスト）。Q-10 は「本人の契約かをサーバー側で確かめずに送らない」と決めたが、既存の仕様の条文のもとでは、改定なしに置ける形が無い:
+  - 本人の契約かを確かめるには契約の持ち主を知る必要があり、それはドメイン API の E-8（BFF では R-10。`bff-wiring.md` AC-6）を `engineerId` = 検証済みセッションの `sub` で呼ぶほかに手段が無い
+  - **ページ（`redirect()` する `page.tsx`）に置く場合**: ページは `lambda-client` を輸入できない（`bff-wiring.md` 1-2・13-6。本仕様 C-1）。緩めるには `docs/rules/architecture.md` の改訂が要る（同 13-6）。サーバーのページから自分の R-10 を HTTP で呼ぶ形は、どの仕様にも無く、オリジンの解決・Cookie の転送・レート制限の鍵（W-2 の理由2）の扱いを新たに決める必要がある
+  - **`src/app/api/` の外の Route Handler（`app/this-month/route.ts`）に置く場合**: `lambda-client` を輸入してよいのは `src/app/api/` 配下の Route Handler とそれが呼ぶ処理に限る（`bff-wiring.md` 1-2）。またレート制限の検査 5-a は `src/app/api/` 配下だけを走査するため、入口のレート制限（`docs/rules/cost-guardrails.md`「Route Handler | レート制限」・`bff-auth-termination.md` 11-12・`web-app-scaffold.md`「以後 Route Handler を足す Issue も、レート制限を通す」）が検査の外に出る
+  - **`src/app/api/` 配下の Route Handler に置く場合**: 新しい業務の Route Handler になり、`bff-wiring.md` の改定が要る —— 業務の Route Handler を「R-1〜R-11 の 11」とする用語と母集団（AC-6 の表・5-6・5-a・5-b・5-g）、応答をそのまま中継する U-2 (i)・AC-8-7 の写像（302 で送る経路は中継ではない）。`bff-auth-termination.md` P-10 は業務の Route Handler の仕様を `bff-wiring.md` に預けており、本仕様（実装設計）は BFF の Route Handler を変えないとしている（スコープの非対象）
+  - **確かめられなかったときの応答**は、どの置き場でも既存の条文に無い。`login-ui.md` 6-9 は「現在のロールで開けない画面を URL で開いた」ときの扱いであり、W-7 の経路は画面ではない（6-7 の集合に無い）ので直接は掛からない。R-10 の写像（`bff-wiring.md` 順3 の未認証 401 と Cookie の破棄・6-10 の承認者の 403・8-7 の 5xx と空の本文）は JSON の中継の応答であり、リンクを押した遷移の行き先としては素の応答の画面になる。とくに**他人の契約 ID・契約 ID が無い／不正**のときにどこへ送るかを定める条文は無い
+  - 選択肢: **(a)** `src/app/api/` 配下に新しい業務の Route Handler（R-12。E-8 を呼ぶ）として置き、`bff-wiring.md` を改定する。応答は、本人の契約なら勤務月画面へ 302、それ以外は既存の R-10 の写像（401＋Cookie の破棄・403・5xx の空の本文）に揃える／**(b)** (a) と同じ置き場で、確かめられなかったときは区分の既定の画面（`login-ui.md` 6-7-a）へ 302 で送る（6-9 に倣う。他人の契約 ID・契約 ID が無い／不正の技術者は本人の勤務月一覧へ。構成の欠落だけは 5xx のまま＝`bff-auth-termination.md` 7-5）。`bff-wiring.md` の改定に加え、写像の新しい扱いを決める／**(c)** ページに置き、サーバーのページが自分の R-10 を HTTP で呼ぶ。`bff-wiring.md` は変えないが、オリジン・Cookie の転送・レート制限の鍵の扱いを新たに決める（W-2 の理由2 を覆す）／**(d)** ページに置き、ページから `lambda-client` を呼べるよう `docs/rules/architecture.md` と `bff-wiring.md` 1-2・13-6 を改める（人間の承認事項）。いずれの選択肢でも、ゲスト・承認者・未認証・他人の契約 ID には勤務月画面へ送らない（Q-10）
