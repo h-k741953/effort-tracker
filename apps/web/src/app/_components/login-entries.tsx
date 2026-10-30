@@ -18,11 +18,11 @@ export function LoginEntries() {
         </Link>
         <p className="text-xs text-muted-foreground">入力・締め・承認はできません。</p>
       </div>
-      {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- 外部（Cognito）へ 302 する経路のため全体の遷移にする（L-2） */}
+      {/* 外部（Cognito）へ 302 する経路のため next/link を使わず、<a> で全体の遷移にする（L-2） */}
       <a href={SIGN_IN_PATH} className={ENTRY_CLASS}>
         メールアドレスでログイン
       </a>
-      {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- 同上 */}
+      {/* 同上 */}
       <a href={SIGN_IN_PATH} className={ENTRY_CLASS}>
         Google でログイン
       </a>
