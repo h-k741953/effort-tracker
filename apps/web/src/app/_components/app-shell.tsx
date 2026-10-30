@@ -1,7 +1,7 @@
 // docs/specs/web-screens-implementation-design.md W-1。値は props で受ける。ログイン画面からは使わない。
 
 import type { ReactNode } from "react";
-import type { SideNavCurrent } from "@/lib/side-nav-items";
+import type { SideNavCurrent, WorkMonthLocation } from "@/lib/side-nav-items";
 import type { Theme } from "@/lib/theme-cookie";
 import type { Viewer } from "@/lib/viewer";
 import { AppSideNav } from "./app-side-nav";
@@ -15,7 +15,7 @@ export function AppShell({
 }: {
   viewer: Viewer;
   theme: Theme;
-  current: SideNavCurrent;
+  current: SideNavCurrent | WorkMonthLocation;
   children: ReactNode;
 }) {
   return (

@@ -9,3 +9,10 @@ export function currentJstYearMonth(now: Date): string {
   const month = String(jst.getUTCMonth() + 1).padStart(2, "0");
   return `${year}-${month}`;
 }
+
+// docs/specs/web-screens-implementation-design.md M-11。与えた時刻の JST の当日 YYYY-MM-DD を返す。
+export function currentJstDate(now: Date): string {
+  const jst = new Date(now.getTime() + JST_OFFSET_MS);
+  const day = String(jst.getUTCDate()).padStart(2, "0");
+  return `${currentJstYearMonth(now)}-${day}`;
+}

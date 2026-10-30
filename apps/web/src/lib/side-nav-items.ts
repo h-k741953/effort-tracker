@@ -10,8 +10,10 @@ import {
   PENDING_APPROVALS_PATH,
   WORK_TRENDS_PATH,
 } from "./screen-routes";
+import { currentJstYearMonth } from "./jst-month";
 import type { ThisMonthEntry } from "./this-month-entry";
 import type { Viewer } from "./viewer";
+import type { ContractSummary } from "./work-month-list";
 
 export type SideNavCurrent =
   | "this-month"
@@ -59,4 +61,25 @@ export function sideNavItems(params: {
     ],
     footerItems,
   };
+}
+
+export interface WorkMonthLocation {
+  kind: "work-month";
+  contractId: string;
+  yearMonth: string;
+}
+
+// docs/specs/web-screens-implementation-design.md M-10。勤務月画面で選択中とする項目。
+export function workMonthSideNavCurrent(params: {
+  viewer: Viewer;
+  contractId: string;
+  yearMonth: string;
+  ownContracts: readonly ContractSummary[] | undefined;
+  now: Date;
+}): SideNavCurrent {
+  const { viewer, contractId, yearMonth, ownContracts, now } = params;
+  if (viewer.kind === "guest") return "demo-work-months";
+  if (viewer.role === "Approver") return "pending-approvals";
+  const own = ownContracts?.some((c) => c.contractId === contractId) ?? false;
+  return own && yearMonth === currentJstYearMonth(now) ? "this-month" : "own-work-months";
 }
