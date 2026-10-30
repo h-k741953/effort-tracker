@@ -4,19 +4,18 @@
 
 **要求（受け入れ条件）はこの仕様へ書き写さない。** 正解は各 UI 仕様（`login-ui.md` ほか）と `design-system.md`・`bff-auth-termination.md` にあり、本仕様は AC 番号で参照するだけである（ADR 0004）。本仕様が決めるのは実装設計に限る。
 
-- **決定者**: 実装設計の各決定は仕様工程（AI 起案。**人間の承認前**）。ただし文言・ログインの入口の行き先・ログイン失敗の担い手・区分の解決が失敗したときの扱い（本仕様の Q-1〜Q-4）と、画面2 の絞り込みの置き場・ハンドオフに無い文言・閲覧系の3画面のパス・「今月の入力」で契約が複数あるときの形（Q-5〜Q-8）、初回入力の部品の置き場（Q-9）、「今月の入力」と初回入力の行き先を年月を含まない経路にすること（Q-10）、テストの差し替えの方針（T-0）は、**2026-10-29 に人間が明示選択で決めた**。今月の入力の経路の置き場と、本人の契約を確かめる場所（Q-11）は、**2026-10-30 に人間が明示選択で決めた**。決定は該当の節の本文に、出所「2026-10-29（または 2026-10-30）人間の明示選択（Q-n = …）」を添えて置く。ここでいう Q-n は**本仕様の論点の番号**であり、P-1 が引く `cognito-auth-infra.md` の Q-1 とは別物である
-- **日付**: 2026-10-29（画面1 の節を起こし、同日に Q-1〜Q-4 の決定を反映した。同日、画面2 の節＝W 節を足し、同日に Q-5〜Q-8 とテストの差し替えの方針の決定を反映した。Q-8 に伴い `design-system.md` 6-13 を改定した。同日、Q-9・Q-10 の決定を反映し、月の境目に合わせたタイマーで描き直す設計を取り下げた。Q-10 のうち経路の置き場と本人の契約の確かめ方は Q-11 として残した。2026-10-30、Q-11 = (e) の決定を C-2・W-1・W-7・T-2 へ反映し、W-8（画面2 の関数の形と props）を足し、T-0-3 の是正が済んだことを L-1・C-3・T-0・T-1 へ反映した。W 節のうち出所を書いていない決定は AI 起案で人間の承認前である。画面3 の節は後で追記する）
-- **前提の仕様**: `login-ui.md`／`design-system.md`（AC-5・AC-6（6-13 は 2026-10-29 改定後）・AC-8・AC-12）／`bff-auth-termination.md`（AC-5-5・AC-5-11・AC-11-2）／`work-month-listing-ui.md`（AC-1〜AC-10。W 節）／`bff-wiring.md` AC-6 の R-2〜R-4・R-10／`domain-api-http-contract.md` AC-3・AC-10-2・AC-12
+- **決定者**: 実装設計の各決定は仕様工程（AI 起案。**人間の承認前**）。ただし文言・ログインの入口の行き先・ログイン失敗の担い手・区分の解決が失敗したときの扱い（本仕様の Q-1〜Q-4）と、画面2 の絞り込みの置き場・ハンドオフに無い文言・閲覧系の3画面のパス・「今月の入力」で契約が複数あるときの形（Q-5〜Q-8）、初回入力の部品の置き場（Q-9）、「今月の入力」と初回入力の行き先を年月を含まない経路にすること（Q-10）、テストの差し替えの方針（T-0）は、**2026-10-29 に人間が明示選択で決めた**。今月の入力の経路の置き場と、本人の契約を確かめる場所（Q-11）、画面3 が本人かを知る手段（Q-12）、勤務月の取得が成り立たないときの扱い（Q-13）、操作が弾かれたときの文言のまとめ方（Q-14）、祝日データの用意（Q-15）は、**2026-10-30 に人間が明示選択で決めた**。ただし Q-13・Q-14 の文言そのもの、Q-12 の真偽のキー名（仮の名前）と真偽が応答に無いときの扱いは AI 起案で人間の承認前である。決定は該当の節の本文に、出所「2026-10-29（または 2026-10-30）人間の明示選択（Q-n = …）」を添えて置く。ここでいう Q-n は**本仕様の論点の番号**であり、P-1 が引く `cognito-auth-infra.md` の Q-1 とは別物である
+- **日付**: 2026-10-29（画面1 の節を起こし、同日に Q-1〜Q-4 の決定を反映した。同日、画面2 の節＝W 節を足し、同日に Q-5〜Q-8 とテストの差し替えの方針の決定を反映した。Q-8 に伴い `design-system.md` 6-13 を改定した。同日、Q-9・Q-10 の決定を反映し、月の境目に合わせたタイマーで描き直す設計を取り下げた。Q-10 のうち経路の置き場と本人の契約の確かめ方は Q-11 として残した。2026-10-30、Q-11 = (e) の決定を C-2・W-1・W-7・T-2 へ反映し、W-8（画面2 の関数の形と props）を足し、T-0-3 の是正が済んだことを L-1・C-3・T-0・T-1 へ反映した。W 節のうち出所を書いていない決定は AI 起案で人間の承認前である。同日、画面3 の節＝M 節と T-3 を足し、W-8 の `ThisMonthEntry` を実装の形へ改めた。同日、Q-12 = (b)・Q-13 = (a)・Q-14 = (b)・Q-15 = (a) の決定を M 節（M-1〜M-4・M-9〜M-12）と T-3 へ反映し、論点から外した。勤務月の表現に足す真偽は #55 とは別の Issue（#155）が入れるものであり、本仕様はそのキー名を仮の名前として扱う（M-3）。同日、その別の Issue が人間の承認を得て #155 として起票されたことを M-3・M-11・T-3・論点の節へ反映した）
+- **前提の仕様**: `login-ui.md`／`design-system.md`（AC-5・AC-6（6-13 は 2026-10-29 改定後）・AC-8・AC-12）／`bff-auth-termination.md`（AC-5-5・AC-5-11・AC-11-2）／`work-month-listing-ui.md`（AC-1〜AC-10。W 節）／`bff-wiring.md` AC-6 の R-2〜R-4・R-10／`domain-api-http-contract.md` AC-3・AC-10-2・AC-12。M 節はこれに加えて `work-month-screen-ui.md`（AC-1〜AC-8）／`daily-record-entry-ui.md`（AC-1〜AC-7・AC-9・AC-10）／`monthly-closing-ui.md`／`approval-ui.md`／`bff-wiring.md` AC-6 の R-1・R-5〜R-9・AC-8 の 8-7／`domain-api-http-contract.md` D-7・D-12・AC-2・AC-4〜AC-9・AC-10-1・AC-10-3
 
 ---
 
 ## スコープ
 
-- **対象**: 画面1（ログイン画面・デモ用ロール切替・ヘッダー）と、画面1 が最初に要する**画面間で共有する土台**（C 節: ルート表のうち既定の画面、利用者の区分の解決、開ける画面の判定、置き場所の規則）。画面2（本人の勤務月一覧・承認待ち一覧・デモ勤務月群と、ログイン画面を除く各画面に共通のサイドバー。W 節）
+- **対象**: 画面1（ログイン画面・デモ用ロール切替・ヘッダー）と、画面1 が最初に要する**画面間で共有する土台**（C 節: ルート表のうち既定の画面、利用者の区分の解決、開ける画面の判定、置き場所の規則）。画面2（本人の勤務月一覧・承認待ち一覧・デモ勤務月群と、ログイン画面を除く各画面に共通のサイドバー。W 節）。画面3（勤務月画面。稼働実績の入力・編集・削除、締め、承認・差戻しの操作と、その出し分け。M 節）
 - **非対象**:
   - 受け入れ条件そのもの（各 UI 仕様が持つ）
-  - BFF の Route Handler（`/api/auth/*`・業務の経路）。既存のものを使うだけで、本仕様では変えない（`bff-auth-termination.md`・`bff-wiring.md`）
-  - 画面3（勤務月画面）。後で節を足す。ただし勤務月画面のパスは、画面2 のリンクが要するため C-2 で定める。画面3 の節へ申し送る事項は W-7 の「画面3 への申し送り」に置く
+  - BFF の Route Handler（`/api/auth/*`・業務の経路）とドメイン API。既存のものを使うだけで、本仕様では変えない（`bff-auth-termination.md`・`bff-wiring.md`・`domain-api-http-contract.md`）
   - ヘルプ・契約一覧・稼働の推移の画面。C-4 の判定で画面の識別子として名前が出ることと、C-2 でパスを定めること（サイドバーの項目の行き先として要るため）だけで、ページの設計は持たない
   - ユーザー・ロール管理画面（非スコープ。`docs/rules/scope.md`・`login-ui.md` AC-8-1）
   - サインアウト（要求する仕様が無い。`bff-auth-termination.md` の非対象表）
@@ -62,7 +61,7 @@
 | 本人の勤務月一覧（技術者の既定の画面。`login-ui.md` 6-7-a） | `/work-months` | 画面2 の節で置く | C-3 の遷移先として本節で決める |
 | 承認待ち一覧（承認者の既定の画面） | `/pending-approvals` | 同上 | 同上 |
 | デモ勤務月群（ゲストの既定の画面） | `/demo` | 同上 | 同上 |
-| 勤務月画面 | `/work-months/[contractId]/[yearMonth]`（`yearMonth` は `YYYY-MM`） | 画面3 の節で置く | W-1（画面2 の行のリンク・直近・今月の入力が行き先として要するため、本節で決める） |
+| 勤務月画面 | `/work-months/[contractId]/[yearMonth]`（`yearMonth` は `YYYY-MM`） | `app/work-months/[contractId]/[yearMonth]/page.tsx`（薄い層。本体は `app/_components/work-month-screen.tsx`。M-1） | W-1（画面2 の行のリンク・直近・今月の入力が行き先として要するため、本節で決める） |
 | ヘルプ | `/help` | 本仕様では置かない（ページが入るまで 404） | W-6 のサイドバーの項目の `href` として要るため本節で決める。出所: 2026-10-29 人間の明示選択（Q-7 = (a)） |
 | 契約一覧 | `/contracts` | 同上 | 同上 |
 | 稼働の推移 | `/work-trends` | 同上 | 同上 |
@@ -384,7 +383,7 @@ flowchart TD
 
 `sideNavItems({ viewer, current, thisMonth })` が `SideNav` の `items` と `footerItems` を返す純粋な関数である。
 
-- `current` は開いている画面のキー（`this-month` / `own-work-months` / `contracts` / `work-trends` / `pending-approvals` / `demo-work-months` / `help`）。一覧の3画面はそれぞれのキーを渡す。勤務月画面での選び方（10-5 の後半）は画面3 の節が決め、同じ関数へキーを渡す
+- `current` は開いている画面のキー（`this-month` / `own-work-months` / `contracts` / `work-trends` / `pending-approvals` / `demo-work-months` / `help`）。一覧の3画面はそれぞれのキーを渡す。勤務月画面での選び方（10-5 の後半）は M-10 が決め、同じ関数へキーを渡す
 - 項目の集合・文言・並びは 10-2〜10-4・10-6 をそのまま表にする（最下部の「ヘルプ」は `footerItems`）。承認担当者一覧の項目を作らない（10-4-a）
 - `href`: 本人の勤務月一覧・承認待ち一覧・デモ勤務月群・ヘルプ・契約一覧・稼働の推移は C-2。ヘルプ・契約一覧・稼働の推移はページが入るまで行き先が 404 になるが、項目は 10-2〜10-4 どおり出す。出所: 2026-10-29 人間の明示選択（Q-7 = (a)）
 - **今月の入力**（技術者だけ）: `thisMonth` は `thisMonthEntry(自分の契約)` の結果で、`{ kind: "hidden" }`・`{ kind: "link"; href }`・`{ kind: "choice"; options: { label; href }[] }` のいずれか。`app-side-nav.tsx` が R-10 で自分の契約を取り、0件なら `hidden`（10-9-d）、1件ならその契約の `thisMonthPath`（W-7）の `link`（10-9-a）、2件以上なら `choice`（10-9-b）。`choice` の `options` は R-10 の `items` の全部を応答の順のまま並べ、`label` は契約表示名、`href` はその契約の `thisMonthPath` とする（10-9-c。契約期間で絞らない）。取得中と取得の失敗のときは `hidden` とする（AI 起案）。行き先に年月を含めないのは、当月を押された時点でサーバーが決めるためである。出所: 2026-10-29 人間の明示選択（Q-10 = 「今月の入力」と初回入力のリンクは年月を含まない経路を行き先にする。`SideNav` はリンク（`href`）のまま。`design-system.md` 6-13 は再改定しない）
@@ -462,7 +461,7 @@ export default async function ThisMonthPage(props: { searchParams: Promise<ThisM
   4. `/this-month` を指すリンクを描く部品（`components/side-nav.tsx`・`app/_components/initial-entry-action.tsx`）は `next/link` に `prefetch` を渡さない（既定のまま）
 - これらを静的に読むテストで担保する（T-2）。Next が実際に先読みしないことは本番の構成でしか起きず（先読みは本番だけで働く。同 `link.md` 298 行）、テストでは読まない（T-2 の限界）
 
-**画面3 への申し送り**: `/this-month` は本人の契約かを確かめずに勤務月画面へ送る（上記）。したがって画面3 の設計とテストは、**技術者が他人の契約の勤務月を開いたとき（URL の直接入力と `/this-month` 経由の両方が同じ経路になる）の扱いを、必ず条文とテストに入れる**。出所: 2026-10-30 人間の明示選択（Q-11 = (e)）。扱いの中身は画面3 の節で決める（本節では決めない）
+**画面3 への申し送り**: `/this-month` は本人の契約かを確かめずに勤務月画面へ送る（上記）。したがって画面3 の設計とテストは、**技術者が他人の契約の勤務月を開いたとき（URL の直接入力と `/this-month` 経由の両方が同じ経路になる）の扱いを、必ず条文とテストに入れる**。出所: 2026-10-30 人間の明示選択（Q-11 = (e)）。扱いの中身は画面3 の節で決める（本節では決めない）。受けた先は M-10・T-3
 
 ### W-8. 画面2 の関数の形と props（AI 起案）
 
@@ -528,7 +527,7 @@ export function fetchOwnContracts(now: Date, fetchImpl?: typeof fetch): Promise<
 export type ThisMonthEntry =
   | { kind: "hidden" }
   | { kind: "link"; href: string }
-  | { kind: "choice"; options: { label: string; href: string }[] };
+  | { kind: "choice"; options: readonly { label: string; href: string }[] };
 export function thisMonthEntry(contracts: readonly ContractSummary[]): ThisMonthEntry; // 引数は1つ（年月を受けない。Q-10）
 
 // lib/side-nav-items.ts（純粋）
@@ -561,9 +560,514 @@ export function WorkMonthFilters(props: {
 export function InitialEntryAction(props: { entry: ThisMonthEntry }): JSX.Element | null;  // "use client"。hidden で null
 ```
 
-- `AppSideNav` の `viewer` はサーバーが解決した `Viewer`（`misconfigured` を含まない）。クライアント部品なので `Viewer` は `import type` に限る（C-1）
+- `ThisMonthEntry` の `choice` の `options` は readonly の配列とする（2026-10-30 に実装 `lib/this-month-entry.ts` に合わせて改めた。`side-nav-items.test.ts` が `as const` の値を渡すため。要求は変わらない）
+- `AppSideNav` の `viewer` はサーバーが解決した `Viewer`（`misconfigured` を含まない）。クライアント部品なので `Viewer` は `import type` に限る（C-1）。`AppShell`・`AppSideNav` の `current` は、画面3 のために `SideNavCurrent | WorkMonthLocation` へ広げる（M-11。一覧の3画面が渡す値は変わらない）
 - 3つの一覧の中身は、BFF の応答を `fetch` で取るため、データの props を受けない（W-2）。`router.refresh()` は `next/navigation` の `useRouter` から取る
 - 本体（`*-screen.tsx`）の形は W-1 の表のとおり（`ownWorkMonthsScreen(deps: ScreenDeps, searchParams: { [key: string]: string | string[] | undefined })`、`pendingApprovalsScreen(deps: ScreenDeps)`、`demoWorkMonthsScreen(deps: ScreenDeps)`）
+
+---
+
+## M. 画面3 — 勤務月画面
+
+本節で AC 番号だけを書いたものは `work-month-screen-ui.md` の AC である。ほかは「入力 UI」＝`daily-record-entry-ui.md`、「締め UI」＝`monthly-closing-ui.md`、「承認 UI」＝`approval-ui.md`、「契約」＝`domain-api-http-contract.md`、「一覧 UI」＝`work-month-listing-ui.md` と略す。**本節の決定は、出所を添えたものを除き、AI 起案であり人間の承認前である。** 文言のうち出所を「ハンドオフ N 行」と書いたものは `design/handoff/2026-10-theme-b/WorkMonthScreen.dc.html` の該当行の字面をそのまま採ったもので、本節では作っていない。
+
+**論点 Q-12〜Q-15 は 2026-10-30 に人間が明示選択で決めた**（Q-12 = (b) → M-3、Q-13 = (a) と Q-14 = (b) → M-9、Q-15 = (a) → M-6・M-12）。決定に伴って残った AI 起案（真偽のキー名・真偽が応答に無いときの扱い・M-9 の文言・祝日データの形式）は、各節に「AI 起案」と書き、末尾「起案のまま残るもの」にも挙げる。
+
+**#155 への依存**: M-3 の真偽は、勤務月の表現（契約 AC-10-1）へ足すものであり、契約 AC-2-5・AC-10-1・AC-10-3 と `workmonth-implementation-design.md` の出力 DTO の改定、ドメイン API の実装の変更は **#55 とは別の Issue である #155** が行う。#55 では `services/` と `domain-api-http-contract.md` を変えない。出所: 2026-10-30 人間の明示選択（Q-12 = (b)。ドメイン API の変更は別の Issue）。#155 の起票は 2026-10-30 に人間が承認した。
+
+### M-1. 構成
+
+```mermaid
+flowchart TD
+  Page["app/work-months/[contractId]/[yearMonth]/page.tsx（薄い層）"] -->|"serverScreenDeps・params・WorkMonthHolidayView を渡す"| Screen["_components/work-month-screen.tsx（本体）"]
+  Screen -->|"deps.getCurrentViewer + decideScreen('work-month')"| Shell["_components/app-shell.tsx（既存。current は WorkMonthLocation）"]
+  Shell --> AppSideNav["_components/app-side-nav.tsx（既存へ追加。選択中を M-10 で決める）"]
+  Shell -->|"引数で受けた view を描く"| HolidayView["_components/work-month-holiday-view.tsx（クライアント。M-12 の段）"]
+  HolidayView -->|"isHoliday を props で渡す"| View["_components/work-month-view.tsx（クライアント）"]
+  HolidayView --> Holidays
+  View -->|"R-1・R-5〜R-9"| BFF["BFF Route Handler（既存。応答をそのまま中継）"]
+  View -->|"表現の真偽を読む"| Own["readOwnership（M-3）"]
+  View --> Summary["_components/work-month-summary.tsx"]
+  View --> Calendar["_components/work-month-calendar.tsx"]
+  View --> Form["_components/daily-record-form.tsx（クライアント）"]
+  View --> Ops["_components/work-month-operations.tsx（クライアント）"]
+  View --> Actions["lib/work-month-actions.ts（出し分け）"]
+  View --> Feedback["lib/work-month-feedback.ts（M-9）"]
+  Calendar --> Cells["lib/work-month-calendar.ts（isHoliday は引数）"]
+  Holidays["lib/holidays/（M-12 の段）"]
+  Form --> Entry["lib/time-entry.ts"]
+  Entry --> WH["lib/working-hours.ts（既存。computeWorkingHours）"]
+  View --> Client["lib/work-month-client.ts"]
+```
+
+`lib/work-month-calendar.ts`・`WorkMonthView` は `lib/holidays/` を輸入しない。`lib/holidays/` を輸入するのは `work-month-holiday-view.tsx` だけであり、`page.tsx`（薄い層）がそれを本体へ渡す。これにより、祝日データの同梱（M-12）を画面3 の最後の段へ回しても、それより前の段のファイルとテストは祝日データに依存しない（出所: 2026-10-30 人間の明示選択（Q-15 = (a)。祝日のデータと `lib/holidays/` は画面3 の最後の段へ回す）。分け方は AI 起案）。
+
+| ファイル | 種別 | 責務 | 主に担う AC |
+|---|---|---|---|
+| `app/work-months/[contractId]/[yearMonth]/page.tsx` | サーバー（async。薄い層） | `workMonthScreen(serverScreenDeps, await params, WorkMonthHolidayView)` を返すだけ（T-0-2）。M-12 の段より前は、`WorkMonthHolidayView` の代わりに渡すものが無いため、本ページは M-12 の段で置く（T-3） | — |
+| `app/_components/work-month-screen.tsx` | サーバー（async 関数。依存を引数で受ける） | `workMonthScreen(deps, params, view)`。`misconfigured` なら例外（C-3）。`decideScreen("work-month", viewer)` が `redirect` なら移す（区分3種はいずれも開ける＝`login-ui.md` 6-7）。`show` なら `AppShell`（`current` は `{ kind: "work-month", contractId, yearMonth }`）の子に、引数の `view` を `viewer`・`contractId`・`yearMonth` で描く。`fetch` を呼ばない。`lib/holidays/` を輸入しない | `login-ui.md` 6-7・6-9、1-8・1-9 |
+| `app/_components/work-month-holiday-view.tsx` | クライアント（M-12 の段） | `lib/holidays/` の `isHoliday` を `WorkMonthView` の props に渡すだけ | 入力 UI AC-9 |
+| `app/_components/work-month-view.tsx` | クライアント | 勤務月の取得・本人かの読み取り（M-3）・操作・再取得・失敗の表示（M-2〜M-9）。祝日の判定は props の `isHoliday` で受ける | AC-1〜AC-7、入力 UI AC-2〜AC-7、締め UI AC-1〜AC-6、承認 UI AC-1〜AC-5・AC-10 |
+| `app/_components/work-month-summary.tsx` | フックを持たない | 総稼働時間・精算幅・超過／不足（M-5） | 1-3〜1-5・AC-4 |
+| `app/_components/work-month-calendar.tsx` | フックを持たない | カレンダー（M-6）。編集できるときは日を選ぶ `button`、それ以外は選べない要素 | 1-6、入力 UI AC-1・AC-9 |
+| `app/_components/daily-record-form.tsx` | クライアント | 1日分の入力フォーム（M-7）。入力中の値を持つ | 入力 UI AC-3〜AC-5・AC-6 |
+| `app/_components/work-month-operations.tsx` | クライアント | 締め（`CloseAction`）・承認と差戻し（`ReviewActions`）の区画と確認ステップ（M-8） | 締め UI AC-1・AC-2・AC-4、承認 UI AC-1〜AC-3・AC-10 |
+| `lib/work-month.ts` | 純粋 | 勤務月の表現の型（契約 AC-10-1 のキー）、本人かの真偽のキー名（仮の名前）の唯一の持ち主と `readOwnership`（M-3）、時間・時刻の表記（M-5） | 1-3・1-4・AC-3、入力 UI 1-1・1-6 |
+| `lib/work-month-client.ts` | 純粋（ブラウザで動く） | R-1・R-5〜R-9 を呼び、結果を分類する（M-2） | AC-6 |
+| `lib/work-month-feedback.ts` | 純粋 | 取得・操作の失敗の分類と文言（M-9） | AC-6、入力 UI 4-1-a・4-3、締め UI 6-1、承認 UI 10-8 |
+| `lib/work-month-actions.ts` | 純粋 | 区分×状態×本人かで、出す操作と注記を決める（M-4・M-5） | AC-3・AC-5 |
+| `lib/work-month-calendar.ts` | 純粋 | カレンダーのマス・曜日の印・未来の日・日のアクセシブル名（M-6） | 入力 UI 1-4・1-5・4-2・AC-9 |
+| `lib/time-entry.ts` | 純粋 | フォームの値の読み取り・弾く理由の分類・保存前の稼働時間（M-7） | 入力 UI 3-4・3-6〜3-6-b・3-6-f・4-1・4-5〜4-9 |
+| `lib/holidays/`（新規。M-12 の段） | 純粋 | 同梱データと `isHoliday(date)`（入力 UI 10-3。M-12） | 入力 UI AC-9・AC-10 |
+| `lib/jst-month.ts`（既存へ追加） | 純粋 | `currentJstDate(now)`（JST の当日 `YYYY-MM-DD`） | 入力 UI 4-2 |
+| `lib/side-nav-items.ts`（既存へ追加） | 純粋 | `workMonthSideNavCurrent`（M-10） | 一覧 UI 10-5 |
+| `app/_components/app-side-nav.tsx`・`app-shell.tsx`（既存へ追加） | — | `current` に `WorkMonthLocation` を受ける（M-10・M-11） | 一覧 UI 10-5 |
+
+- `_components` に置くのは P-6 のため。既存部品で使うのは `Card`・`StatusBadge`・`SelectField`・`Button`・`EmptyState`・`ErrorBanner`・`FieldError`・`ConfirmDialog`（と `AppShell` 経由の `SideNav`・`AppHeader`）で、**部品の props を変えない**。可否は呼び出し側の条件レンダリングで表し、部品に状態・操作者種別を渡さない（`design-system.md` 7-2）
+- ページ・`_components` は `lambda-client` を輸入しない（C-1）
+- パスは C-2 のまま変えない（AI 起案・人間の承認前のまま）
+
+### M-2. データを取る側と状態を持つ側
+
+**勤務月のデータはブラウザ（`WorkMonthView`）が BFF の R-1 から取り、操作は R-5〜R-9 へ送る。** サーバーのページでは取らない。理由は W-2 の 1・2 と同じ。
+
+| 状態 | 持ち主 | 内容 |
+|---|---|---|
+| 利用者の区分・ロール | **サーバー**（C-3） | props `viewer` で受ける。ロール切替の後は L-4 の `router.refresh()` で渡し直される |
+| 勤務月 | クライアント（`useState`） | `loading` / `failed`（M-9 の取得の失敗）/ `missing`（M-9 の見つからない・不正）/ `loaded`（`WorkMonthDetail` と `Ownership`） |
+| 本人か | 勤務月と同じ `useState`（`loaded` が持つ） | `Ownership`（`"own"` / `"other"` / `"unknown"`）。最新の表現から `readOwnership` で読む（M-3）。別に状態を持たない。`loaded` でないときは `"unknown"` と同じに扱う |
+| 選んだ日 | クライアント（`useState`） | `YYYY-MM-DD` または `null`。初期値は `null`（ハンドオフ 377 行の既定の選択は採らない） |
+| 入力中の値・保存を押したか | `DailyRecordForm`（`useState`） | `TimeEntryForm` と `tried`。日を選び直すと初期化する（`key` に日付を渡す） |
+| 通信中 | クライアント（`useState`） | 通信中は次の操作（保存・削除・締め・承認・差戻し）を受けない（二重送信を防ぐ） |
+| 操作の失敗 | クライアント（`useState`） | 失敗の種別（M-9）。次の操作を始めたら消す |
+| 締めた直後 | クライアント（`useState`） | 締めが成功したら真。注記（M-5）にだけ使う |
+| 当日 | 描画の時点で `currentJstDate(new Date())` | 未来の日の判定（入力 UI 4-2）に使う |
+
+- **示す値は、ドメイン API が返した最新の表現だけから描く。** 操作の成功の応答は更新後の勤務月の表現である（契約 D-6）ため、それで置き換え、R-1 を取り直さない。保存の前に画面が示していた稼働時間で置き換えない（入力 UI 3-6-c）
+- **409 を受けたときだけ R-1 を取り直す**（6-4・`bff-wiring.md` 8-6「再取得は画面の責務」）。取り直す間は `loading` とし（操作要素を出さない）、取り直した表現で操作要素を出し直すため、古い操作は成立しない。取り直しが `ok` でなければ、M-9 の取得の失敗・見つからないの表示へ移る（AI 起案）
+- **`viewer` の区分かロールが変わったら R-1 を取り直す**（ロール切替の後の `router.refresh()` で props が変わったとき）。本人かの真偽は操作者ごとに決まる値であり、ロールに依るかは #155 が決める（M-3）ため、古い表現の真偽を新しいロールで使い回さない（AI 起案）
+- URL に状態を書き戻さない。遷移は `next/link` と `router.refresh()` だけ
+- 取得中は内容の領域に `aria-busy="true"` を付け、文言を出さない（W-2 と同じ）
+- **応答の分類**（`work-month-client.ts`。一覧の分類 W-2 と異なり、403 は業務の拒否として扱う）:
+
+| 応答 | 分類 | 画面がすること |
+|---|---|---|
+| 200 で、本文が JSON の object で `contractId` が文字列・`dailyRecords` が配列 | `ok`（`ownership` は `readOwnership(本文)`。真偽のキーの有無で `ok` か否かを変えない＝M-3） | 表現で置き換える |
+| 401（本文を問わない） | `refresh` | `router.refresh()` をちょうど1回呼ぶ（区分の判定をサーバーに任せる。L-4 と同じ） |
+| 400・403・404・409 で、本文が `{"error":{"code": 文字列}}` | `rejected`（`status` と `code` を持つ） | M-9 |
+| それ以外（429・5xx・上の形でない 4xx・JSON でない本文・例外） | `failed` | M-9 |
+
+### M-3. 本人の判定（勤務月の表現の真偽を読む）
+
+**決定**: 勤務月の表現（E-1・E-3〜E-7）に「操作者がその勤務月の技術者本人か」を表す真偽を足し、画面はそれを読んで AC-3 の ①〜④ を出し分ける。技術者の識別子そのものは表現に載せない。**AC-3 は緩めない。** 出所: 2026-10-30 人間の明示選択（Q-12 = (b)）。
+
+- **担い手は #155**: 真偽を足す契約の改定（契約 AC-2-5・AC-10-1・AC-10-3）、`workmonth-implementation-design.md` の出力 DTO の改定、ドメイン API の実装の変更は、#55 とは別の Issue である #155 が行う。#55 は `services/` と `domain-api-http-contract.md` を変えない。出所: 同上（#155 の起票は 2026-10-30 に人間が承認した）
+- **キー名は仮の名前**: 真偽のキー名は #155 の仕様工程が決める。本仕様は仮の名前 `operatorIsOwner` で設計し、**キー名は #155 の決定に従う**。出所: 同上（仮の名前の字面は AI 起案）
+- **R-10 を本人の判定に使わない**。`WorkMonthView` は R-10 を呼ばない（サイドバーの選択中のために `AppSideNav` が R-10 を呼ぶことは M-10 のとおりで、本人の判定とは別である）
+
+決定の前提だった事実（論点の起票の時点。2026-10-30）: 既存の勤務月の表現は技術者の識別子を持たず（契約 AC-10-3 の 10-3-1）、操作者によらず同じ表現を返す（契約 D-12・AC-2-5）。R-10（E-8）はロールが `Approver` の要求に 403 を返す（契約 D-20・AC-12-13）。このため、既存の BFF とドメイン API ではロールが `Approver` のときの ③／④ を区別できなかった。
+
+**BFF の変更は要らない。** 根拠は `bff-wiring.md` の既存の条文である —— 契約の成功は「上流のステータスと、上流の JSON をそのまま返す（値を足さず、削らず、組み替えない）」（AC-8 の 8-7 (i)。D 節 U-2 (i)「応答はそのまま中継する」）。成功の分類は「2xx で本文が JSON として読める」ことだけで、表現のキーを数えない（8-1 (i)）。したがって、ドメイン API が表現に真偽を足せば、BFF は変更なしにそれをブラウザへ渡す。`bff-wiring.md` の検査が表現のキーを固定で列挙しているかは本仕様では読んでおらず、#155 の仕様工程が確かめる（申し送り）。
+
+**キー名の持ち方**（AI 起案。#155 でキー名が決まったときの変更を1か所に留めるため）:
+
+- 字面 `operatorIsOwner` を持つのは `lib/work-month.ts` の定数 `OPERATOR_OWNERSHIP_KEY` **だけ**とする。`apps/web/src` の他のファイル（テストを含む）は定数を輸入して使い、字面を書かない（T-3 がファイル走査で読む）
+- `readOwnership(body: unknown): Ownership` —— `body` が object で、`body[OPERATOR_OWNERSHIP_KEY]` が `true` なら `"own"`、`false` なら `"other"`、それ以外（キーが無い・真偽でない・`body` が object でない）なら `"unknown"`。`work-month-client.ts` は `ok` の分類のときにこれを呼び、結果を `ownership` として返す
+- #155 が真偽の向き（本人なら真、の逆）を変えて決めた場合も、改めるのは `lib/work-month.ts` の定数と `readOwnership` だけである
+
+**真偽が応答に無いとき**（#155 が入るまで。**AI 起案・レビューで人間が確かめる対象**）:
+
+- `"unknown"` として扱い、ゲスト以外でも**操作要素を1つも出さない**（M-4 の `"unknown"` の行。「提供しない」は非表示＝AC-3 前文）。勤務月の識別・状態・総稼働時間・精算幅・超過／不足・カレンダーは出す（取得の失敗として扱わない）
+- 安全側である理由: ①〜④ のどれかに推測で寄せると、出してはならない操作（②への入力・締め、④への承認・差戻し）を出しうる。出さない側は AC-3 の「提供しない」と同じ見え方であり、誤って提供することが無い
+- R-10 で補う形（ロールが `Engineer` のときだけ R-10 で ①／② を判定する）は採らない。Q-12 = (b) は R-10 を本人の判定に使わない選択であり、補う形は #155 が入った後に消すコードになる
+- **帰結**: #155 がドメイン API に入るまで、本物の環境では画面3 はどのロールでも操作要素を出さず、閲覧だけになる。画面2 の初回入力の導線（W-4）・`/this-month`（W-7）の行き先でも入力できない。AC-3 の条文は変わらず、真偽が届けば画面の変更なしに満たす
+- これを停止に当たる業務判断としなかった理由: 要求（AC-3）を緩めず、既存の画面（画面1・画面2）の挙動を変えず、画面3 の規則も起票の時点から置いていた「本人かが分からないうちは操作を出さない」と同じだからである。ただし、**#55 を #155 より先にマージ・デプロイしてよいか**（上の帰結を受け入れるか）は人間の判断であり、レビューで確かめる対象として「起案のまま残るもの」に挙げる
+
+本節のその他（AI 起案）:
+
+- 取得中・取得の失敗・見つからないとき（`loaded` でない）は `"unknown"` と同じに扱う
+- ゲストは本人かを使わない（⑤は本人かによらず操作が無い）。真偽を読んでも M-4 の結果は変わらない
+
+### M-4. 操作の出し分け（`lib/work-month-actions.ts`）
+
+`workMonthActions({ state, generated, operator })` が4つの操作の可否を返す純粋な関数である。表は AC-3 のマトリクスをそのまま入出力にしたもので、要求は AC-3・AC-5 が持つ。
+
+| `operator` | 状態 | 入力・編集・削除 | 締め | 承認 | 差戻し | 根拠 |
+|---|---|---|---|---|---|---|
+| ゲスト | 全状態 | — | — | — | — | AC-3 ⑤ |
+| 本人か `"unknown"`（ロールを問わない。真偽が応答に無いときを含む） | 全状態 | — | — | — | — | M-3（AI 起案） |
+| `Engineer`・`"own"`（①） | `Draft` | 出す | `generated` が真のときだけ出す | — | — | AC-3 ①、締め UI 1-1・5-1・5-2、契約 AC-6 の申し送り |
+| `Engineer`・`"other"`（②） | `Draft` | — | — | — | — | AC-3 ② |
+| `Approver`・`"other"`（③） | `Draft` | — | — | — | — | AC-3 ③ |
+| `Approver`・`"own"`（④） | `Draft` | 出す | `generated` が真のときだけ出す | — | — | AC-3 ④ |
+| ① | `PendingApproval` | — | — | — | — | AC-3 ①・5-1、締め UI 1-3・4-1 |
+| ② | `PendingApproval` | — | — | — | — | AC-3 ② |
+| ③ | `PendingApproval` | — | — | 出す | 出す | AC-3 ③、承認 UI 1-1・3-2 |
+| ④ | `PendingApproval` | — | — | — | — | AC-3 ④、承認 UI 3-1 |
+| ①〜④ | `Approved` | — | — | — | — | AC-3、5-2、承認 UI 1-4・4-2 |
+
+- **未生成（`generated` が偽）の月に締めを出さない**のは、契約 AC-6 の申し送り・`bff-wiring.md` 6-5 による（画面だけが担う）。入力は出す（初回の入力で暗黙生成される＝入力 UI 2-3）。未生成の月の状態は `Draft` である（契約 AC-2-2）
+- 空月（`generated` が真で稼働実績が0件）には締めを出す（締め UI 5-2）。**ハンドオフ 484 行の「稼働実績が1件以上のときだけ締めを出す」は採らない**（締め UI 5-2 と食い違うため）
+- **ハンドオフ 396 行の「ロールが `Engineer` のときだけ入力できる」は採らない**（AC-3 ④ `Draft` と食い違うため）
+- 出し分けは画面の表示であり認可ではない。弾く判定はドメイン API が持つ（契約 AC-4〜AC-8。`bff-wiring.md` 6-5）
+
+### M-5. 画面の要素と文言（`work-month-view.tsx`・`work-month-summary.tsx`）
+
+並びはハンドオフに倣う —— (ゲストの注記) → 見出しと状態バッジ → 注記 → 総稼働時間・精算幅・超過／不足 → (カレンダー ／ 入力の区画・締めの区画・承認の区画)。ハンドオフの現在地表示（29〜35 行）は採らない（8-6）。
+
+| 要素 | 部品 | 文言・内容 | 出所 | AC |
+|---|---|---|---|---|
+| ゲストの注記 | `role="note"` | 「デモ用のサンプルです（閲覧のみ・毎日リセットされます）」。ゲストのときだけ | ハンドオフ 25 行 | 一覧 UI 3-2・3-5 |
+| 見出し | `<h1>` | 「`<契約表示名>` × `<対象年月>`」。対象年月は `formatYearMonth`（W-8） | ハンドオフ 463 行 | 1-1 |
+| 状態バッジ | `StatusBadge` | 表現の `state` | ハンドオフ 38〜40 行 | 1-2・AC-2 |
+| 注記 | `<p>` | `workMonthNote`（M-11）が返す1文。編集できる → 「下書きの勤務月です。カレンダーの日を選んで、開始・終了・休憩を入力してください。」／締めた直後で `PendingApproval` → 「締めました。承認されるまで稼働実績は編集できません。」／ゲスト → 「ゲストとして閲覧しています。」／`Approved` → 「承認済の勤務月です。」／承認を出す → 「技術者が締めた勤務月です。」／`Approver`・`"own"` → 「ご自身の勤務月のため、承認・差戻しはできません。」／`PendingApproval` → 「締め済のため編集できません。」／それ以外 → 「下書きの勤務月です。」（この順に最初に当たったもの） | ハンドオフ 433〜439 行 | — |
+| 総稼働時間 | `Card` | 見出し「総稼働時間」、値 `formatHours(totalHours)` と単位「時間」 | ハンドオフ 49・50 行 | 1-3・4-1〜4-3 |
+| 精算幅 | `Card` | 見出し「精算幅」、値「`formatHours(lowerBound)`〜`formatHours(upperBound)`」と単位「時間」。表現の `settlementRange` をそのまま使う | ハンドオフ 57・58 行 | 1-4 |
+| 超過／不足（`Draft`） | `Card` | 見出し「超過／不足」、文「締め時に確定します」。数値を出さない | ハンドオフ 66・67 行 | 4-1・4-5 |
+| 超過・不足（`PendingApproval`・`Approved`） | `Card` | 見出し「超過」「不足」、それぞれ `formatHours` と単位「時間」。**0 でない側の数値と見出しの文字に `text-danger`**（`--danger`）を付け、0 の側・総稼働時間・精算幅・「締め時に確定します」には付けない | ハンドオフ 77・81 行／4-6 | 4-2・4-3・4-6 |
+| カレンダー | `Card` と `work-month-calendar.tsx` | M-6 | ハンドオフ 94 行 | 1-6 |
+| 実績0件の空状態 | `EmptyState` | 入力・編集を出し、稼働実績が0件で日を選んでいないとき。title「まだ稼働実績がありません」、description「カレンダーの日を選んで、稼働時間を入力してください。最初の入力でこの勤務月が作られます。」、action は `Button`（`variant="primary"`）「稼働実績を入力する」で、押すと `firstInputDay`（M-6）の日を選ぶ | ハンドオフ 142・454・455 行 | 入力 UI 2-1・2-2 |
+| 入力の案内 | `Card` | 入力・編集を出し、稼働実績が1件以上で日を選んでいないとき。見出し「稼働実績の入力」、文「カレンダーの日を選ぶと、ここで稼働時間を入力・編集・削除できます。」 | ハンドオフ 149・150・467 行 | — |
+| 入力フォーム | `daily-record-form.tsx` | 入力・編集を出し、日を選んでいるとき（M-7） | ハンドオフ 155〜243 行 | 入力 UI AC-3〜AC-6 |
+| 締めの区画 | `CloseAction` | M-8 | ハンドオフ 251〜255 行 | 締め UI AC-1・AC-2 |
+| 承認の区画 | `ReviewActions` | M-8 | ハンドオフ 266〜271 行 | 承認 UI AC-1・AC-10 |
+| 失敗の表示 | `ErrorBanner`・`EmptyState` | M-9 | — | AC-6 |
+
+- **時間の表記** `formatHours({ hours, minutes })`: `hours + minutes / 60` を小数第2位までに丸め（`Math.round(x * 100) / 100` を `toFixed(2)`）、末尾が `0` なら1字だけ落とす。例: `{9,30}` → `9.5`、`{10,0}` → `10.0`、`{7,45}` → `7.75`、`{0,15}` → `0.25`、`{180,15}` → `180.25`。出所: ハンドオフ 297 行（`fmt`）
+- **時刻の表記** `formatTimeOfDay({ hour, minute })` → `9:00`・`17:45`（時は0で埋めない、分は2桁）。範囲は「`開始`〜`終了`」。出所: ハンドオフ 316・413 行
+- 「誰が締めた・承認したか」・差戻しの理由と回数・精算金額を出さない（締め UI 7-2・7-3、承認 UI 4-4・5-3・5-4。表現が持たない＝契約 AC-10-3）
+
+### M-6. カレンダーと祝日（`work-month-calendar.ts`・`work-month-calendar.tsx`）
+
+- 見出し「日次の稼働実績」（ハンドオフ 94 行）。曜日の見出しは「月」「火」「水」「木」「金」「土」「日」の7つ（ハンドオフ 96 行。週の始まりは月曜＝入力 UI 1-5）
+- `calendarCells({ yearMonth, records, isHoliday, today })` がマスの列を返す。先頭に「1日の曜日の月曜からの日数」個の空きマス（ハンドオフ 403 行）、続けて1日〜末日、末尾に7の倍数になるまで空きマスを置く
+- 日のマスは `mark` を持つ: 祝日なら `hol`（土曜・日曜でも優先する＝入力 UI 9-3）、そうでなく土曜なら `sat`、日曜なら `sun`、ほかは空文字。描画は要素の `data-dow` 属性にこの値を出し（空文字なら属性を出さない）、色は `design-system.md` 2-1-x〜2-1-ab のトークンを当てる（出所: ハンドオフ 411 行の `data-dow`）
+- 祝日のマスには札「祝」を出す（入力 UI 9-8。ハンドオフ 104 行）。祝日の判定は `isHoliday` だけを引く（入力 UI 10-2）。`calendarCells` と `WorkMonthView` は `isHoliday` を引数・props で受け、`lib/holidays/` を輸入しない（M-1）。本物の `isHoliday` は `lib/holidays/` が持ち、`work-month-holiday-view.tsx` が渡す（データの用意は M-12。2026-10-30 人間の明示選択（Q-15 = (a)）。祝日の判定を引数で差し替える形は AI 起案のまま保つ）。テストは `isHoliday` を引数で差し替える
+- 実績のある日は、`formatHours(workingHours)` と「`formatTimeOfDay(startTime)`〜`formatTimeOfDay(endTime)`」を出す（入力 UI 1-1・1-6。ハンドオフ 107・108 行）。休憩の時刻は出さない。各日の `workingHours` は時刻の粒度により `roundedWorkingHours` と一致し、日の値の和が総稼働時間と一致する（入力 UI 1-2・契約 D-5。テストは表現の例で和を読む）
+- **編集できるとき**（M-4 の入力・編集が出る）: 日のマスは `button`（`aria-pressed` が選んだ日なら `true`）で、アクセシブル名は `dayLabel`（下記）。押すとその日を選ぶ。未来の日も選べる（選ぶとフォームが未来の日の理由を出す＝M-7）
+- **編集できないとき**: 日のマスは `button` にせず、押せない要素で同じ内容を出す（ハンドオフ 116〜133 行）
+- `dayLabel(cell)`: 「`M`月`D`日（`曜日`）」に、実績があれば「 `formatHours` 時間（`範囲`）」、無ければ「 未入力」、未来の日ならさらに「（未来の日付）」を続ける。祝日は曜日の代わりに「祝」。例: 「10月2日（金） 9.75 時間（9:00〜19:45）」「10月12日（祝） 未入力」。出所: ハンドオフ 400・410 行
+- `firstInputDay(cells)`: 祝日・土曜・日曜でなく未来でもない最初の日。無ければその月の1日。出所: ハンドオフ 454 行
+- 未来の日の判定は `date > today`（文字列の比較。`today` は `currentJstDate(new Date())`。入力 UI 4-2 の「JST 当日より後」）
+
+### M-7. 入力フォーム（`daily-record-form.tsx`・`time-entry.ts`）
+
+| 要素 | 内容 | 出所 | 入力 UI |
+|---|---|---|---|
+| 見出し | 「稼働実績の入力」 | ハンドオフ 159 行 | — |
+| 対象日 | ラベル「対象日」と、選んだ日の「`M`月`D`日（`曜日`）」（祝日は「祝」） | ハンドオフ 161・400 行 | 3-1 |
+| 未来の日 | 選んだ日が未来なら、`FieldError`「未来の日付には入力できません」を出し、時刻の選択・休憩・保存・削除を出さず、「閉じる」だけを出す | ハンドオフ 164・236〜240 行 | 4-2（時刻の選択と保存を出さずに理由だけを示す形を選んだ） |
+| 時刻の選択 | 「勤務時間」の区切り（`fieldset`）に「開始」「終了」、「休憩」の区切りに「休憩開始」「休憩終了」。それぞれ時と分の `SelectField` 2つ。アクセシブル名は「開始（時）」「開始（分）」「終了（時）」…「休憩終了（分）」の8つ（`hideLabel`）。未選択の表示 `placeholder` は「--」（値は空文字） | ハンドオフ 169・175・192・317・318・428・472・473 行 | 3-1・3-2・3-2-b・3-2-c |
+| 選択肢 | 時は `daily-record-entry.md` D-10 の時の値域の昇順、分は同 D-10 の4値の昇順。表示は時が数字そのまま、分が2桁（`00`・`15`・`30`・`45`）。値域は本仕様へ書き写さず、`lib/time-entry.ts` の定数 `HOUR_OPTIONS`・`MINUTE_OPTIONS` が持つ | ハンドオフ 317・318 行 | 3-2-a |
+| 休憩の有無 | チェックボックス「休憩あり」。外すと休憩開始・休憩終了の選択を描かず、送る値の `break` を `null` にする | ハンドオフ 195 行 | 3-1-a・3-4 |
+| 保存前の稼働時間 | `aria-live="polite"` の領域に、ラベル「稼働時間」、値 `formatHours(previewWorkingHours(form))` と単位「時間」。値が無いときは「—」。値があるときの補足は「`開始`〜`終了`（休憩 `H:MM`）」または「`開始`〜`終了`（休憩なし）」、無いときは「開始・終了・休憩から自動で計算します」 | ハンドオフ 220〜226・349・475・476 行 | 3-6・3-6-a・3-6-b・3-6-f |
+| 案内 | 「時は 0〜23、分は 15 分単位で選んでください。」 | ハンドオフ 227 行 | — |
+| 操作 | `Button`「保存」、実績のある日だけ `Button`「削除」、`Button`「閉じる」（選んだ日を外す） | ハンドオフ 229〜233 行 | 3-3・AC-5・AC-6 |
+
+- **保存前の稼働時間は `computeWorkingHours` の戻り値だけから得る**（入力 UI 3-6-f）。`previewWorkingHours(form)` は、未選択が1つでも残るなら関数を呼ばずに `null`、そうでなければ `computeWorkingHours` の戻り値をそのまま返す。補足の休憩の長さ（`H:MM`）は休憩終了と休憩開始の差で、稼働時間ではない
+- **弾く理由**（入力 UI 4-1・4-5〜4-9。互いに異なる文）。`timeEntryProblems(form, tried)` が返し、`FieldError` を該当の行の下に出し、その行の `SelectField` に `invalid` と `errorId` を渡す。出所: ハンドオフ 333・343〜348 行
+
+| 理由 | 出す行 | 文言 | 出す時機 |
+|---|---|---|---|
+| 時と分がどちらも未選択 | その行 | 「時刻を選んでください」 | 保存を押した後（`tried`） |
+| 時だけ未選択 | その行 | 「時を選んでください」 | 同上 |
+| 分だけ未選択 | その行 | 「分を選んでください」 | 同上 |
+| 終了が開始より後でない | 終了 | 「終了は開始より後の時刻にしてください」 | 開始と終了が選ばれた時点から |
+| 休憩終了が休憩開始より後でない | 休憩終了 | 「休憩の終了は休憩の開始より後にしてください」 | 休憩ありで休憩の両時刻が選ばれた時点から（上の行に当たらないとき） |
+| 休憩が開始〜終了に収まらない | 休憩終了 | 「休憩は勤務時間（開始〜終了）の中に収めてください」 | 4つすべて選ばれた時点から（上の2行に当たらないとき） |
+| 稼働時間が 0 になる | 休憩終了 | 「稼働時間が 0 になります。休憩の時刻を見直してください」 | 4つすべて選ばれた時点から（上の3行に当たらないとき） |
+
+  - 組み合わせの4つの理由は、4つの時刻（休憩なしなら2つ）がすべて選ばれているとき、**理由が1つも無いことと `computeWorkingHours` が `null` を返さないことが一致する**（AI 起案の不変条件。T-3 が `daily-record-entry.md` AC-3 の 3-B・3-C の表で読む）
+- **保存**: 未選択が残るなら `tried` を立てて送らない（4-1）。理由が1つでもあれば送らない。どちらも入力した値を保つ（4-4）。それ以外は `readTimeEntry(form)` の `input`（`startTime`・`endTime`・`break`。稼働時間を含めない＝3-6-c）を R-5 へ送る
+- **編集**（入力 UI 5-1）: 実績のある日を選ぶと `formFromRecord(record)` を初期値にする（休憩が `null` なら「休憩あり」を外す）。新しい日の初期値は `NEW_TIME_ENTRY_FORM`（開始・終了は未選択、休憩あり 12:00〜13:00）。出所: ハンドオフ 315 行（入力 UI 3-5 は初期値を固定しない）
+- 保存の成功の後も同じ日を選んだままにし、フォームは保存した値のまま `tried` を戻す。削除の成功の後は `NEW_TIME_ENTRY_FORM` へ戻す。出所: ハンドオフ 480・482 行
+- 削除に確認ステップを置かない（入力 UI AC-6 が要求せず、ハンドオフ 231 行も置かない）
+
+### M-8. 締め・承認・差戻し（`work-month-operations.tsx`）
+
+| 要素 | 文言・内容 | 出所 | AC |
+|---|---|---|---|
+| 締めの区画 | `Card`。見出し「勤務月を締める」、文「入力が済んだら締めてください。締めると承認されるまで編集できません。」、`Button`（`primary`）「締める」 | ハンドオフ 251・252・255 行 | 締め UI 1-1・1-4・5-3（未入力の警告を出さない） |
+| 締めの確認 | `ConfirmDialog`。`title`「`<YYYY>`年`<M>`月の勤務月を締めますか？」、`description` は2段落「締めると稼働実績は編集できなくなり、ご自身で取り消すことはできません。」「下書きに戻す方法は、承認者による差戻しだけです。」、`confirmLabel`「締める」、`confirmVariant`「primary」 | ハンドオフ 443〜446 行 | 締め UI 2-1 |
+| 承認の区画 | `Card`。見出し「承認」、文「内容を確認して、承認または差戻しをしてください。」、`Button`（`danger`）「差戻し」と `Button`（`primary`）「承認」をこの順に | ハンドオフ 266・267・270・271 行 | 承認 UI 1-1 |
+| 承認の確認 | 承認 UI 10-9-a の行のとおり（`confirmVariant`「primary」＝10-6）。**ハンドオフ 447 行の文言は採らない**（承認 UI 10-9 が持つ） | 承認 UI 10-9-a | 承認 UI 10-1・10-1-a |
+| 差戻しの確認 | 承認 UI 10-9-b の行のとおり（`confirmVariant`「danger」）。理由の入力欄を置かない | 承認 UI 10-9-b | 承認 UI 10-2・10-2-a・10-5・2-1 |
+
+- 確認で承諾すると、締めは R-7、承認は R-8、差戻しは R-9 を**ちょうど1回**送る（本文なし）。取消（部品の取消の操作・Esc）なら何も送らず、状態を変えない（締め UI 2-3、承認 UI 10-4）
+- 締めを取り消す・下書きへ戻す操作を、どの状態・区分にも置かない（締め UI AC-4）
+- 成功の応答で置き換えると、状態バッジ・超過／不足・出す操作が M-4・M-5 のとおり変わる（締め UI AC-3、承認 UI AC-4・AC-5）。締めの成功の後は「締めた直後」を真にする（注記だけに効く）
+
+### M-9. 操作の結果と失敗
+
+分類と文言は `lib/work-month-feedback.ts`（M-11）が持つ。`WorkMonthView` はその戻り値で `ErrorBanner`・`EmptyState` を描くだけにする。
+
+**操作（保存・削除・締め・承認・差戻し）の結果** —— 弾かれたときの文言は種類ごとに4つの文にまとめる。出所: 2026-10-30 人間の明示選択（Q-14 = (b)）。**4つの文の字面は AI 起案であり、レビューで人間が承認する対象（未承認）である。**
+
+| 結果 | 種類（`OperationFailureKind`） | 画面がすること | 文言（AI 起案・未承認） |
+|---|---|---|---|
+| `ok` | — | 表現で置き換える（M-2） | — |
+| `refresh`（401） | — | `router.refresh()` をちょうど1回。表現を変えない | — |
+| `rejected` で `status` が 400（保存の `TIME_OF_DAY_OUT_OF_RANGE`・`INVALID_TIME_COMBINATION`・`FUTURE_DATE_NOT_ALLOWED`・`DATE_OUT_OF_WORK_MONTH`・`INVALID_REQUEST`。`code` を問わない） | `invalid-input` | 理由を出し、入力中の値を保つ（6-1・6-2、入力 UI 4-1-a・4-3・4-4）。表示値を変えない（入力 UI 4-10） | 「入力した内容を受け付けられませんでした。内容を見直して、もう一度保存してください。」 |
+| `rejected` で 403・404（`code` を問わない） | `not-allowed` | 理由を出す。表示値を変えない | 「この勤務月では、この操作はできません。」 |
+| `rejected` で 409（`code` を問わない） | `state-changed` | 理由を出し、R-1 を取り直して置き換える（6-4、締め UI 6-1、承認 UI 10-8。M-2）。入力中の値は保つ | 「勤務月の状態が変わっていたため、最新の内容に更新しました。」 |
+| `failed`（429・5xx・通信の失敗・契約の形でない応答） | `communication` | 失敗を出す。表示値を変えず、締め・承認が成立したように見せない（6-3）。自動で送り直さない | 「通信に失敗しました。時間をおいて、もう一度お試しください。」 |
+
+- 4つの文は `ErrorBanner`（`role="alert"`）の本文として出し、`onRetry` を渡さない（操作の送り直しは利用者が同じ操作をもう一度押すことで行う。自動で送り直さない＝6-3）。AI 起案
+- 次の操作を始めたら消す（M-2）。409 の文は、取り直しが `ok` のときだけ出したまま残す。取り直しが `ok` でなければ、下の「勤務月の取得の結果」の表示に替わる（M-2。AI 起案）
+- 4つの文は互いに異なり、M-7 の事前の検査の7つの文とも異なる（入力 UI 4-9 の趣旨。AI 起案）
+- 契約は `INVALID_TIME_COMBINATION` の理由を区別しない（契約 AC-11-11）。画面が理由を区別して示すのは M-7 の事前の検査による。400 を返されたときの文は種類で1つである（Q-14 = (b) の帰結）
+
+**勤務月の取得（R-1）の結果** —— 出所: 2026-10-30 人間の明示選択（Q-13 = (a)）。**`EmptyState` の文言は AI 起案であり、レビューで人間が承認する対象（未承認）である。**
+
+| 結果 | 種類（`LoadFailureKind`） | 画面がすること | 文言 |
+|---|---|---|---|
+| `ok` | — | 表現を示す | — |
+| `refresh`（401） | — | `router.refresh()` をちょうど1回 | — |
+| `rejected` で 404・400（`CONTRACT_NOT_FOUND`・`INVALID_REQUEST`。`code` を問わない） | `missing` | 1つの `EmptyState` にまとめ、区分の既定の画面（C-4 の `defaultScreenPath(viewer)`）へのリンクを `action` に置く。再試行を出さない。見出し（契約表示名 × 対象年月）・状態バッジ・カレンダーを出さない | title「勤務月を表示できません」、description「契約が見つからないか、URL の形式が正しくありません。」、リンク「勤務月の一覧を開く」→ `defaultScreenPath(viewer)`（**AI 起案・未承認**） |
+| `rejected` で 403・409、または `failed` | `failed` | `ErrorBanner`（`onRetry` 付き）。再試行で R-1 を再び GET する。見出し・状態バッジ・カレンダーを出さない | 「勤務月を読み込めませんでした。通信状態を確認して、もう一度お試しください。」（W-4 の取得エラーの文言を流用。出所: Q-13 = (a)） |
+
+- R-1 の 403・409 は契約の E-1 が返す組に当たらないため、取得の失敗として扱う（AI 起案）
+- リンクの行き先は `defaultScreenPath(viewer)`（技術者は本人一覧、承認者は承認待ち一覧、ゲストはデモ勤務月群＝`login-ui.md` 6-7-a）。3つとも勤務月の一覧であるため、リンクの文言は区分によらず1つとする（AI 起案）。`screen-access.ts` は純粋であり（C-4）、クライアントの `WorkMonthView` から輸入してよい
+- `/this-month` に存在しない契約 ID を付けたとき（W-7）と、勤務月画面の URL を直接入力したとき（M-10）は、どちらもこの表のとおりになる
+
+### M-10. 他人の契約・未生成の当月・サイドバーの選択中・ゲスト
+
+**他人の契約の勤務月を開いたとき**（W-7 の申し送り。2026-10-30 人間の明示選択（Q-11 = (e)）が求めた条文）:
+
+- `/this-month?contract=<他人の契約>` を経た場合も、勤務月画面の URL を直接入力した場合も、**同じ経路**（`workMonthScreen` → `WorkMonthView`）を通る。区別しない
+- **応答は既存の条文で決まっている**: R-1 は任意の `contractId` を受け（`bff-wiring.md` 13-4）、E-1 は操作者で絞らず、契約が実在すれば 200 で勤務月の表現を返す（契約 D-12・AC-2-5。未生成なら `generated: false`＝契約 AC-2-2）。これは人間が確定した仕様である（契約 AC-11-3）
+- **画面の扱いも既存の条文で決まっている**: 操作者は ②他の技術者（ロールが `Approver` なら③）であり、操作要素を1つも出さない（AC-3 ②・③ `Draft` 行。`PendingApproval` の③は承認・差戻しを出す）。勤務月の識別・状態・総稼働時間・精算幅・超過／不足・カレンダーは閲覧できる（1-1〜1-6・5-3）
+- **画面が ②・③ と判定する手段は M-3 による**（表現の真偽が偽。2026-10-30 人間の明示選択（Q-12 = (b)））。真偽が応答に無いあいだは `"unknown"` であり、やはり操作要素を出さない（M-3。AI 起案）
+- 状態を変える要求は、操作要素を出さないので画面からは送られない。送られた場合はドメイン API が 403 で弾く（契約 AC-4-3・AC-5-4・AC-6-3。T-3 の限界）
+- 実在しない契約（404）・書式の不正な年月（400）は M-9 の「勤務月の取得の結果」の `missing`
+
+**未生成の当月を開いたとき**（一覧 UI 10-9-e）: R-1 が `generated: false` の表現を返す（契約 D-7）。画面は空状態と同じに見せ（入力 UI 2-2。本人で編集できれば M-5 の実績0件の空状態）、**勤務月を生成する要求を送らない**（開いただけでは R-5〜R-9 を呼ばない）。「月を開く」等の操作を置かない。締めを出さない（M-4）。最初の保存（R-5）の応答は `generated: true` になり、以降は締めを出す（入力 UI 2-3）
+
+**サイドバーの選択中**（一覧 UI 10-5 の後半。W-6 が本節へ委ねた）: `workMonthSideNavCurrent({ viewer, contractId, yearMonth, ownContracts, now })` が `SideNavCurrent` を返す。`AppSideNav` は `current` が `WorkMonthLocation` のとき、自分で取った R-10 の結果（技術者のとき）と描画の時点の `new Date()` でこの関数を呼ぶ。
+
+| `viewer` | 条件 | 戻り値 |
+|---|---|---|
+| ゲスト | — | `demo-work-months` |
+| 承認者 | — | `pending-approvals` |
+| 技術者 | `ownContracts` に `contractId` があり、かつ `yearMonth` が `currentJstYearMonth(now)` と等しい | `this-month` |
+| 技術者 | それ以外（他人の契約・当月でない・`ownContracts` が `undefined`＝取得中か取得の失敗） | `own-work-months` |
+
+- 取得中・取得の失敗を `own-work-months` とするのは AI 起案（取得の後に `this-month` へ変わりうる）。開いたまま JST の月の境目を越えても描き直さない（W-6 の Q-10 と同じ。限界）
+
+**ゲストの閲覧**（1-8・AC-3 ⑤、一覧 UI 3-2）: ゲストの `WorkMonthView` は R-1 だけを呼び（`WorkMonthView` はどの区分でも R-10 を呼ばない＝M-3。ゲストの `AppSideNav` も R-10 を呼ばない）、操作要素を1つも出さない。ゲストの注記（M-5）を出す。ヘッダーの右側は L-3 の `app` の行（テーマ切替 → ログインへのリンク）
+
+### M-11. 画面3 の関数の形と props（AI 起案）
+
+T-3 の表が求めるテストを書ける粒度で、輸出する名前と型を定める。**本節はすべて AI 起案であり、人間の承認前である。** `Ownership` を勤務月の表現の真偽から得ることは 2026-10-30 人間の明示選択（Q-12 = (b)）による。
+
+```ts
+// lib/work-month.ts（純粋）。キー名は契約 AC-10-1（OPERATOR_OWNERSHIP_KEY を除く）
+import type { Break, TimeOfDay, WorkingHours } from "./working-hours";
+import type { WorkMonthState } from "./work-month-list";
+export type Ownership = "own" | "other" | "unknown";
+// 本人かの真偽のキー名。仮の名前であり、#155 の決定に従う。字面を持つのはここだけ（M-3）
+export const OPERATOR_OWNERSHIP_KEY = "operatorIsOwner";
+export function readOwnership(body: unknown): Ownership; // M-3。true → "own"、false → "other"、それ以外 → "unknown"
+export interface DailyRecord {
+  date: string;                       // YYYY-MM-DD
+  startTime: TimeOfDay;
+  endTime: TimeOfDay;
+  break: Break | null;
+  workingHours: WorkingHours;
+  roundedWorkingHours: WorkingHours;
+}
+export interface WorkMonthDetail {
+  contractId: string;
+  contractDisplayName: string;
+  yearMonth: string;                  // YYYY-MM
+  state: WorkMonthState;
+  generated: boolean;
+  settlementRange: { lowerBound: WorkingHours; upperBound: WorkingHours };
+  totalHours: WorkingHours;
+  excess: WorkingHours | null;
+  shortfall: WorkingHours | null;
+  dailyRecords: DailyRecord[];
+  // 本人かの真偽は WorkMonthDetail に載せない。readOwnership が本文から読み、WorkMonthResult の ownership に置く
+}
+export function formatHours(value: WorkingHours): string;                   // M-5
+export function formatTimeOfDay(time: TimeOfDay): string;                   // "9:00"
+export function formatTimeRange(start: TimeOfDay, end: TimeOfDay): string;  // "9:00〜18:00"
+```
+
+```ts
+// lib/work-month-client.ts（純粋。ブラウザで動く）
+export type WorkMonthResult =
+  | { kind: "ok"; value: WorkMonthDetail; ownership: Ownership } // ownership は readOwnership(本文)
+  | { kind: "refresh" }
+  | { kind: "rejected"; status: number; code: string }
+  | { kind: "failed" };
+export interface DailyRecordInput { startTime: TimeOfDay; endTime: TimeOfDay; break: Break | null } // 契約 AC-4 の本文
+export function workMonthApiPath(contractId: string, yearMonth: string): string; // "/api" + E-1 のパス。各セグメントを encodeURIComponent
+export function fetchWorkMonth(contractId: string, yearMonth: string, fetchImpl?: typeof fetch): Promise<WorkMonthResult>;   // R-1。GET
+export function saveDailyRecord(contractId: string, yearMonth: string, date: string, input: DailyRecordInput, fetchImpl?: typeof fetch): Promise<WorkMonthResult>; // R-5。PUT
+export function deleteDailyRecord(contractId: string, yearMonth: string, date: string, fetchImpl?: typeof fetch): Promise<WorkMonthResult>; // R-6。DELETE
+export function closeWorkMonth(contractId: string, yearMonth: string, fetchImpl?: typeof fetch): Promise<WorkMonthResult>;   // R-7。POST
+export function approveWorkMonth(contractId: string, yearMonth: string, fetchImpl?: typeof fetch): Promise<WorkMonthResult>; // R-8。POST
+export function rejectWorkMonth(contractId: string, yearMonth: string, fetchImpl?: typeof fetch): Promise<WorkMonthResult>;  // R-9。POST
+```
+
+- パスは `bff-wiring.md` 6-7 (i)（`/api` ＋ 契約の E のパス）。R-5・R-6 は `workMonthApiPath(...) + "/daily-records/" + encodeURIComponent(date)`、R-7〜R-9 は `+ "/close"`・`"/approve"`・`"/reject"`
+- R-5 だけが本文を持つ。本文は `JSON.stringify(input)` で、キーは `startTime`・`endTime`・`break` の3つだけ（`break` を省かない＝契約 D-18。稼働時間を含めない）。`Content-Type` は `application/json`。ほかは本文を持たない
+- 分類は M-2 の表。`fetchImpl` を省いたときは呼び出しの時点の `globalThis.fetch` を使う（W-8 と同じ）
+- `value` は本文から `WorkMonthDetail` の型が持つキーを読んだものとし、真偽のキーの有無で `ok` か否かを変えない（M-3）
+
+```ts
+// lib/work-month-feedback.ts（純粋）。M-9 の2つの表
+import type { WorkMonthResult } from "./work-month-client";
+export type OperationFailureKind = "invalid-input" | "not-allowed" | "state-changed" | "communication";
+export type LoadFailureKind = "missing" | "failed";
+type NotOk = Extract<WorkMonthResult, { kind: "rejected" } | { kind: "failed" }>;
+export const OPERATION_FAILURE_MESSAGES: Readonly<Record<OperationFailureKind, string>>; // M-9 の4つの文
+export function operationFailureKind(result: NotOk): OperationFailureKind;               // M-9 の操作の表
+export function loadFailureKind(result: NotOk): LoadFailureKind;                         // M-9 の取得の表
+export const WORK_MONTH_LOAD_ERROR_MESSAGE: string;   // W-4 の取得エラーの文言と同じ字面
+export const WORK_MONTH_MISSING: Readonly<{ title: string; description: string; linkLabel: string }>; // M-9 の EmptyState
+```
+
+- 文言の字面はこのファイルだけが持つ（画面2 の各ビューは W-4 の文言をそれぞれのファイルの定数で持っており、本仕様はそれを動かさない）
+
+```ts
+// lib/work-month-actions.ts（純粋）
+import type { Role } from "./role-cookie";        // import type
+import type { Ownership } from "./work-month";   // import type（M-3）
+export type Operator = { kind: "guest" } | { kind: "signed-in"; role: Role; ownership: Ownership };
+export interface WorkMonthActions { edit: boolean; close: boolean; approve: boolean; reject: boolean }
+export function workMonthActions(params: { state: WorkMonthState; generated: boolean; operator: Operator }): WorkMonthActions; // M-4 の表
+export function workMonthNote(params: { state: WorkMonthState; operator: Operator; actions: WorkMonthActions; justClosed: boolean }): string; // M-5 の注記
+```
+
+```ts
+// lib/work-month-calendar.ts（純粋）
+export type DayMark = "sat" | "sun" | "hol" | "";
+export type CalendarCell =
+  | { kind: "blank" }
+  | { kind: "day"; date: string; day: number; weekday: string; mark: DayMark; holiday: boolean; future: boolean; record: DailyRecord | undefined };
+export const WEEKDAY_HEADERS: readonly string[]; // ["月","火","水","木","金","土","日"]
+export function calendarCells(params: {
+  yearMonth: string;                          // YYYY-MM（表現の yearMonth）
+  records: readonly DailyRecord[];
+  isHoliday: (date: string) => boolean;
+  today: string;                              // YYYY-MM-DD（JST の当日）
+}): CalendarCell[];
+export function dayLabel(cell: Extract<CalendarCell, { kind: "day" }>): string; // M-6
+export function firstInputDay(cells: readonly CalendarCell[]): string;         // M-6。YYYY-MM-DD
+
+// lib/jst-month.ts（既存へ追加）
+export function currentJstDate(now: Date): string; // YYYY-MM-DD
+
+// lib/holidays/data.ts（新規。M-12 の段。原本から変換して生成する。M-12）
+export interface HolidayRow { date: string; name: string } // date は YYYY-MM-DD、name は原本の名称
+export const HOLIDAY_ROWS: readonly HolidayRow[];          // 原本の全行を、原本の行の順で
+
+// lib/holidays/index.ts（新規。M-12 の段）
+export function isHoliday(date: string): boolean; // date は YYYY-MM-DD。HOLIDAY_ROWS の date に一致すれば真（入力 UI 10-5）
+```
+
+- `weekday` は「月」〜「日」（祝日でも曜日の字を持つ。`dayLabel` が祝日を「祝」に替える）
+
+```ts
+// lib/time-entry.ts（純粋）
+export interface TimeSelection { hour: string; minute: string }   // 空文字が未選択
+export interface TimeEntryForm {
+  start: TimeSelection; end: TimeSelection;
+  hasBreak: boolean; breakStart: TimeSelection; breakEnd: TimeSelection;
+}
+export type TimeField = "start" | "end" | "breakStart" | "breakEnd";
+export type TimeEntryProblemKind =
+  | "unselected-both" | "unselected-hour" | "unselected-minute"
+  | "end-not-after-start" | "break-end-not-after-start" | "break-outside" | "zero";
+export interface TimeEntryProblem { field: TimeField; kind: TimeEntryProblemKind }
+export const HOUR_OPTIONS: readonly { value: string; label: string }[];   // D-10 の時の値域（昇順）
+export const MINUTE_OPTIONS: readonly { value: string; label: string }[]; // D-10 の分の4値（昇順。label は2桁）
+export const NEW_TIME_ENTRY_FORM: TimeEntryForm;
+export const TIME_ENTRY_MESSAGES: Readonly<Record<TimeEntryProblemKind, string>>; // M-7 の文言
+export function formFromRecord(record: DailyRecord): TimeEntryForm;
+export function readTimeEntry(form: TimeEntryForm): { kind: "incomplete" } | { kind: "complete"; input: DailyRecordInput }; // 休憩なしなら break: null
+export function timeEntryProblems(form: TimeEntryForm, tried: boolean): TimeEntryProblem[]; // M-7 の表
+export function previewWorkingHours(form: TimeEntryForm): WorkingHours | null;              // computeWorkingHours の戻り値だけ
+```
+
+- `timeEntryProblems` は1つの行に理由を1つだけ返す（未選択の理由は `tried` が真のときだけ）。休憩なしのとき休憩の行を見ない（3-4）
+
+```ts
+// lib/side-nav-items.ts（既存へ追加）
+export interface WorkMonthLocation { kind: "work-month"; contractId: string; yearMonth: string }
+export function workMonthSideNavCurrent(params: {
+  viewer: Viewer; contractId: string; yearMonth: string;
+  ownContracts: readonly ContractSummary[] | undefined; now: Date;
+}): SideNavCurrent; // M-10 の表
+```
+
+```tsx
+// app/_components の props
+export interface WorkMonthViewBaseProps { viewer: Viewer; contractId: string; yearMonth: string }
+export function workMonthScreen(
+  deps: ScreenDeps,
+  params: { contractId: string; yearMonth: string },
+  view: ComponentType<WorkMonthViewBaseProps>,           // 本物は WorkMonthHolidayView（page.tsx が渡す。M-1）
+): Promise<JSX.Element>;
+export default async function WorkMonthPage(props: { params: Promise<{ contractId: string; yearMonth: string }> }): Promise<JSX.Element>; // 薄い層。M-12 の段で置く
+export function AppShell(props: { viewer: Viewer; theme: Theme; current: SideNavCurrent | WorkMonthLocation; children: ReactNode }): JSX.Element; // 既存の型を広げる
+export function AppSideNav(props: { viewer: Viewer; current: SideNavCurrent | WorkMonthLocation }): JSX.Element;                               // 既存の型を広げる
+export function WorkMonthView(props: WorkMonthViewBaseProps & { isHoliday: (date: string) => boolean }): JSX.Element;        // "use client"。lib/holidays/ を輸入しない
+export function WorkMonthHolidayView(props: WorkMonthViewBaseProps): JSX.Element;                                             // "use client"。M-12 の段。<WorkMonthView {...props} isHoliday={isHoliday} /> を返すだけ
+export function WorkMonthSummary(props: { workMonth: WorkMonthDetail }): JSX.Element;
+export function WorkMonthCalendar(props: {
+  cells: readonly CalendarCell[];
+  editable: boolean;
+  selectedDate: string | null;
+  onSelect: (date: string) => void;   // editable が偽のときは呼ばれない
+}): JSX.Element;
+export function DailyRecordForm(props: {                                                     // "use client"。親が key={date} を渡す
+  cell: Extract<CalendarCell, { kind: "day" }>;
+  busy: boolean;
+  onSave: (input: DailyRecordInput) => void;
+  onDelete: () => void;
+  onClose: () => void;
+}): JSX.Element;
+export function CloseAction(props: { yearMonth: string; busy: boolean; onConfirm: () => void }): JSX.Element;                      // "use client"
+export function ReviewActions(props: { busy: boolean; onApprove: () => void; onReject: () => void }): JSX.Element;                 // "use client"
+```
+
+- `DailyRecordForm` の初期値は `cell.record` があれば `formFromRecord`、無ければ `NEW_TIME_ENTRY_FORM`。`cell.future` が真なら M-7 の未来の日の形で描く。削除は `cell.record` があるときだけ出す
+- `busy` が真の間、保存・削除・締め・承認・差戻しの `onX` を呼ばない
+- `WorkMonthView` の `viewer` はサーバーが解決した `Viewer`（`import type` に限る＝C-1）。`router.refresh()` は `next/navigation` の `useRouter` から取る。`viewer` の区分かロールが変わったら R-1 を取り直す（M-2）。本人かは `ok` の `ownership` だけから得る（M-3）
+- `WorkMonthView` の「勤務月を表示できません」のリンクの行き先は `defaultScreenPath(viewer)`（C-4。M-9）
+- `WorkMonthHolidayView` の型を `workMonthScreen` の `view` に合わせるため、`WorkMonthViewBaseProps` は `work-month-view.tsx` から輸出し、本体は `import type` で受ける（本体が `WorkMonthView` を値として輸入しない）
+- `params` の値は Next が渡すまま本体へ渡し、本体も画面も書式を検査しない（書式の判定はドメイン API＝`bff-wiring.md` 7-3）
+
+### M-12. 祝日データの同梱（画面3 の最後の段）
+
+**決定**: 人間が原本（内閣府の `syukujitsu.csv`）を用意する。置き場所は `/workspaces/effort-tracker/syukujitsu.csv` の予定（2026-10-30 の時点では、まだ置かれていない）。祝日のデータと `lib/holidays/` は画面3 の**最後の段**に回す。原本はコミットせず、入力 UI 10-3 の形式へ変換したものだけを同梱する。出所: 2026-10-30 人間の明示選択（Q-15 = (a)）。本節のそれ以外は AI 起案である。
+
+```mermaid
+flowchart LR
+  S1["段1: 祝日データに依存しないもの<br/>lib（work-month・client・feedback・actions・calendar・time-entry ほか）<br/>部品・WorkMonthView・workMonthScreen<br/>T-3 の「段1」の行"] --> Gate{"原本が置き場所にあるか"}
+  Gate -->|"ある"| S2["段2（最後）: 祝日データ<br/>.gitignore・lib/holidays/・WorkMonthHolidayView・page.tsx<br/>T-3 の「段2」の行"]
+  Gate -->|"無い"| Stop["段2 に入らず停止を申告する"]
+```
+
+- **段の境界**: 段1 のファイルとテストは `lib/holidays/` を輸入しない（M-1・M-6）。段2 で足すのは、`.gitignore` の1行、`lib/holidays/data.ts`・`lib/holidays/index.ts`、`app/_components/work-month-holiday-view.tsx`、`app/work-months/[contractId]/[yearMonth]/page.tsx` と、T-3 の「段2」の行のテストである。勤務月画面のルートは段2 で初めて開く（段1 の間も、画面2 の勤務月画面へのリンクと `/this-month` の行き先は、いまと同じく 404 のままである。ブランチの中だけの途中の状態である）
+- **原本が無いとき**: 段2 に入らず、停止を申告する（AI は原本を取得できない＝入力 UI 10-7 の手順1）
+- **原本をコミットしない**: 段2 の最初に、ルートの `.gitignore` へ `/syukujitsu.csv` を足す（原本を置いた作業ツリーで誤って追加しないため）
+
+**変換**（入力 UI 10-3 はファイルの名前と形式を実装工程に委ねている。以下は AI 起案）:
+
+- **入力の想定**: 文字コードは Shift_JIS、1行目は見出し、各行は「`YYYY/M/D`,名称」。**この想定は原本を読んで確かめていない**（2026-10-30 の時点で原本が無い）。段2 で原本を読み、想定と違えば（文字コード・見出し・日付の書き方・列の数）、変換を進めずに停止を申告する
+- **出力**: `lib/holidays/data.ts` の `HOLIDAY_ROWS`（M-11）。各行の日付を `YYYY-MM-DD`（月と日を2桁に0で埋める）へ、名称は原本の字面のまま。見出しの行と末尾の空行を除き、**ほかの行を足さず、除かず、並べ替えない**（入力 UI 10-4・10-5）
+- `data.ts` は生成物であり、手で書き換えない旨を先頭のコメントに書く。変換は上の規則で再現でき、変換のスクリプトはリポジトリに置かない（入力 UI 10-7 の手順2 の差し替えも同じ規則で行う）
+- **判定**: `isHoliday(date)` は `HOLIDAY_ROWS` の `date` の集合に `date` があれば真とする。計算で補わない（入力 UI 10-5）
+
+**利用条件と出典の表示**（入力 UI 10-8。確認と表示の形は実装工程に委ねられている。以下は AI 起案）:
+
+- devcontainer は外向き通信を制限しており（`docs/rules/commands.md`）、AI は公表元の利用条件を読めない。そこで、**人間が原本を取得するときに、公表元のページが示す利用条件（その URL と、出典の表示について求める字面）を確かめ、原本とあわせて渡す**ことを段2 の前提とする。渡されなければ、段2 に入らず停止を申告する
+- 表示の形: `data.ts` の先頭のコメントに、利用条件が求める出典の字面・取得元の URL・取得日・加工した旨（文字コードと日付の書式を改め、TypeScript の形式へ変換した）を書く。PR 本文にも同じ出典を書く（入力 UI 10-7 の手順5 の参照とあわせる）
+- 利用条件が**画面への出典の表示**を求めるときは、画面の文言と置き場を本仕様も UI 仕様も定めていないため、実装を進めずに停止を申告する（AI が文言と置き場を決めない）
 
 ---
 
@@ -642,6 +1146,61 @@ AC 番号は、ことわりの無いものは `work-month-listing-ui.md` のも�
 - **`/this-month` は本人の契約かを確かめない**（W-7。2026-10-30 人間の明示選択（Q-11 = (e)））。他人の契約の勤務月が開けないことは、画面3 とドメイン API が担保し、画面2 のテストは読まない（W-7 の「画面3 への申し送り」）
 - `/this-month` の転送の状態コードは読まない（W-7。`redirect()` に渡した送り先だけを読む）
 
+### T-3. 画面3
+
+AC 番号の略記は M 節と同じ（ことわりの無いものは `work-month-screen-ui.md`）。差し替えは T-0 に従う —— `vi.mock` は `next/navigation` 等の Next のランタイムのモジュールに限り、自前のモジュール（`@/lib/*`・`./_components/*`・`lib/holidays/` を含む）を `vi.mock` しない。`fetch` は手書きの Fake を `globalThis.fetch` に代入して後で戻し、時刻は引数で注入するか `vi.useFakeTimers` で固める。祝日は `calendarCells` の `isHoliday` 引数・`WorkMonthView` の `isHoliday` props で差し替え、画面の部品のテストでは `isHoliday` を経ずに `cells` を props で渡す。関数の名前と型は M-11 のとおり。
+
+**段の分け方**（M-12。出所: 2026-10-30 人間の明示選択（Q-15 = (a)）。分け方は AI 起案）: テストを「段1」と「段2」の2つの表に分ける。**段1 の表のテストは `lib/holidays/` を輸入せず、祝日データの同梱に依存しない**（祝日は Fake の `isHoliday` で与える）。段2 の表のテストだけが同梱した祝日データを読む。段2 は原本が置かれるまで書かない。
+
+**本人かの真偽のキー**（M-3）: テストは真偽のキー名の字面を書かず、`OPERATOR_OWNERSHIP_KEY` を `lib/work-month.ts` から輸入して Fake の本文を組む（例: `{ ...表現, [OPERATOR_OWNERSHIP_KEY]: true }`）。「真偽が無い」応答は、そのキーを持たない本文で表す。#155 でキー名が決まったとき、テストを改める必要は無い。
+
+**文言の期待値**: M-9 の文言（AI 起案・未承認）は、テストに字面で書く（画面2 のテストが W-4 の文言を字面で持つのと同じ）。人間が文言を改めたら、`lib/work-month-feedback.ts` とテストの字面を改める。
+
+#### 段1 — 祝日データに依存しない
+
+| テストファイル | 担う AC | 備考 |
+|---|---|---|
+| `apps/web/src/lib/work-month-actions.test.ts` | AC-3（全行）・5-1・5-2、締め UI 1-1〜1-3・4-1・5-1・5-2、承認 UI 1-1〜1-4・3-1・3-2、契約 AC-6 の申し送り | M-4 の表をそのまま入出力にする。`operator` 6種（ゲスト・①〜④・ロール2種 × `"unknown"`）× 状態3種 × `generated` 真偽の全組で4つの真偽を読む。`generated` が偽の `Draft` で①④の `close` が偽・`edit` が真。空月（`generated` 真）で `close` が真。`workMonthNote` は M-5 の8つの文をそれぞれ1組で読み、順の優先（ゲストで `Approved` → 「ゲストとして閲覧しています。」、締めた直後で `PendingApproval` → 「締めました。…」）を読む |
+| `apps/web/src/lib/work-month.test.ts` | 1-3・1-4・AC-3、入力 UI 1-1・1-6 | `formatHours`: `{9,30}`→`9.5`、`{10,0}`→`10.0`、`{7,45}`→`7.75`、`{0,15}`→`0.25`、`{0,0}`→`0.0`、`{180,15}`→`180.25`。`formatTimeOfDay`: `{9,0}`→`9:00`、`{17,45}`→`17:45`、`{0,15}`→`0:15`。`formatTimeRange` が `〜` で結ぶ。**`readOwnership`**（M-3）を表で読む —— キーの値が `true` → `"own"`、`false` → `"other"`、キーが無い → `"unknown"`、値が `"true"`（文字列）・`1`・`null` → `"unknown"`、本文が `null`・配列・文字列 → `"unknown"`。**キー名の持ち主が1つであること**（M-3）: `OPERATOR_OWNERSHIP_KEY` を輸入し、その値を、`apps/web/src` 配下の `*.ts`・`*.tsx`（テストを含む）の字面から走査して、現れるファイルが `lib/work-month.ts` のちょうど1つであることを読む（引用符を問わず値の字面で探す）。走査の述語は「パスと内容の組の列」を受けて現れるパスを返す関数に切り出し、陽性対照として、実際の列に値の字面を含む第2の組を足して与えると2つを返すことを読む（陽性対照の内容も定数から組み、字面をテストに書かない）。走査した `*.ts`・`*.tsx` が0件でないことも読む |
+| `apps/web/src/lib/work-month-client.test.ts` | AC-6、入力 UI 3-6-c、`bff-wiring.md` 6-6・6-7 | 6つの関数に手書きの Fake の `fetchImpl` を渡し、送った要求のメソッド（GET・PUT・DELETE・POST×3）とパスを読む。`workMonthApiPath("c-001","2026-07")` が `/api/work-months/c-001/2026-07`、`/`・`?`・`#` を含む値が1つのセグメントに符号化される。R-5 の本文を JSON として読んだ値が `input` と深く等しく、キーがちょうど `startTime`・`endTime`・`break`（`break: null` のときもキーがある）、`workingHours` が無い、`Content-Type` が `application/json`。R-6〜R-9 が本文を持たない。分類: 200 の表現 → `ok`、401 → `refresh`、400・403・404・409 の `{"error":{"code":"X"}}` → `rejected`（`status` と `code`）、429・500・例外・JSON でない本文・`code` の無い 403・`dailyRecords` の無い 200 → `failed`。**`ok` の `ownership`**: 本文の `[OPERATOR_OWNERSHIP_KEY]` が `true` → `"own"`、`false` → `"other"`、キーが無い → `"unknown"` で、**キーが無くても `ok` である**（`failed` にしない）。6つの関数のいずれの `ok` でも同じに読む（操作の成功の応答も表現である＝契約 D-6）。`fetchImpl` を省くと呼び出しの時点の `globalThis.fetch` を使う |
+| `apps/web/src/lib/work-month-feedback.test.ts` | AC-6、入力 UI 4-1-a・4-3・4-9、締め UI 6-1、承認 UI 10-8 | M-9 の2つの表を入出力にする。`operationFailureKind`: `rejected` の 400 → `invalid-input`、403・404 → `not-allowed`、409 → `state-changed`（それぞれ `code` を2通り以上変えても同じ種類）、`failed` → `communication`。`loadFailureKind`: `rejected` の 404・400 → `missing`、403・409・`failed` → `failed`。`OPERATION_FAILURE_MESSAGES` の4つの文が M-9 の字面と一致し、互いに異なり、`TIME_ENTRY_MESSAGES`（M-7）の7つの文のどれとも異なる。`WORK_MONTH_LOAD_ERROR_MESSAGE` が「勤務月を読み込めませんでした。通信状態を確認して、もう一度お試しください。」、`WORK_MONTH_MISSING` が M-9 の title・description・linkLabel の字面と一致する |
+| `apps/web/src/lib/work-month-calendar.test.ts` | 入力 UI 1-4・1-5・4-2・9-1〜9-7・9-9 | マスの数と先頭の空き: `2026-06`（1日が月曜）→ 空き0・計35、`2026-03`（1日が日曜）→ 空き6・計42、`2026-02` → 空き6・計35、`2028-02`（うるう年）→ 空き1・日29・計35。`mark`: `isHoliday` が真の平日・日曜・土曜 → `hol` で `holiday` 真（9-1〜9-3）、偽の日曜 → `sun`、偽の土曜 → `sat`、偽の平日 → 空文字（9-4〜9-6）。`isHoliday` が呼ばれる引数が `YYYY-MM-DD`。`future`: `today` が `2026-10-02` のとき `2026-10-02` は偽・`2026-10-03` は真。`record` が日付で結び付く。`WEEKDAY_HEADERS` が月〜日の7つ。`dayLabel`（M-6 の2例と、未来の日の「（未来の日付）」）。`firstInputDay`（土日・祝日・未来を飛ばす、該当が無ければ1日） |
+| `apps/web/src/lib/jst-month.test.ts`（既存へ追加） | 入力 UI 4-2 | `currentJstDate`: `2026-10-31T14:59:59Z` → `2026-10-31`、`2026-10-31T15:00:00Z` → `2026-11-01`、`2026-12-31T15:00:00Z` → `2027-01-01` |
+| `apps/web/src/lib/time-entry.test.ts` | 入力 UI 3-2-a・3-4・3-5・3-6-a・3-6-b・3-6-f・4-1・4-5〜4-9・5-1 | `HOUR_OPTIONS`・`MINUTE_OPTIONS` の値の集合が `daily-record-entry.md` D-10 と過不足なく一致し昇順（期待値を字面で書かず、D-10 の条文から読むか、`daily-record-entry.md` AC-3 の 3-A の許可の行から読む。読み方は tester が選ぶ）。M-7 の理由の表を1行ずつ読む（未選択の3つは `tried` 真のときだけ出て偽のとき出ない、行の割り当て、上の行が優先されること）。休憩なしで休憩の行を見ない。`TIME_ENTRY_MESSAGES` の7つの文が互いに異なる（4-9）。**不変条件**: `daily-record-entry.md` AC-3 の 3-B・3-C の表の、時刻の組を持つ各行（`working-hours.test.ts` と同じく表から読む。行をテストへ手で写さない）について、`timeEntryProblems(form, true)` が空であることと `computeWorkingHours` が `null` でないことが一致する。`previewWorkingHours` は未選択が残ると `null`、そろえば `computeWorkingHours` と深く等しい。`readTimeEntry` は休憩なしで `break: null`、未選択が残ると `incomplete`。`formFromRecord` が `break: null` で `hasBreak` 偽 |
+| `apps/web/src/lib/side-nav-items.test.ts`（既存へ追加） | 一覧 UI 10-5（勤務月画面） | `workMonthSideNavCurrent` を M-10 の表で読む。技術者で自分の契約 `c-001`・`now` が `2026-10-31T14:59:59Z`: `c-001 × 2026-10` → `this-month`、`c-001 × 2026-09` → `own-work-months`、`c-other × 2026-10` → `own-work-months`、`ownContracts` が `undefined` → `own-work-months`。`now` が `2026-10-31T15:00:00Z` のとき `c-001 × 2026-11` → `this-month`。ゲスト → `demo-work-months`、承認者 → `pending-approvals` |
+| `apps/web/src/app/_components/app-side-nav.test.tsx`（既存へ追加） | 一覧 UI 10-5 | `current` に `WorkMonthLocation` を渡す。技術者・R-10 が `c-001` を返す・時計を `2026-10-15T00:00:00Z` に固める: `c-001 × 2026-10` で「今月の入力」に `aria-current="page"` が付き「自分の勤務月」に付かない。`c-other × 2026-10` で「自分の勤務月」に付く。承認者で「承認待ち」、ゲストで「サンプル勤務月」に付き、どちらも `fetch` を呼ばない。`aria-current` を持つ要素がちょうど1つ |
+| `apps/web/src/app/_components/work-month-screen.test.tsx` | `login-ui.md` 6-7・6-9、1-8・1-9 | T-0-2 の形。本体 `workMonthScreen` へ手書きの Fake の `ScreenDeps`、`{ contractId: "c-001", yearMonth: "2026-07" }`、**手書きの Fake の `view`**（受けた props を `data-*` 属性で描くだけの部品）を渡し、`next/navigation` だけを `vi.mock` する。区分3種のいずれでも `redirect` を呼ばずに描く（Fake の `view` がちょうど1回、`viewer`・`contractId: "c-001"`・`yearMonth: "2026-07"` の props で `AppShell` の子として描かれ、`<header>` と `<nav>` が出る）。`misconfigured` で例外を投げ `redirect` も描画もしない。本体の呼び出し（`await workMonthScreen(...)` が戻るまで）の間 `globalThis.fetch` が呼ばれない。戻り値を描画した後は、技術者の行で `AppSideNav` が R-10 を呼ぶため、Fake の `fetch` は R-10 に応答できるようにしておく（描画の後の呼び出しは本行では数えない） |
+| `apps/web/src/app/_components/work-month-summary.test.tsx` | 1-3〜1-5・4-1〜4-3・4-5・4-6 | `Draft` で「締め時に確定します」が出て超過・不足の数値が無い。`PendingApproval`・`Approved` で超過・不足の値が `formatHours` で出る。超過 `{0,15}`・不足 `{0,0}` で、超過の数値と見出し「超過」の要素に `text-danger` があり、不足の数値と見出し・総稼働時間・精算幅に無い（4-6）。超過も不足も0なら `text-danger` を持つ要素が無い。`Draft` の「締め時に確定します」が `text-danger` を持たない。精算幅が `lowerBound`〜`upperBound` |
+| `apps/web/src/app/_components/work-month-calendar.test.tsx` | 1-6、入力 UI 1-1・1-4〜1-6・9-1〜9-11 | `cells` を props で渡す。`editable` 真で日のマスが `button`（数がその月の日数）・アクセシブル名が `dayLabel`・選んだ日だけ `aria-pressed="true"`・押すと `onSelect` がその日付で1回。`editable` 偽で `button` が0個・`onSelect` が呼ばれない。実績のある日に `formatHours` と時刻の範囲が出て休憩の時刻が出ない。祝日のマスに「祝」の札（日曜の祝日にも出る）、`data-dow` が `hol`・`sat`・`sun`、無印の日に `data-dow` が無い。曜日の見出しの並び。9-11: `editable` の真偽で札と `data-dow` が変わらない |
+| `apps/web/src/app/_components/daily-record-form.test.tsx` | 入力 UI 3-1・3-1-a・3-2・3-2-a・3-2-b・3-2-c・3-4・3-6・3-6-a・3-6-b・4-1・4-2・4-4・4-5〜4-9・5-1・6-1 | 時刻の選択が `combobox` で、休憩ありで8つ・アクセシブル名が互いに異なり M-7 の8つと一致、休憩なしで4つ。`input` の `text`・`number` が無い。休憩の組が1つだけで、休憩を足す操作が無い。未選択で保存 → `onSave` 0回・該当の行に `role="alert"` の理由・選んだ値が残る。M-7 の組み合わせの理由がそれぞれ1つの行に出る（理由の文が互いに異なる）。理由があるとき保存しても `onSave` 0回。妥当な値で `onSave` が `readTimeEntry` の `input` で1回（休憩なしで `break: null`）。保存前の稼働時間: 未選択が残ると「—」、そろうと `computeWorkingHours` から得た値（例: 9:00〜18:00・休憩 12:00〜13:00 → `8.0`）、弾く組で「—」（0 や負の値を出さない）。`cell.future` 真で「未来の日付には入力できません」が出て `combobox` と「保存」が無い。`cell.record` があると初期値がその時刻（休憩 `null` で「休憩あり」が外れている）で「削除」が出て、押すと `onDelete` 1回。`busy` 真で保存を押しても `onSave` 0回 |
+| `apps/web/src/app/_components/work-month-operations.test.tsx` | 締め UI 1-4・2-1〜2-3・5-3、承認 UI 2-1・10-1〜10-7・10-9 | `CloseAction`: 「締める」を押すと `onConfirm` を呼ばずに `dialog` が M-8 の `title`・2段落で出る、取消・Esc で `onConfirm` 0回・`dialog` が消える、確定で1回。`ReviewActions`: 「承認」「差戻し」それぞれで承認 UI 10-9-a・10-9-b の `title`・`description`・`confirmLabel` の `dialog` が出る（字面は承認 UI 10-9 の表から写し、出所をテストに残す）、差戻しの `dialog` に `textbox`・`combobox` が無い（10-5）、取消で0回・確定で1回。`busy` 真で確定しても0回 |
+| `apps/web/src/app/_components/work-month-view.test.tsx` | AC-1〜AC-7、入力 UI 2-1〜2-3・3-3・3-6-c・4-3・4-10・5-2・6-1・6-2・7-1・7-2、締め UI 3-1〜3-4・6-1、承認 UI 4-1〜4-4・5-1〜5-4・10-8、一覧 UI 10-9-e・10-9-f | `globalThis.fetch` に、パスとメソッドで応答を返し要求を記録する手書きの Fake を置き、`next/navigation` の `useRouter` だけを `vi.mock` する。`isHoliday` は Fake の関数を props で渡す（`lib/holidays/` を輸入しない）。表現の本文は `OPERATOR_OWNERSHIP_KEY` を輸入して組む。**どの行でも R-10 への要求が0回**（M-3）。**①技術者本人**（ロール `Engineer`・真偽 `true`。`Draft`・`generated` 真）: カレンダーの日が `button`、日を選んでフォーム、保存で PUT が1回・**応答の `totalHours` と日の値で置き換わる**（Fake は保存前の稼働時間と異なる値を返し、画面が応答の値を示すことを読む＝3-6-c）、削除で DELETE が1回・その日が「未入力」へ、「締める」→ 確定で POST `/close` が1回・状態バッジが「締め済」・超過／不足の数値が出る・入力の `button` が消える（締め UI AC-3）。空月（`generated` 真・実績0件）で「締める」がある（締め UI 5-2）。**未生成の当月**（`generated` 偽）: 空状態の title と「稼働実績を入力する」が出る、「締める」が無い、描画と開いただけでは R-1 の GET 以外を送らない（10-9-e）、保存の応答が `generated` 真なら「締める」が出る（2-3）。**②他人の契約**（ロール `Engineer`・真偽 `false`。`c-other` を開く。M-10）: `Draft`・`PendingApproval`・`Approved` のどれでも、入力の `button`・フォーム・「締める」・「承認」・「差戻し」が無く、見出し・状態バッジ・総稼働時間・精算幅・カレンダーの値が出る、GET 以外を送らない。**③承認者**（ロール `Approver`・真偽 `false`）: `PendingApproval` で「承認」「差戻し」が出て、承認の確定で POST `/approve` が1回・状態バッジが応答の `Approved` の語へ変わり「承認」「差戻し」が消える、差戻しの確定で POST `/reject` が1回・状態バッジが応答の `Draft` の語へ変わる（承認 UI AC-4・AC-5）。`Draft` で入力の `button`・「締める」が無い。**④承認者かつ本人**（ロール `Approver`・真偽 `true`）: `Draft` で入力の `button` と「締める」がある（AC-3 ④）、`PendingApproval` で「承認」「差戻し」が無い（承認 UI 3-1）。**真偽が無い**（キーを持たない本文。M-3）: ロール `Engineer`・`Approver` のそれぞれで、`Draft`・`PendingApproval` のどちらでも入力の `button`・フォーム・「締める」・「承認」・「差戻し」が無く、見出し・状態バッジ・総稼働時間・精算幅・カレンダーの値が出て、`role="alert"` が無い（取得の失敗にしない）。**取得中**（R-1 の応答を保留した間）: 操作要素が無く、内容の領域が `aria-busy="true"`。**`PendingApproval`・`Approved` の本人**: 操作要素が無い（5-1・5-2）。**ゲスト**: 真偽 `true` の本文でも、どの状態でも操作要素が無い、ゲストの注記が出る。**取得の結果（M-9）**: R-1 の 404 と 400 のそれぞれで、`EmptyState` の title「勤務月を表示できません」・description「契約が見つからないか、URL の形式が正しくありません。」と、リンク「勤務月の一覧を開く」が出て、その `href` が `defaultScreenPath(viewer)` の値と一致する（区分3種のそれぞれで）。このとき `role="alert"`・再試行の `button`・見出し（`<h1>`）・カレンダーが無い。R-1 の 500・例外・403 のそれぞれで、`role="alert"` が「勤務月を読み込めませんでした。通信状態を確認して、もう一度お試しください。」を持って出て、再試行を押すと R-1 の GET がもう1回送られ、その応答が `ok` なら表現が出る。**操作の結果（M-9）**: 401 で `refresh` がちょうど1回・表示値が変わらない。保存の 400 で `role="alert"` が「入力した内容を受け付けられませんでした。内容を見直して、もう一度保存してください。」を持ち、選んだ値が残り、総稼働時間が変わらない（4-4・4-10）。保存の 403 と 404 のそれぞれで「この勤務月では、この操作はできません。」が出て表示値が変わらない。保存の 409 で R-1 が取り直され、取り直した表現（`PendingApproval`）で入力の `button` が消え、「勤務月の状態が変わっていたため、最新の内容に更新しました。」が出る（6-4）。締めの 409 で R-1 が取り直され、2回目の POST が無い（締め UI 6-1）。承認の 409 で R-1 が取り直される（承認 UI 10-8）。保存の 500 と例外のそれぞれで「通信に失敗しました。時間をおいて、もう一度お試しください。」が出て、表示値が変わらず PUT は1回だけ（自動で送り直さない）。締めの 500 で状態バッジが `Draft` の語のまま（6-3）。409 の取り直しが 500 なら、取得の失敗の文言が出る。操作の失敗の `ErrorBanner` に再試行の `button` が無い。**ロール切替**: `viewer` の props をロール `Engineer` から `Approver` へ替えて描き直すと、R-1 の GET がもう1回送られる（M-2）。**通信中**: 保存の応答を待つ間に保存をもう一度押しても PUT は1回 |
+| `apps/web/src/app/_components/work-month-holidays-boundary.test.ts` | M-1・M-12（段の境界） | ファイル走査で、`lib/work-month-calendar.ts`・`app/_components/work-month-view.tsx`・`app/_components/work-month-screen.tsx` と、段1 の表のテストファイル（本テスト自身を除く）の字面に `holidays` の輸入（`from "…/holidays…"` の形）が無いことを読む。陽性対照として、述語に輸入の字面を含む内容を与えると当たることを読む。走査したファイルが0件でないことも読む |
+
+#### 段2 — 祝日データ（M-12。原本が置かれてから書く）
+
+| テストファイル | 担う AC | 備考 |
+|---|---|---|
+| `apps/web/src/lib/holidays/data.test.ts` | 入力 UI 10-3・10-4・10-4-a・10-5 | `HOLIDAY_ROWS` が0件でない。各行の `date` が `YYYY-MM-DD` で実在する日付（`2026-02-30` のような値でない）、`name` が空文字でない、`date` が重複しない、`date` が昇順。載る年が最初の年から最後の年まで欠けなく続く（10-4-a。期待値の年を字面で書かず、データから最初と最後の年を読んで間を数える）。陽性対照として、年の欠けの述語に1年を抜いた列を与えると落ちることを読む |
+| `apps/web/src/lib/holidays/index.test.ts` | 入力 UI 10-2・10-5、AC-9 | `HOLIDAY_ROWS` のすべての `date` で `isHoliday` が真（名称を問わない＝10-5）。`HOLIDAY_ROWS` に無い日（データの最初の年の範囲で、行の `date` の集合に無い日を1つ以上データから選ぶ）で偽。データの最初の年より前の日（その年の前年の `01-01`）で偽（計算で補わない＝10-5） |
+| `apps/web/src/lib/holidays/services-boundary.test.ts` | 入力 UI 10-2-a | ファイル走査で、`services/` 配下に名前に `holiday`・`syukujitsu` を含むファイル・ディレクトリが無く、`services/` 配下のファイルの字面に `apps/web` の `lib/holidays` への参照が無いことを読む。走査したファイルが0件でないこと、陽性対照（述語に参照の字面を含む内容を与えると当たる）を添える |
+| `apps/web/src/app/_components/work-month-holiday-view.test.tsx` | 入力 UI AC-9（本物のデータの配線） | `HOLIDAY_ROWS` の行のうち1つの日を含む月の表現を、Fake の `fetch` で R-1 に返し、`WorkMonthHolidayView` を描くと、その日のマスに札「祝」が出て `data-dow` が `hol` である。月と日は `HOLIDAY_ROWS` から読み、字面で書かない |
+
+テストで担保しないもの（限界）:
+
+- **本人の判定は表示の出し分けであり認可ではない。** 画面が ② と判定して操作を出さないことはテストで読むが、他人の勤務月への状態を変える要求を弾くのはドメイン API である（契約 AC-4-3・AC-5-4・AC-6-3・AC-7-4・AC-8-4）。他人の勤務月を読めること自体は人間が確定した仕様である（契約 AC-11-3・D-12）
+- **本人かの真偽をドメイン API が正しく返すことは読まない。** 画面のテストは、Fake の応答に真偽を置いて①〜④の出し分けを読む。真偽が操作者を正しく表すこと（④の判定・識別子を載せないこと）は、#155（M-3）のテストが担う。#155 が入るまで、本物の応答には真偽が無く、画面は閲覧だけになる（M-3 の帰結）
+- **仮のキー名と、#155 が決めるキー名が一致することは読まない。** 一致させるのは、#155 が入るときに `OPERATOR_OWNERSHIP_KEY` の値を改める作業である（M-3）
+- 同梱した祝日データが内閣府の公表と一致することは読まない（入力 UI 8-5）。原本をコミットしないため、変換が原本の行を落としていないことも読まない（行の数と内容の突き合わせは、段2 のレビューで人間が原本と見比べる。入力 UI 10-7 の手順3）
+- 利用条件が求める出典の表示を満たすことは読まない（M-12。レビューで人間が確かめる）
+- `page.tsx`（薄い層）が `WorkMonthHolidayView` を本体へ渡していることは読まない（T-0-2 の薄い層）
+- 保存前の稼働時間とドメインの算出の一致は、3-B・3-C の表の行の範囲でだけ読む（入力 UI 8-8）。M-7 の理由の分類と `computeWorkingHours` の一致も同じ範囲に留まる
+- Next が動的セグメントの `params` を符号化したまま渡すか復号して渡すかは読まない。本体のテストは素の文字列を渡す。契約の `contractId` の書式（契約 AC-1-10）に当たる値は符号化しても変わらないため、ふつうの値では差が出ない
+- 開いたまま JST の日・月の境目を越えても、未来の日の判定とサイドバーの選択中を描き直さない（M-6・M-10。W-6 の Q-10 と同じ扱い）
+- 開いている間にデモデータの日次リセット（`demo-data-reset.md`）が走ると、表示中の表現は古くなる。次の操作の応答（404・409 等）で知る。M-9 の扱いに従い、リセットそのものは読まない
+- M-9 の文言は、利用者が理由を理解できるかを読まない（字面の一致だけを読む）。文言の妥当さはレビューで人間が承認する
+- 実ブラウザでの `ConfirmDialog` のフォーカスの扱いは部品のテスト（`design-system.md` AC-6 の 6-9）に任せ、画面のテストでは読まない
+
 ---
 
 ## 人間の決定を待っている論点
@@ -654,8 +1213,23 @@ Q-9・Q-10 も 2026-10-29 に人間が明示選択で決め、各節へ反映し
 
 Q-11（今月の入力の経路の置き場と、本人の契約を確かめる場所）は 2026-10-30 に人間が明示選択で決め、各節へ反映した（Q-11 = (e) 送るだけのページ → C-2・W-1・W-7・T-2）。(e) は、Q-10 の「本人の契約かをサーバー側で確かめずに送らない」を既存の条文のまま満たす置き場が無かったこと（ページは `lambda-client` を輸入できない＝`bff-wiring.md` 1-2・13-6、Route Handler に置くと `bff-wiring.md` の改定が要る）を受けて、確かめる場所を送り先の勤務月画面とドメイン API に移した決定である。`bff-wiring.md` と `docs/rules/architecture.md` は変えていない。決定の内容は W-7 が持つ。
 
-C-2 の `/work-months`・`/pending-approvals`・`/demo`・`/work-months/[contractId]/[yearMonth]`・`/this-month?contract=<契約ID>` のパスと、W 節のうち出所を書いていない決定（W-7 の関数の形・先読みの担保・契約 ID の読み方、W-8 の全体を含む）は AI の起案のまま人間の承認前であり、レビューで人間が確かめる対象として残る。`design-system.md` 6-13-v の観測可能な形（`button` のロール・`aria-expanded`・現れる位置・閉じると消えること）も AI の起案である。
+Q-12〜Q-15（画面3）は 2026-10-30 に起票し、同日に人間が明示選択で決め、各節へ反映した。
+
+- **Q-12 = (b)**（勤務月画面が本人かを知る手段）→ M-3・M-2・M-4・M-10・M-11・T-3。勤務月の表現（E-1・E-3〜E-7）に「操作者がその勤務月の技術者本人か」の真偽を足す。技術者の識別子は載せない。AC-3 は緩めない。ドメイン API の変更（契約 AC-2-5・AC-10-1・AC-10-3、`workmonth-implementation-design.md` の出力 DTO、Go の実装）は #55 とは別の Issue が行い、キー名もその Issue の仕様工程が決める。その Issue は 2026-10-30 に人間の承認を得て #155 として起票された。BFF は変えない（根拠は M-3）。採らなかった選択肢は、(a) ロールが `Approver` なら常に③として扱う（AC-3 ④ と承認 UI 3-1 の緩和が要る）、(c) E-8 の認可を緩める、(d) 本人の判定の経路を BFF に足す、であった
+- **Q-13 = (a)**（勤務月の取得が成り立たないとき）→ M-9・T-3。取得の失敗は W-4 の取得エラーの文言を流用した `ErrorBanner`（`onRetry` 付き）、404・400 は1つの `EmptyState` に区分の既定の画面へのリンク。`EmptyState` の文言は AI 起案で人間の承認前
+- **Q-14 = (b)**（操作が弾かれたときの文言）→ M-9・T-3。種類ごとに4つの文。文言は AI 起案で人間の承認前
+- **Q-15 = (a)**（祝日データの用意）→ M-1・M-6・M-12・T-3。人間が原本を用意し、祝日のデータと `lib/holidays/` を画面3 の最後の段へ回す。原本はコミットしない
+
+### 起案のまま残るもの
+
+C-2 の `/work-months`・`/pending-approvals`・`/demo`・`/work-months/[contractId]/[yearMonth]`・`/this-month?contract=<契約ID>` のパスと、W 節・M 節のうち出所を書いていない決定（M-11 の全体と、M-12 のうち Q-15 の決定を除く部分を含む）（W-7 の関数の形・先読みの担保・契約 ID の読み方、W-8 の全体を含む）は AI の起案のまま人間の承認前であり、レビューで人間が確かめる対象として残る。`design-system.md` 6-13-v の観測可能な形（`button` のロール・`aria-expanded`・現れる位置・閉じると消えること）も AI の起案である。
 
 レビューで人間が確かめる対象として、次も残る（未決の論点ではない。推測で埋めた箇所は無い）:
 
+- **本人かの真偽が応答に無いときの扱い**（M-3。AI 起案）: `"unknown"` として操作要素を出さない。帰結として、#155 がドメイン API に入るまで、本物の環境の画面3 は閲覧だけになる。**#55 を #155 より先にマージ・デプロイしてよいか**は人間が確かめる
+- **真偽の仮のキー名 `operatorIsOwner`**（M-3）: #155 の決定に従って改める。改める箇所は `lib/work-month.ts` の `OPERATOR_OWNERSHIP_KEY` と `readOwnership` だけである
+- **M-9 の文言**（AI 起案・未承認）: `EmptyState` の title・description・リンクの文言（Q-13 = (a)）と、操作が弾かれたときの4つの文（Q-14 = (b)）
+- **M-9 の分類の細部**（AI 起案）: R-1 の 403・409 を取得の失敗とすること、操作の失敗の `ErrorBanner` に再試行を出さないこと、409 の取り直しが失敗したときの表示
+- **段の分け方と祝日データの形式**（M-1・M-12。AI 起案）: `work-month-holiday-view.tsx` を挟んで `lib/holidays/` を段2 に閉じ込める形、`workMonthScreen` が `view` を引数で受ける形、`HOLIDAY_ROWS` の形式と変換の規則（原本の書式の想定は原本を読んで確かめていない）、変換のスクリプトを置かないこと、`.gitignore` に原本を足すこと
+- **利用条件の確認の受け渡し**（M-12。入力 UI 10-8）: 人間が原本とあわせて公表元の利用条件（URL と出典の表示について求める字面）を渡すことを段2 の前提とした。利用条件が画面への出典の表示を求めるなら、実装を止めて人間に諮る
 - **転送の状態コード**: Q-10 は「302 で送る」と述べたが、Q-11 = (e) で選んだ `redirect()` は、URL を直接開いた要求に 307 を返す（W-7）。どちらも一時的な転送で送り先は同じであり、本仕様は状態コードを固定していない。302 そのものを要するなら、`redirect()` では満たせないため置き場を改める判断になる
