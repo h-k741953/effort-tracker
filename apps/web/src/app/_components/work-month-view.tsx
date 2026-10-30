@@ -85,6 +85,8 @@ export function WorkMonthView({
   // 取得の結果を反映する。置き換えは最新の要求のものだけ（古い応答は捨てる）。
   const applyLoad = (result: WorkMonthResult, mine: number, forKey: string): boolean => {
     if (mine !== seq.current) return false;
+    // 取り直しの結果を反映する時点で、締めた直後の注記は偽にする。
+    setClosedFor(undefined);
     if (result.kind === "ok") {
       setLoad({ kind: "loaded", forKey, value: result.value, ownership: result.ownership });
     } else if (result.kind === "refresh") {
