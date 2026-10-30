@@ -81,6 +81,7 @@ function getOnly(options: WorkMonthBodyOptions, path = MONTH) {
 interface ViewProps {
   viewer?: Viewer;
   contractId?: string;
+  yearMonth?: string;
   isHoliday?: (date: string) => boolean;
 }
 
@@ -89,7 +90,7 @@ function view(props: ViewProps = {}) {
     <WorkMonthView
       viewer={props.viewer ?? ENGINEER}
       contractId={props.contractId ?? "c-001"}
-      yearMonth="2026-07"
+      yearMonth={props.yearMonth ?? "2026-07"}
       isHoliday={props.isHoliday ?? NO_HOLIDAY}
     />
   );
@@ -710,6 +711,68 @@ describe("ロール切替・通信中", () => {
     expect(fake.count("GET", MONTH)).toBe(1);
     rerender(view({ viewer: APPROVER }));
     await waitFor(() => expect(fake.count("GET", MONTH)).toBe(2));
+  });
+
+  // M-2「締めた直後を戻す」（AI 起案）。取り直した表現の上で「締めました。」を使い回さない。
+  describe("締めた直後を取り直しで偽へ戻す", () => {
+    const JUST_CLOSED = "締めました。承認されるまで稼働実績は編集できません。";
+
+    /** 最初の GET は Draft・本人、2回目以降の GET は PendingApproval。締めの POST は PendingApproval を返す。 */
+    function closableBackend(afterOwnership: boolean, path = MONTH, yearMonth = "2026-07") {
+      let gets = 0;
+      return backend({
+        [`GET ${path}`]: () => {
+          gets += 1;
+          return jsonResponse(
+            gets === 1
+              ? workMonthBody({ ownership: true, state: "Draft", yearMonth })
+              : workMonthBody({ ownership: afterOwnership, state: "PendingApproval", yearMonth }),
+          );
+        },
+        [`POST ${path}/close`]: () =>
+          jsonResponse(workMonthBody({ ownership: true, state: "PendingApproval", yearMonth })),
+      });
+    }
+
+    async function closeAsEngineer() {
+      const result = await renderLoaded({ viewer: ENGINEER });
+      fireEvent.click(screen.getByRole("button", { name: "締める" }));
+      await confirmDialog("締める");
+      await waitFor(() => expect(screen.getByText(JUST_CLOSED)).toBeTruthy());
+      return result;
+    }
+
+    it.each([
+      ["本人（真偽 true）", true, "ご自身の勤務月のため、承認・差戻しはできません。"],
+      ["本人でない（真偽 false）", false, "技術者が締めた勤務月です。"],
+    ])("締めた後にロールを Approver へ替えると、取り直した表現（%s）の注記は「締めました。」でない", async (_name, own, note) => {
+      const fake = closableBackend(own);
+      const { rerender } = await closeAsEngineer();
+      rerender(view({ viewer: APPROVER }));
+      await waitFor(() => expect(fake.count("GET", MONTH)).toBe(2));
+      await waitFor(() => expect(screen.getByText(note)).toBeTruthy());
+      expect(screen.queryByText(JUST_CLOSED)).toBeNull();
+      expect(screen.queryByText(/締めました。/)).toBeNull();
+    });
+
+    it("締めた後に yearMonth の props を替えると、取り直した PendingApproval の注記は「締め済のため編集できません。」", async () => {
+      const next = workMonthApi("c-001", "2026-08");
+      let gets = 0;
+      const fake = backend({
+        [`GET ${MONTH}`]: () => jsonResponse(workMonthBody({ ownership: true, state: "Draft" })),
+        [`POST ${MONTH}/close`]: () => jsonResponse(workMonthBody({ ownership: true, state: "PendingApproval" })),
+        [`GET ${next}`]: () => {
+          gets += 1;
+          return jsonResponse(workMonthBody({ ownership: true, state: "PendingApproval", yearMonth: "2026-08" }));
+        },
+      });
+      const { rerender } = await closeAsEngineer();
+      rerender(view({ viewer: ENGINEER, yearMonth: "2026-08" }));
+      await waitFor(() => expect(fake.count("GET", next)).toBe(1));
+      await waitFor(() => expect(screen.getByText("締め済のため編集できません。")).toBeTruthy());
+      expect(gets).toBe(1);
+      expect(screen.queryByText(/締めました。/)).toBeNull();
+    });
   });
 
   it("通信中: 保存の応答を待つ間に保存をもう一度押しても PUT は1回", async () => {
