@@ -292,6 +292,39 @@ describe("勤務月画面の選択中（10-5）", () => {
     expect(currentLabels()).toEqual(["自分の勤務月"]);
   });
 
+  // M-10（時刻を描画中に読まない。AI 起案）。R-10 を取る effect の中で読んだ時刻を状態に持ち、描画はそれだけを使う。
+  it("R-10 の応答を保留した間は、c-001 × 2026-10 でも「自分の勤務月」に aria-current=page が付く", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T00:00:00Z"));
+    const fake = installFakeFetch({ [CONTRACTS_PATH]: () => new Promise<Response>(() => {}) });
+    render(<AppSideNav viewer={ENGINEER} current={location("c-001", "2026-10")} />);
+    await waitFor(() => expect(fake.urls.length).toBeGreaterThan(0));
+    expect(currentLabels()).toEqual(["自分の勤務月"]);
+  });
+
+  it("effect で読んだ時刻を使う: 応答を返す前に時計が JST の11月へ進んでも c-001 × 2026-10 は「今月の入力」で、描き直しても変わらず、R-10 の yearMonth は 2026-10", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-31T14:59:59Z"));
+    let release: (response: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const fake = installFakeFetch({ [CONTRACTS_PATH]: () => pending });
+    const props = { viewer: ENGINEER, current: location("c-001", "2026-10") };
+    const view = render(<AppSideNav {...props} />);
+    await waitFor(() => expect(fake.urls.length).toBeGreaterThan(0));
+    vi.setSystemTime(new Date("2026-10-31T15:00:00Z"));
+    await act(async () => {
+      release(jsonResponse(contractsBody([OWN_CONTRACT])));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await entry();
+    expect(currentLabels()).toEqual(["今月の入力"]);
+    view.rerender(<AppSideNav {...props} />);
+    expect(currentLabels()).toEqual(["今月の入力"]);
+    expect(fake.urls[0].searchParams.get("yearMonth")).toBe("2026-10");
+  });
+
   it("承認者: 「承認待ち」に付く。fetch を呼ばない。ちょうど1つ", async () => {
     const fake = backend([OWN_CONTRACT]);
     render(<AppSideNav viewer={APPROVER} current={location("c-001", "2026-10")} />);

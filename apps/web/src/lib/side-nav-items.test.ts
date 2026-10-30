@@ -127,7 +127,7 @@ describe("workMonthSideNavCurrent（M-10 の表。10-5）", () => {
     contractId: string;
     yearMonth: string;
     ownContracts?: Parameters<typeof workMonthSideNavCurrent>[0]["ownContracts"];
-    now: Date;
+    now: Date | undefined;
   }) => workMonthSideNavCurrent({ ownContracts: OWN, ...params });
 
   it.each([
@@ -148,6 +148,21 @@ describe("workMonthSideNavCurrent（M-10 の表。10-5）", () => {
     expect(call({ viewer: ENGINEER, contractId: "c-001", yearMonth: "2026-11", now: AT_BORDER })).toBe("this-month");
     expect(call({ viewer: ENGINEER, contractId: "c-001", yearMonth: "2026-10", now: AT_BORDER })).toBe(
       "own-work-months",
+    );
+  });
+
+  it("技術者・now が undefined（取得の前）→ ownContracts に c-001 があっても own-work-months", () => {
+    expect(call({ viewer: ENGINEER, contractId: "c-001", yearMonth: "2026-10", now: undefined })).toBe(
+      "own-work-months",
+    );
+  });
+
+  it("ゲスト・承認者は now が undefined でも同じ（demo-work-months・pending-approvals）", () => {
+    expect(call({ viewer: GUEST, contractId: "c-001", yearMonth: "2026-10", now: undefined })).toBe(
+      "demo-work-months",
+    );
+    expect(call({ viewer: APPROVER, contractId: "c-001", yearMonth: "2026-10", now: undefined })).toBe(
+      "pending-approvals",
     );
   });
 

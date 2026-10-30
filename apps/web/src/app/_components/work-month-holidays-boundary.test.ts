@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -79,5 +79,91 @@ describe("段の境界（M-1・M-12）", () => {
     const content = read(relative);
     expect(content.length, `${relative} が空`).toBeGreaterThan(0);
     expect(importsHolidays(content)).toBe(false);
+  });
+});
+
+// docs/specs/web-screens-implementation-design.md M-1・M-12・T-3（段2。lib/holidays/ を輸入するファイルの集合）。
+
+interface SourceFile {
+  path: string;
+  content: string;
+}
+
+/** 内容から、輸入の指定子（from "…"・副作用の import "…"・動的な import("…")）を取り出す。 */
+function importSpecifiers(content: string): string[] {
+  const patterns = [
+    /\bfrom\s*["']([^"']+)["']/g,
+    /^\s*import\s*["']([^"']+)["']/gm,
+    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+  ];
+  return patterns.flatMap((re) => [...content.matchAll(re)].map((m) => m[1]));
+}
+
+/** 指定子が、/ で分けた要素に holidays をちょうど持つか。 */
+function isHolidaysSpecifier(specifier: string): boolean {
+  return specifier.split("/").includes("holidays");
+}
+
+/** パスと内容の組の列を受けて、lib/holidays/ を輸入するパスの集合（昇順）を返す。 */
+function holidaysImporters(files: readonly SourceFile[]): string[] {
+  return files
+    .filter((f) => importSpecifiers(f.content).some(isHolidaysSpecifier))
+    .map((f) => f.path)
+    .sort();
+}
+
+const ALLOWED_IMPORTERS = [
+  "app/_components/work-month-holiday-view.test.tsx",
+  "app/_components/work-month-holiday-view.tsx",
+];
+
+function walk(dir: string, base = ""): string[] {
+  return readdirSync(path.join(dir, base), { withFileTypes: true }).flatMap((e) => {
+    const rel = base === "" ? e.name : `${base}/${e.name}`;
+    if (e.isDirectory()) return walk(dir, rel);
+    return /\.tsx?$/.test(e.name) ? [rel] : [];
+  });
+}
+
+/** src 配下の *.ts・*.tsx から、lib/holidays/ の中と本テスト自身を除いた列。 */
+function scanSources(): SourceFile[] {
+  return walk(SRC_DIR)
+    .filter((p) => !p.startsWith("lib/holidays/") && p !== SELF)
+    .map((p) => ({ path: p, content: read(p) }));
+}
+
+describe("輸入の指定子の読み（述語の判別力）", () => {
+  it.each([
+    ['from（import）', 'import { isHoliday } from "@/lib/holidays";'],
+    ["from（export）", "export { isHoliday } from '../../lib/holidays/index';"],
+    ["副作用の import", 'import "@/lib/holidays/data";'],
+    ["動的な import", 'const m = await import("./holidays");'],
+  ])("%s の輸入を持つ組は、許す集合と一致しなくなる", (_name, content) => {
+    const bad: SourceFile = { path: "app/_components/x.tsx", content };
+    expect(holidaysImporters([bad])).toEqual(["app/_components/x.tsx"]);
+    const real = scanSources();
+    expect(holidaysImporters([...real, bad])).not.toEqual(ALLOWED_IMPORTERS);
+    expect(holidaysImporters([...real, bad])).toContain("app/_components/x.tsx");
+  });
+
+  it.each([
+    'const label = "holidays";',
+    "// holidays の注記",
+    'import { x } from "./work-month-holidays-boundary";',
+    'import { y } from "@/lib/holidays-table";',
+  ])("輸入でない字面・要素が holidays でない指定子には当たらない: %s", (content) => {
+    expect(holidaysImporters([{ path: "app/_components/x.tsx", content }])).toEqual([]);
+  });
+});
+
+describe("lib/holidays/ を輸入するファイルの集合", () => {
+  it("走査が0件でなく、許す集合の2つが走査に含まれる", () => {
+    const paths = scanSources().map((f) => f.path);
+    expect(paths.length).toBeGreaterThan(0);
+    for (const allowed of ALLOWED_IMPORTERS) expect(paths, `${allowed} が走査から漏れている`).toContain(allowed);
+  });
+
+  it("許す集合とちょうど一致する", () => {
+    expect(holidaysImporters(scanSources())).toEqual(ALLOWED_IMPORTERS);
   });
 });
