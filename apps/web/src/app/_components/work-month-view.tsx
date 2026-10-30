@@ -100,11 +100,11 @@ export function WorkMonthView({
 
   useEffect(() => {
     const mine = ++seq.current;
-    void fetchWorkMonth(contractId, yearMonth).then((result) => applyLoad(result, mine, key));
+    void fetchWorkMonth(contractId, yearMonth).then((result) => applyLoad(result, mine, fetchKey));
     return () => {
       seq.current += 1;
     };
-  }, [contractId, yearMonth, key, attempt]);
+  }, [contractId, yearMonth, key, fetchKey, attempt]);
 
   const retry = () => {
     setLoad(undefined);
@@ -122,7 +122,7 @@ export function WorkMonthView({
     setBusy(false);
     if (mine !== seq.current) return;
     if (result.kind === "ok") {
-      setLoad({ kind: "loaded", forKey: key, value: result.value, ownership: result.ownership });
+      setLoad({ kind: "loaded", forKey: fetchKey, value: result.value, ownership: result.ownership });
       afterOk?.();
     } else if (result.kind === "refresh") {
       routerRef.current.refresh();
@@ -134,12 +134,12 @@ export function WorkMonthView({
         const reload = ++seq.current;
         setLoad(undefined);
         setClosedFor(undefined);
-        void fetchWorkMonth(contractId, yearMonth).then((again) => applyLoad(again, reload, key));
+        void fetchWorkMonth(contractId, yearMonth).then((again) => applyLoad(again, reload, fetchKey));
       }
     }
   };
 
-  const state = load !== undefined && load.forKey === key ? load : undefined;
+  const state = load !== undefined && load.forKey === fetchKey ? load : undefined;
 
   return (
     <div className="flex flex-col gap-4" aria-busy={state === undefined ? "true" : undefined}>
