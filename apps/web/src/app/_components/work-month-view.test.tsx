@@ -755,6 +755,20 @@ describe("ロール切替・通信中", () => {
       expect(screen.queryByText(/締めました。/)).toBeNull();
     });
 
+    it("締めた後に Approver へ替え、Engineer へ戻して同じキーへ戻っても、注記は「締め済のため編集できません。」で「締めました。」でない", async () => {
+      const fake = closableBackend(true);
+      const { rerender } = await closeAsEngineer();
+      rerender(view({ viewer: APPROVER }));
+      await waitFor(() => expect(fake.count("GET", MONTH)).toBe(2));
+      await waitFor(() =>
+        expect(screen.getByText("ご自身の勤務月のため、承認・差戻しはできません。")).toBeTruthy(),
+      );
+      rerender(view({ viewer: ENGINEER }));
+      await waitFor(() => expect(fake.count("GET", MONTH)).toBe(3));
+      await waitFor(() => expect(screen.getByText("締め済のため編集できません。")).toBeTruthy());
+      expect(screen.queryByText(/締めました。/)).toBeNull();
+    });
+
     it("締めた後に yearMonth の props を替えると、取り直した PendingApproval の注記は「締め済のため編集できません。」", async () => {
       const next = workMonthApi("c-001", "2026-08");
       let gets = 0;
