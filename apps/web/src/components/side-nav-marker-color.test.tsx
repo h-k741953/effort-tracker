@@ -86,3 +86,54 @@ describe("SideNav の丸印の色 - AC-6-13-iv（AC-10-3-p）", () => {
     expect(markers.filter((m) => countWholeWord(m.getAttribute("class") ?? "", "bg-primary") > 0)).toHaveLength(0);
   });
 });
+
+// docs/specs/design-system.md AC-6-13-iv（2026-10-29 改定。AC-10-3-p）。
+// items に options を持つ項目を1つ加えた閉じた描画で、その button の丸印について (i)(ii) を読み、
+// (iii) は link と button の数の和で読む。上の2通りの描画は改定前のまま読む。
+
+describe("SideNav の丸印の色 - options を持つ項目（6-13-iv の 2026-10-29 改定）", () => {
+  const OPTION_ITEM = {
+    label: "今月の入力",
+    options: [
+      { label: "A社 / 保守", href: "/this-month?contract=c-1" },
+      { label: "B社 / 開発", href: "/this-month?contract=c-2" },
+    ],
+  };
+
+  const PLAIN_ITEMS = [
+    { label: "勤務月", href: "/work-months" },
+    { label: "契約", href: "/contracts" },
+    { label: "稼働の推移", href: "/trends" },
+  ];
+  const PLAIN_FOOTER = [{ label: "ヘルプ", href: "/help" }];
+
+  it.each([
+    ["options を持つ項目が選択中", true],
+    ["options を持つ項目が選択中でない", false],
+  ])("実描画（閉じた状態）: %s", (_name, optionCurrent) => {
+    const items = [
+      { ...OPTION_ITEM, current: optionCurrent },
+      ...PLAIN_ITEMS.map((i) => ({ ...i, current: false })),
+    ];
+    const footerItems = PLAIN_FOOTER.map((i) => ({ ...i, current: false }));
+    const expectedCurrent = [optionCurrent, false, false, false, false];
+
+    const { queryAllByRole } = render(<SideNav items={items} footerItems={footerItems} />);
+    // 各項目は link（href を持つ項目）か button（options を持つ項目）。文書の順に並べ直す。
+    const controls = [...queryAllByRole("link"), ...queryAllByRole("button")];
+
+    // (iii) 読んだ数が link と button の数の和（= 項目の数）と一致。0件は失敗。
+    expect(controls.length).toBeGreaterThan(0);
+    expect(controls).toHaveLength(items.length + footerItems.length);
+
+    const ordered = controls.sort((a, b) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+    );
+    ordered.forEach((control, idx) => {
+      const markers = control.querySelectorAll('[aria-hidden="true"]');
+      expect(markers, `index ${idx}`).toHaveLength(1);
+      const classAttr = markers[0].getAttribute("class") ?? "";
+      expect(markerColorConforms(classAttr, expectedCurrent[idx]), `index ${idx}: ${classAttr}`).toBe(true);
+    });
+  });
+});
