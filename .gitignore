@@ -108,3 +108,6 @@ Thumbs.db
 /.design-sync/learnings/
 /.design-sync/node_modules
 /apps/web/.ds-css/
+
+# 祝日データの原本（内閣府 syukujitsu.csv）。変換したものだけを apps/web/src/lib/holidays/ に同梱する（docs/specs/web-screens-implementation-design.md M-12）
+/syukujitsu.csv
