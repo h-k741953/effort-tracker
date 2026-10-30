@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
-import { afterEach, describe, expect, it } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 import { SideNav } from "./side-nav";
 
 // docs/specs/design-system.md AC-6-13（6-13-i〜6-13-iii。検証手段は AC-10-6・10-6-q）。
@@ -86,5 +86,112 @@ describe("SideNav - AC-6-13", () => {
     const missingCurrent = <SideNav items={[{ label: "a", href: "/a" }]} />;
     void withRole;
     void missingCurrent;
+  });
+});
+
+// docs/specs/design-system.md AC-6-13-v（検証手段は AC-10-6-q。2026-10-29 改定）。
+//
+// 選択肢を開く項目（options を持ち href を持たない）。href を持つ項目と options（2つ以上）を持つ項目を
+// 混ぜ、footerItems を1つ以上与えた描画で、閉じた並び・button の名・aria-expanded・押した後の選択肢の
+// link の数・順・名・href・現れる位置・再び押して閉じることを読む。名と href は与えた値から取る。
+
+const OPTIONS = [
+  { label: "A社 / 保守", href: "/this-month?contract=c-1" },
+  { label: "B社 / 開発", href: "/this-month?contract=c-2" },
+];
+
+function mixedItems(optionsCurrent = false) {
+  return [
+    { label: "今月の入力", options: OPTIONS, current: optionsCurrent },
+    { label: "勤務月", href: "/work-months", current: false },
+    { label: "契約", href: "/contracts", current: false },
+  ];
+}
+
+/** nav の中の link と button を文書の順に並べ、アクセシブル名の列にする。 */
+function orderedControls(nav: HTMLElement): string[] {
+  return [...nav.querySelectorAll("a, button")].map((el) => (el.textContent ?? "").trim());
+}
+
+describe("SideNav - AC-6-13-v（選択肢を開く項目）", () => {
+  it("閉じた状態の並び: href を持つ項目の link と options を持つ項目の button が items、footerItems の順に与えた順で並ぶ", () => {
+    render(<SideNav items={mixedItems()} footerItems={FOOTER_ITEMS} />);
+    const nav = screen.getByRole("navigation");
+    expect(orderedControls(nav)).toEqual(["今月の入力", "勤務月", "契約", "ヘルプ"]);
+    expect(screen.getAllByRole("link").map((l) => l.textContent)).toEqual(["勤務月", "契約", "ヘルプ"]);
+  });
+
+  it("options を持つ項目は button のロールで、名が label と一致し、link のロールで問い合わせられない", () => {
+    render(<SideNav items={mixedItems()} footerItems={FOOTER_ITEMS} />);
+    expect(screen.getByRole("button", { name: "今月の入力" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "今月の入力" })).toBeNull();
+  });
+
+  it("描画した直後は閉じている: aria-expanded が \"false\" で、options のリンクが文書に無い", () => {
+    render(<SideNav items={mixedItems()} footerItems={FOOTER_ITEMS} />);
+    expect(screen.getByRole("button", { name: "今月の入力" }).getAttribute("aria-expanded")).toBe("false");
+    for (const option of OPTIONS) {
+      expect(screen.queryByRole("link", { name: option.label })).toBeNull();
+    }
+  });
+
+  it("押すと開く: aria-expanded が \"true\" になり、options と同じ数・順・名・href の link が、その button より後・次の項目より前に現れる", () => {
+    render(<SideNav items={mixedItems()} footerItems={FOOTER_ITEMS} />);
+    const button = screen.getByRole("button", { name: "今月の入力" });
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+
+    const nav = screen.getByRole("navigation");
+    expect(orderedControls(nav)).toEqual([
+      "今月の入力",
+      ...OPTIONS.map((o) => o.label),
+      "勤務月",
+      "契約",
+      "ヘルプ",
+    ]);
+    for (const option of OPTIONS) {
+      expect(within(nav).getByRole("link", { name: option.label }).getAttribute("href")).toBe(option.href);
+    }
+  });
+
+  it("開いた状態で再び押すと閉じる: aria-expanded が \"false\" に戻り、選択肢のリンクが文書から消える", () => {
+    render(<SideNav items={mixedItems()} footerItems={FOOTER_ITEMS} />);
+    const button = screen.getByRole("button", { name: "今月の入力" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    for (const option of OPTIONS) {
+      expect(screen.queryByRole("link", { name: option.label })).toBeNull();
+    }
+  });
+
+  it("6-13-iii: options を持つ項目の current が真のとき、その button に aria-current=\"page\" がある", () => {
+    render(<SideNav items={mixedItems(true)} footerItems={FOOTER_ITEMS} />);
+    expect(screen.getByRole("button", { name: "今月の入力" }).getAttribute("aria-current")).toBe("page");
+    for (const link of screen.getAllByRole("link")) {
+      expect(link.hasAttribute("aria-current")).toBe(false);
+    }
+  });
+
+  it("6-13-iii: current が偽のとき、その button に aria-current が付かない", () => {
+    render(<SideNav items={mixedItems(false)} footerItems={FOOTER_ITEMS} />);
+    expect(screen.getByRole("button", { name: "今月の入力" }).hasAttribute("aria-current")).toBe(false);
+  });
+
+  it("開閉の操作で、部品は通信しない（fetch が呼ばれない）", () => {
+    const calls: unknown[] = [];
+    vi.stubGlobal("fetch", (...args: unknown[]) => {
+      calls.push(args);
+      return Promise.reject(new Error("fetch must not be called"));
+    });
+    try {
+      render(<SideNav items={mixedItems()} footerItems={FOOTER_ITEMS} />);
+      const button = screen.getByRole("button", { name: "今月の入力" });
+      fireEvent.click(button);
+      fireEvent.click(button);
+      expect(calls).toHaveLength(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
