@@ -7,7 +7,7 @@
 
 import { vi } from "vitest";
 
-export type TestState = "Draft" | "PendingApproval" | "Approved";
+type TestState = "Draft" | "PendingApproval" | "Approved";
 
 export interface TestRow {
   contractId: string;
@@ -67,9 +67,9 @@ export const PENDING_PATH = "/api/work-months/pending-approval";
 export const DEMO_PATH = "/api/work-months/demo";
 export const CONTRACTS_PATH = "/api/contracts";
 
-export type FakeHandler = (url: URL) => Response | Promise<Response>;
+type FakeHandler = (url: URL) => Response | Promise<Response>;
 
-export interface FakeFetch {
+interface FakeFetch {
   /** 受けた要求のURL（時系列）。 */
   urls: URL[];
   /** 受けた要求のメソッド（時系列。未指定は GET）。 */
