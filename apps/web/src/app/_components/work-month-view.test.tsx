@@ -20,6 +20,7 @@ import {
   type TestWorkMonthState,
   type WorkMonthBodyOptions,
 } from "@/test-support/work-month";
+import { NEW_TIME_ENTRY_FORM, type TimeEntryForm } from "@/lib/time-entry";
 import { WorkMonthView } from "./work-month-view";
 
 // docs/specs/work-month-screen-ui.md AC-1〜AC-7、daily-record-entry-ui.md 2-1〜2-3・3-3・3-6-c・4-3・4-10・5-2・6-1・6-2・
@@ -140,6 +141,20 @@ function setTime(prefix: "開始" | "終了" | "休憩開始" | "休憩終了", 
   pickLabel(`${prefix}（分）`, String(minute).padStart(2, "0"));
 }
 
+/** 画面のフォームの値を読む（選択の value。休憩なしのときは休憩の欄が無い）。 */
+function readFormValues(): TimeEntryForm {
+  const value = (name: string) => (screen.getByRole("combobox", { name }) as HTMLSelectElement).value;
+  const selection = (prefix: string) => ({ hour: value(`${prefix}（時）`), minute: value(`${prefix}（分）`) });
+  const hasBreak = (screen.getByRole("checkbox", { name: "休憩あり" }) as HTMLInputElement).checked;
+  return {
+    start: selection("開始"),
+    end: selection("終了"),
+    hasBreak,
+    breakStart: hasBreak ? selection("休憩開始") : { hour: "", minute: "" },
+    breakEnd: hasBreak ? selection("休憩終了") : { hour: "", minute: "" },
+  };
+}
+
 function enterWorkingDay() {
   setTime("開始", 9, 0);
   setTime("終了", 18, 0);
@@ -209,6 +224,23 @@ describe("① 技術者本人（Engineer・真偽 true。Draft・generated 真�
     await waitFor(() => expect(dayButton(/^7月1日（水） 未入力/)).toBeTruthy());
     expect(fake.count("DELETE", `${MONTH}/daily-records/2026-07-01`)).toBe(1);
     expect(screen.getByText(/^\s*8\.75\s*(時間)?\s*$/)).toBeTruthy();
+  });
+
+  it("削除の成功の後、フォームは NEW_TIME_ENTRY_FORM の値へ戻る（M-7。削除の前は実績の値＝休憩なしの 9:00〜17:45）", async () => {
+    backend({
+      [`GET ${MONTH}`]: () => jsonResponse(workMonthBody(body())),
+      [`DELETE ${MONTH}/daily-records/2026-07-02`]: () =>
+        jsonResponse(workMonthBody(body({ totalHours: hm(8, 0), dailyRecords: [JULY_RECORDS[0]] }))),
+    });
+    await renderLoaded();
+    fireEvent.click(dayButton(/^7月2日/));
+    const before = readFormValues();
+    expect(before).not.toEqual(NEW_TIME_ENTRY_FORM);
+    expect(before.start).toEqual({ hour: "9", minute: "0" });
+    expect(before.hasBreak).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "削除" }));
+    await waitFor(() => expect(dayButton(/^7月2日（木） 未入力/)).toBeTruthy());
+    expect(readFormValues()).toEqual(NEW_TIME_ENTRY_FORM);
   });
 
   it("締め: 「締める」→ 確認 → 確定で POST /close が1回。状態バッジが「締め済」・超過／不足の数値が出て、入力の button が消える", async () => {
