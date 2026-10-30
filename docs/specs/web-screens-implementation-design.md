@@ -637,11 +637,13 @@ flowchart TD
 | 勤務月 | クライアント（`useState`） | `loading` / `failed`（M-9 の取得の失敗）/ `missing`（M-9 の見つからない・不正）/ `loaded`（`WorkMonthDetail` と `Ownership`） |
 | 本人か | 勤務月と同じ `useState`（`loaded` が持つ） | `Ownership`（`"own"` / `"other"` / `"unknown"`）。最新の表現から `readOwnership` で読む（M-3）。別に状態を持たない。`loaded` でないときは `"unknown"` と同じに扱う |
 | 選んだ日 | クライアント（`useState`） | `YYYY-MM-DD` または `null`。初期値は `null`（ハンドオフ 377 行の既定の選択は採らない） |
-| 入力中の値・保存を押したか | `DailyRecordForm`（`useState`） | `TimeEntryForm` と `tried`。日を選び直すと初期化する（`key` に日付を渡す） |
+| 入力中の値・保存を押したか | `DailyRecordForm`（`useState`） | `TimeEntryForm` と `tried`。日を選び直したとき、またはその日の実績の有無が変わったときに初期化する（`key` に `` `${日付}:${実績が無ければ "new"、あれば "saved"}` `` を渡す。下の注記） |
 | 通信中 | クライアント（`useState`） | 通信中は次の操作（保存・削除・締め・承認・差戻し）を受けない（二重送信を防ぐ） |
 | 操作の失敗 | クライアント（`useState`） | 失敗の種別（M-9）。次の操作を始めたら消す |
 | 締めた直後 | クライアント（`useState`） | 締めが成功したら真。注記（M-5）にだけ使う |
 | 当日 | 描画の時点で `currentJstDate(new Date())` | 未来の日の判定（入力 UI 4-2）に使う |
+
+- **`DailyRecordForm` の `key` に実績の有無を含める理由**: 削除の成功（実績あり→無し）と新しい日の保存の成功（無し→あり）で、フォームを初期値から作り直すためである。これで M-7 の「削除の成功の後は `NEW_TIME_ENTRY_FORM` へ戻す」が成り立つ。保存の成功で作り直したときの初期値は応答の実績から `formFromRecord` で作るので、保存した値と同じになる（M-7 の「保存した値のまま `tried` を戻す」と矛盾しない）。実績のある日を保存し直したときは有無が変わらず、作り直さない（AI 起案）
 
 - **示す値は、ドメイン API が返した最新の表現だけから描く。** 操作の成功の応答は更新後の勤務月の表現である（契約 D-6）ため、それで置き換え、R-1 を取り直さない。保存の前に画面が示していた稼働時間で置き換えない（入力 UI 3-6-c）
 - **409 を受けたときだけ R-1 を取り直す**（6-4・`bff-wiring.md` 8-6「再取得は画面の責務」）。取り直す間は `loading` とし（操作要素を出さない）、取り直した表現で操作要素を出し直すため、古い操作は成立しない。取り直しが `ok` でなければ、M-9 の取得の失敗・見つからないの表示へ移る（AI 起案）
@@ -810,7 +812,7 @@ flowchart TD
 | `refresh`（401） | — | `router.refresh()` をちょうど1回。表現を変えない | — |
 | `rejected` で `status` が 400（保存の `TIME_OF_DAY_OUT_OF_RANGE`・`INVALID_TIME_COMBINATION`・`FUTURE_DATE_NOT_ALLOWED`・`DATE_OUT_OF_WORK_MONTH`・`INVALID_REQUEST`。`code` を問わない） | `invalid-input` | 理由を出し、入力中の値を保つ（6-1・6-2、入力 UI 4-1-a・4-3・4-4）。表示値を変えない（入力 UI 4-10） | 「入力した内容を受け付けられませんでした。内容を見直して、もう一度保存してください。」 |
 | `rejected` で 403・404（`code` を問わない） | `not-allowed` | 理由を出す。表示値を変えない | 「この勤務月では、この操作はできません。」 |
-| `rejected` で 409（`code` を問わない） | `state-changed` | 理由を出し、R-1 を取り直して置き換える（6-4、締め UI 6-1、承認 UI 10-8。M-2）。入力中の値は保つ | 「勤務月の状態が変わっていたため、最新の内容に更新しました。」 |
+| `rejected` で 409（`code` を問わない） | `state-changed` | 理由を出し、R-1 を取り直して置き換える（6-4、締め UI 6-1、承認 UI 10-8。M-2）。取り直す間はフォームを出さない（M-2 の `loading`）ため、入力中の値は残らない。フォームは取り直した表現から描き直す（6-4 は値を保つことを求めない。AI 起案） | 「勤務月の状態が変わっていたため、最新の内容に更新しました。」 |
 | `failed`（429・5xx・通信の失敗・契約の形でない応答） | `communication` | 失敗を出す。表示値を変えず、締め・承認が成立したように見せない（6-3）。自動で送り直さない | 「通信に失敗しました。時間をおいて、もう一度お試しください。」 |
 
 - 4つの文は `ErrorBanner`（`role="alert"`）の本文として出し、`onRetry` を渡さない（操作の送り直しは利用者が同じ操作をもう一度押すことで行う。自動で送り直さない＝6-3）。AI 起案
@@ -1024,7 +1026,7 @@ export function WorkMonthCalendar(props: {
   selectedDate: string | null;
   onSelect: (date: string) => void;   // editable が偽のときは呼ばれない
 }): JSX.Element;
-export function DailyRecordForm(props: {                                                     // "use client"。親が key={date} を渡す
+export function DailyRecordForm(props: {                                                     // "use client"。親が key={`${date}:${record === undefined ? "new" : "saved"}`} を渡す（M-2 の注記。AI 起案）
   cell: Extract<CalendarCell, { kind: "day" }>;
   busy: boolean;
   onSave: (input: DailyRecordInput) => void;
