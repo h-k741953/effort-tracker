@@ -16,3 +16,14 @@ export const serverScreenDeps: ScreenDeps = {
   getCurrentViewer,
   getTheme: async () => resolveTheme((await cookies()).get(THEME_COOKIE_NAME)?.value),
 };
+
+// docs/specs/web-screens-implementation-design.md W-7。今月の入力の経路の本体へ注入する依存。
+export type ThisMonthDeps = {
+  getCurrentViewer: () => Promise<ResolveViewerResult>;
+  now: () => Date;
+};
+
+export const serverThisMonthDeps: ThisMonthDeps = {
+  getCurrentViewer,
+  now: () => new Date(),
+};
