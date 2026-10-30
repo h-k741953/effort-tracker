@@ -789,6 +789,51 @@ describe("ロール切替・通信中", () => {
     });
   });
 
+  // M-2「取得の結果は取得のキーと一緒に持つ」（T-3「契約か年月だけを替えた直後」。2026-10-30 人間の決定）。
+  describe("契約か年月だけを替えた直後は取得中として扱う", () => {
+    const DRAFT_NOTE = "下書きの勤務月です。カレンダーの日を選んで、開始・終了・休憩を入力してください。";
+
+    it.each([
+      ["yearMonth", { yearMonth: "2026-08" }, "c-001", "2026-08", "A社 / 保守 × 2026年8月"],
+      ["contractId", { contractId: "c-002" }, "c-002", "2026-07", "B社 / 開発 × 2026年7月"],
+    ])("%s だけを替えて描き直すと、R-1 の応答を保留する間は古い月の注記・入力の button・「締める」が無く aria-busy=true", async (_name, change, nextContract, nextMonth, heading) => {
+      const next = workMonthApi(nextContract, nextMonth);
+      const pending = deferredResponse();
+      const fake = backend({
+        [`GET ${MONTH}`]: () => jsonResponse(workMonthBody({ ownership: true, state: "Draft" })),
+        [`GET ${next}`]: () => pending.promise,
+      });
+      const { rerender, container } = await renderLoaded({ viewer: ENGINEER });
+      expect(screen.getByText(DRAFT_NOTE)).toBeTruthy();
+      expect(screen.getByRole("button", { name: "締める" })).toBeTruthy();
+
+      rerender(view({ viewer: ENGINEER, ...change }));
+      await waitFor(() => expect(fake.count("GET", next)).toBe(1));
+      // 保留した要求のパスが新しい契約・年月の R-1 を指し、古い月を取り直していない
+      expect(fake.requests.map((r) => `${r.method} ${r.pathname}`)).toEqual([`GET ${MONTH}`, `GET ${next}`]);
+      expect(fake.requests[fake.requests.length - 1]!.pathname).toBe(next);
+      expect(screen.queryByText(DRAFT_NOTE)).toBeNull();
+      expectNoOperations();
+      expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+
+      pending.resolve(
+        jsonResponse(
+          workMonthBody({
+            ownership: true,
+            state: "PendingApproval",
+            contractId: nextContract,
+            contractDisplayName: heading.split(" × ")[0],
+            yearMonth: nextMonth,
+          }),
+        ),
+      );
+      await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(heading));
+      expect(screen.getByText("締め済")).toBeTruthy();
+      expect(screen.getByText("締め済のため編集できません。")).toBeTruthy();
+      expectNoOperations();
+    });
+  });
+
   it("通信中: 保存の応答を待つ間に保存をもう一度押しても PUT は1回", async () => {
     const pending = deferredResponse();
     const putPath = `${MONTH}/daily-records/2026-07-03`;
