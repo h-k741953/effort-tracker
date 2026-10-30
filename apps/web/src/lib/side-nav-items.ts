@@ -75,11 +75,11 @@ export function workMonthSideNavCurrent(params: {
   contractId: string;
   yearMonth: string;
   ownContracts: readonly ContractSummary[] | undefined;
-  now: Date;
+  now: Date | undefined;
 }): SideNavCurrent {
   const { viewer, contractId, yearMonth, ownContracts, now } = params;
   if (viewer.kind === "guest") return "demo-work-months";
   if (viewer.role === "Approver") return "pending-approvals";
   const own = ownContracts?.some((c) => c.contractId === contractId) ?? false;
-  return own && yearMonth === currentJstYearMonth(now) ? "this-month" : "own-work-months";
+  return own && now !== undefined && yearMonth === currentJstYearMonth(now) ? "this-month" : "own-work-months";
 }

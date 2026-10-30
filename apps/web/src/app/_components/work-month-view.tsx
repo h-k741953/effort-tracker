@@ -75,7 +75,10 @@ export function WorkMonthView({
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<OperationFailureKind | null>(null);
-  const [justClosed, setJustClosed] = useState(false);
+  // 締めた直後の注記は、締めた時点の取得のキーと一緒に持つ。キーが変われば偽になる。
+  const fetchKey = `${contractId}|${yearMonth}|${key}`;
+  const [closedFor, setClosedFor] = useState<string | undefined>(undefined);
+  const justClosed = closedFor === fetchKey;
   const busyRef = useRef(false);
   const seq = useRef(0);
 
@@ -128,7 +131,7 @@ export function WorkMonthView({
         // 409: 最新の表現を取り直す（取り直す間は操作要素を出さない）。
         const reload = ++seq.current;
         setLoad(undefined);
-        setJustClosed(false);
+        setClosedFor(undefined);
         void fetchWorkMonth(contractId, yearMonth).then((again) => applyLoad(again, reload, key));
       }
     }
@@ -234,7 +237,7 @@ export function WorkMonthView({
           <CloseAction
             yearMonth={workMonth.yearMonth}
             busy={busy}
-            onConfirm={() => void run(() => closeWorkMonth(contractId, yearMonth), () => setJustClosed(true))}
+            onConfirm={() => void run(() => closeWorkMonth(contractId, yearMonth), () => setClosedFor(fetchKey))}
           />
         ) : null}
         {actions.approve || actions.reject ? (

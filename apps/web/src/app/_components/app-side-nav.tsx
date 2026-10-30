@@ -15,16 +15,18 @@ const HIDDEN: ThisMonthEntry = { kind: "hidden" };
 
 export function AppSideNav({ viewer, current }: { viewer: Viewer; current: SideNavCurrent | WorkMonthLocation }) {
   const [thisMonth, setThisMonth] = useState<ThisMonthEntry>(HIDDEN);
-  const [ownContracts, setOwnContracts] = useState<ContractSummary[] | undefined>(undefined);
+  // 契約の列と、それを取った時に effect の中で読んだ時刻を一緒に持つ（描画中に時刻を読まない）。
+  const [own, setOwn] = useState<{ contracts: ContractSummary[]; now: Date } | undefined>(undefined);
   const isEngineer = viewer.kind === "signed-in" && viewer.role === "Engineer";
 
   useEffect(() => {
     if (!isEngineer) return;
     let cancelled = false;
-    void fetchOwnContracts(new Date()).then((result) => {
+    const now = new Date();
+    void fetchOwnContracts(now).then((result) => {
       if (cancelled) return;
       setThisMonth(result.kind === "ok" ? thisMonthEntry(result.value) : HIDDEN);
-      setOwnContracts(result.kind === "ok" ? result.value : undefined);
+      setOwn(result.kind === "ok" ? { contracts: result.value, now } : undefined);
     });
     return () => {
       cancelled = true;
@@ -38,8 +40,8 @@ export function AppSideNav({ viewer, current }: { viewer: Viewer; current: SideN
           viewer,
           contractId: current.contractId,
           yearMonth: current.yearMonth,
-          ownContracts: isEngineer ? ownContracts : undefined,
-          now: new Date(),
+          ownContracts: isEngineer ? own?.contracts : undefined,
+          now: isEngineer ? own?.now : undefined,
         });
   const { items, footerItems } = sideNavItems({
     viewer,
