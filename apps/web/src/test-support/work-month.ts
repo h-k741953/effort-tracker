@@ -10,17 +10,17 @@ import { OPERATOR_OWNERSHIP_KEY } from "@/lib/work-month";
 
 export type TestWorkMonthState = "Draft" | "PendingApproval" | "Approved";
 
-export interface TestHm {
+interface TestHm {
   hours: number;
   minutes: number;
 }
 
-export interface TestTime {
+interface TestTime {
   hour: number;
   minute: number;
 }
 
-export interface TestDailyRecord {
+interface TestDailyRecord {
   date: string;
   startTime: TestTime;
   endTime: TestTime;
@@ -103,7 +103,7 @@ export function workMonthApi(contractId: string, yearMonth: string): string {
   return `/api/work-months/${contractId}/${yearMonth}`;
 }
 
-export interface RecordedRequest {
+interface RecordedRequest {
   method: string;
   pathname: string;
   body: unknown;
