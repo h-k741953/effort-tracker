@@ -246,3 +246,69 @@ describe("状態を変えない（10-7・10-9-g。Q-10）", () => {
     }
   });
 });
+
+// docs/specs/work-month-listing-ui.md AC-10-5（勤務月画面）。設計 M-10・M-11・T-3。
+// current に WorkMonthLocation を渡す。技術者は自分で取った R-10 の結果と描画の時点の new Date() で
+// 「今月の入力」か「自分の勤務月」かが決まる。時計は Date だけを固める。
+describe("勤務月画面の選択中（10-5）", () => {
+  const OWN_CONTRACT: TestContract = { contractId: "c-001", contractDisplayName: "A社 / 保守" };
+
+  function location(contractId: string, yearMonth: string) {
+    return { kind: "work-month", contractId, yearMonth } as const;
+  }
+
+  function currentLabels() {
+    return [...nav().querySelectorAll("[aria-current]")].map((el) => (el.textContent ?? "").trim());
+  }
+
+  it("技術者・c-001 × 2026-10（当月）: 「今月の入力」に aria-current=page が付き、「自分の勤務月」に付かない。ちょうど1つ", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T00:00:00Z"));
+    backend([OWN_CONTRACT]);
+    render(<AppSideNav viewer={ENGINEER} current={location("c-001", "2026-10")} />);
+    const link = await entry();
+    await waitFor(() => expect(link.getAttribute("aria-current")).toBe("page"));
+    expect(screen.getByRole("link", { name: "自分の勤務月" }).getAttribute("aria-current")).toBeNull();
+    expect(currentLabels()).toEqual(["今月の入力"]);
+  });
+
+  it("技術者・c-other × 2026-10（他人の契約）: 「自分の勤務月」に付き、「今月の入力」に付かない。ちょうど1つ", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T00:00:00Z"));
+    backend([OWN_CONTRACT]);
+    render(<AppSideNav viewer={ENGINEER} current={location("c-other", "2026-10")} />);
+    const link = await entry();
+    expect(link.getAttribute("aria-current")).toBeNull();
+    expect(screen.getByRole("link", { name: "自分の勤務月" }).getAttribute("aria-current")).toBe("page");
+    expect(currentLabels()).toEqual(["自分の勤務月"]);
+  });
+
+  it("技術者・自分の契約でも当月でない（2026-09）: 「自分の勤務月」に付く", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T00:00:00Z"));
+    backend([OWN_CONTRACT]);
+    render(<AppSideNav viewer={ENGINEER} current={location("c-001", "2026-09")} />);
+    await entry();
+    expect(currentLabels()).toEqual(["自分の勤務月"]);
+  });
+
+  it("承認者: 「承認待ち」に付く。fetch を呼ばない。ちょうど1つ", async () => {
+    const fake = backend([OWN_CONTRACT]);
+    render(<AppSideNav viewer={APPROVER} current={location("c-001", "2026-10")} />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(currentLabels()).toEqual(["承認待ち"]);
+    expect(fake.urls).toHaveLength(0);
+  });
+
+  it("ゲスト: 「サンプル勤務月」に付く。fetch を呼ばない。ちょうど1つ", async () => {
+    const fake = backend([OWN_CONTRACT]);
+    render(<AppSideNav viewer={GUEST} current={location("c-001", "2026-10")} />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(currentLabels()).toEqual(["サンプル勤務月"]);
+    expect(fake.urls).toHaveLength(0);
+  });
+});

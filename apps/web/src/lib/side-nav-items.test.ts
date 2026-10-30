@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sideNavItems } from "./side-nav-items";
+import { sideNavItems, workMonthSideNavCurrent } from "./side-nav-items";
 import { thisMonthPath } from "./screen-routes";
 import type { Viewer } from "./viewer";
 
@@ -112,5 +112,54 @@ describe("選択中（10-5。一覧の3画面）— current がちょうど1つ�
       const selected = [...items, ...footerItems].filter((i) => i.current);
       expect(selected.map((i) => i.label)).toEqual([expectedLabel]);
     }
+  });
+});
+
+// docs/specs/work-month-listing-ui.md AC-10-5（勤務月画面）。設計 M-10・M-11・T-3。
+// 勤務月画面で選択中とする項目。技術者は、自分の契約の当月なら「今月の入力」、それ以外は「自分の勤務月」。
+describe("workMonthSideNavCurrent（M-10 の表。10-5）", () => {
+  const OWN = [{ contractId: "c-001", contractDisplayName: "A社 / 保守" }];
+  const BEFORE_BORDER = new Date("2026-10-31T14:59:59Z"); // JST 2026-10-31 23:59:59
+  const AT_BORDER = new Date("2026-10-31T15:00:00Z"); // JST 2026-11-01 00:00:00
+
+  const call = (params: {
+    viewer: Viewer;
+    contractId: string;
+    yearMonth: string;
+    ownContracts?: Parameters<typeof workMonthSideNavCurrent>[0]["ownContracts"];
+    now: Date;
+  }) => workMonthSideNavCurrent({ ownContracts: OWN, ...params });
+
+  it.each([
+    ["c-001 × 2026-10（自分の契約の当月）", "c-001", "2026-10", "this-month"],
+    ["c-001 × 2026-09（当月でない）", "c-001", "2026-09", "own-work-months"],
+    ["c-other × 2026-10（他人の契約）", "c-other", "2026-10", "own-work-months"],
+  ])("技術者・%s → %s", (_name, contractId, yearMonth, expected) => {
+    expect(call({ viewer: ENGINEER, contractId, yearMonth, now: BEFORE_BORDER })).toBe(expected);
+  });
+
+  it("技術者・ownContracts が undefined（取得中か取得の失敗）→ own-work-months", () => {
+    expect(
+      call({ viewer: ENGINEER, contractId: "c-001", yearMonth: "2026-10", ownContracts: undefined, now: BEFORE_BORDER }),
+    ).toBe("own-work-months");
+  });
+
+  it("技術者・JST の月の境目を越えた now では、c-001 × 2026-11 が this-month（c-001 × 2026-10 は own-work-months）", () => {
+    expect(call({ viewer: ENGINEER, contractId: "c-001", yearMonth: "2026-11", now: AT_BORDER })).toBe("this-month");
+    expect(call({ viewer: ENGINEER, contractId: "c-001", yearMonth: "2026-10", now: AT_BORDER })).toBe(
+      "own-work-months",
+    );
+  });
+
+  it("ゲスト → demo-work-months（契約・年月・ownContracts を問わない）", () => {
+    expect(call({ viewer: GUEST, contractId: "c-001", yearMonth: "2026-10", now: BEFORE_BORDER })).toBe(
+      "demo-work-months",
+    );
+  });
+
+  it("承認者 → pending-approvals（契約・年月・ownContracts を問わない）", () => {
+    expect(call({ viewer: APPROVER, contractId: "c-001", yearMonth: "2026-10", now: BEFORE_BORDER })).toBe(
+      "pending-approvals",
+    );
   });
 });
