@@ -883,20 +883,34 @@ describe("ロール切替・通信中", () => {
 });
 
 // 入力 UI 9-10（業務への非影響）。設計 T-3。祝日かどうかだけを変えた2通り（isHoliday は props の Fake。lib/holidays/ を輸入しない）
-// で同じ操作を行い、操作要素の提供・送る要求・保存前の稼働時間・総稼働時間の表示が一致することを読む。
+// で同じ操作を行い、操作要素の提供・送る要求の列・保存前の稼働時間・総稼働時間の表示・編集が一致することを読む。
 describe("① 祝日と平日で業務の振る舞いが変わらない（入力 UI 9-10）", () => {
   const TARGET = "2026-07-03"; // 金曜・今日（2026-08-15）より過去
+  const OTHER_DAY = /^7月6日/; // 実績の無い別の日
   const PUT_PATH = `${MONTH}/daily-records/${TARGET}`;
   const REJECT_MESSAGE = "終了は開始より後の時刻にしてください";
+  const EDITED_RECORD = dailyRecord(TARGET, t(9, 0), t(17, 0), { start: t(12, 0), end: t(13, 0) }, hm(7, 0));
 
   const totalText = () => screen.getByRole("heading", { name: "総稼働時間" }).parentElement?.textContent ?? "";
   const previewText = (container: HTMLElement) => container.querySelector('[aria-live="polite"]')?.textContent ?? "";
+  /** フォームの選択中の表示（開始・終了・休憩開始・休憩終了の時と分）。 */
+  const formLabels = () =>
+    ["開始", "終了", "休憩開始", "休憩終了"].flatMap((prefix) =>
+      ["時", "分"].map(
+        (unit) => (screen.getByRole("combobox", { name: `${prefix}（${unit}）` }) as HTMLSelectElement).selectedOptions[0].textContent,
+      ),
+    );
 
   async function scenario(isHoliday: (date: string) => boolean) {
+    let putCalls = 0;
     const fake = backend({
       [`GET ${MONTH}`]: () => jsonResponse(workMonthBody({ ownership: true })),
-      [`PUT ${PUT_PATH}`]: () =>
-        jsonResponse(workMonthBody({ ownership: true, totalHours: hm(24, 30), dailyRecords: [...JULY_RECORDS, SAVED_RECORD] })),
+      [`PUT ${PUT_PATH}`]: () => {
+        putCalls += 1;
+        return putCalls === 1
+          ? jsonResponse(workMonthBody({ ownership: true, totalHours: hm(24, 30), dailyRecords: [...JULY_RECORDS, SAVED_RECORD] }))
+          : jsonResponse(workMonthBody({ ownership: true, totalHours: hm(23, 45), dailyRecords: [...JULY_RECORDS, EDITED_RECORD] }));
+      },
       [`DELETE ${PUT_PATH}`]: () => jsonResponse(workMonthBody({ ownership: true })),
       [`POST ${MONTH}/close`]: () =>
         jsonResponse(workMonthBody({ ownership: true, state: "PendingApproval", excess: hm(0, 0), shortfall: hm(123, 15) })),
@@ -923,17 +937,30 @@ describe("① 祝日と平日で業務の振る舞いが変わらない（入力
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     observed.rejectPuts = fake.count("PUT", PUT_PATH);
     observed.rejectMessages = screen.queryAllByText(REJECT_MESSAGE).map((el) => el.closest("[role='alert']") !== null);
-    observed.rejectMessageCount = screen.queryAllByText(REJECT_MESSAGE).length;
 
     // 受け付ける組
     enterWorkingDay();
     observed.preview = previewText(container);
+    const formAtSave = readFormValues();
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(screen.getByText(/^\s*24\.5\s*(時間)?\s*$/)).toBeTruthy());
     observed.putCount = fake.count("PUT", PUT_PATH);
     observed.putRequests = fake.requests.filter((r) => r.method === "PUT").map((r) => ({ pathname: r.pathname, body: r.body }));
     observed.totalAfterSave = totalText();
     observed.deleteButtonAfterSave = screen.queryByRole("button", { name: "削除" }) !== null;
+
+    // 編集: 祝日にした対象の日そのものが実績のある日。別の日を選んでから選び直し、初期値を読む
+    fireEvent.click(dayButton(OTHER_DAY));
+    fireEvent.click(dayButton(/^7月3日/));
+    observed.editInitial = readFormValues();
+    observed.editInitialLabels = formLabels();
+    expect(observed.editInitial).toEqual(formAtSave);
+    setTime("終了", 17, 0);
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(screen.getByText(/^\s*23\.75\s*(時間)?\s*$/)).toBeTruthy());
+    observed.editPutCount = fake.count("PUT", PUT_PATH);
+    observed.editPutRequests = fake.requests.filter((r) => r.method === "PUT").map((r) => ({ pathname: r.pathname, body: r.body }));
+    observed.totalAfterEdit = totalText();
 
     // 削除・締め
     fireEvent.click(screen.getByRole("button", { name: "削除" }));
@@ -943,11 +970,16 @@ describe("① 祝日と平日で業務の振る舞いが変わらない（入力
     await confirmDialog("締める");
     await waitFor(() => expect(screen.getByText("締め済")).toBeTruthy());
     observed.closeCount = fake.count("POST", `${MONTH}/close`);
+
+    // その側の Fake について、描画を終えた時点（cleanup の前）で読む
+    expect(fake.unhandled).toEqual([]);
+    expect(fake.requests.filter((r) => r.pathname === CONTRACTS_PATH)).toHaveLength(0);
+    const requestLog = fake.requests.map((r) => ({ method: r.method, pathname: r.pathname, body: r.body }));
     cleanup();
-    return { marker, observed };
+    return { marker, observed, requestLog };
   }
 
-  it("対象の日だけ祝日にした側と平日の側で、操作要素・PUT の要求・稼働時間・総稼働時間・削除・締めが一致する", async () => {
+  it("対象の日だけ祝日にした側と平日の側で、操作要素・要求の列・稼働時間・総稼働時間・編集・削除・締めが一致する", async () => {
     const holiday = await scenario((date) => date === TARGET);
     const weekday = await scenario(() => false);
 
@@ -956,6 +988,11 @@ describe("① 祝日と平日で業務の振る舞いが変わらない（入力
     expect(weekday.marker.badges).toBe(0);
     expect(weekday.marker.dow).not.toBe("hol");
 
+    const putBody = (endHour: number) => ({
+      startTime: { hour: 9, minute: 0 },
+      endTime: { hour: endHour, minute: 0 },
+      break: { start: { hour: 12, minute: 0 }, end: { hour: 13, minute: 0 } },
+    });
     // 期待する値そのもの（両側が同じく誤っていても緑にしない）
     for (const side of [holiday, weekday]) {
       expect(side.observed.isButton).toBe("BUTTON");
@@ -963,25 +1000,30 @@ describe("① 祝日と平日で業務の振る舞いが変わらない（入力
       expect(side.observed.closeButton).toBe(true);
       expect(side.observed.saveButton).toBe(true);
       expect(side.observed.rejectPuts).toBe(0);
-      expect(side.observed.rejectMessageCount).toBe(1);
+      expect(side.observed.rejectMessages).toEqual([true]);
       expect(String(side.observed.preview)).toContain("8.0");
+      expect(String(side.observed.totalBefore)).toMatch(/16\.75/);
       expect(side.observed.putCount).toBe(1);
-      expect(side.observed.putRequests).toEqual([
-        {
-          pathname: PUT_PATH,
-          body: {
-            startTime: { hour: 9, minute: 0 },
-            endTime: { hour: 18, minute: 0 },
-            break: { start: { hour: 12, minute: 0 }, end: { hour: 13, minute: 0 } },
-          },
-        },
-      ]);
+      expect(side.observed.putRequests).toEqual([{ pathname: PUT_PATH, body: putBody(18) }]);
+      expect(String(side.observed.totalAfterSave)).toMatch(/24\.5/);
       expect(side.observed.deleteButtonAfterSave).toBe(true);
+      expect(side.observed.editInitialLabels).toEqual(["9", "00", "18", "00", "12", "00", "13", "00"]);
+      expect((side.observed.editInitial as TimeEntryForm).hasBreak).toBe(true);
+      expect(side.observed.editPutCount).toBe(2);
+      expect(side.observed.editPutRequests).toEqual([
+        { pathname: PUT_PATH, body: putBody(18) },
+        { pathname: PUT_PATH, body: putBody(17) },
+      ]);
+      expect(String(side.observed.totalAfterEdit)).toMatch(/23\.75/);
       expect(side.observed.deleteCount).toBe(1);
       expect(side.observed.closeCount).toBe(1);
+      // 要求の列: 最初は R-1 の GET、状態を変える要求は PUT・PUT・DELETE・POST の順
+      expect(side.requestLog[0]).toEqual({ method: "GET", pathname: MONTH, body: undefined });
+      expect(side.requestLog.filter((r) => r.method !== "GET").map((r) => r.method)).toEqual(["PUT", "PUT", "DELETE", "POST"]);
     }
 
-    // 比較: 祝日と平日で全観測が深く等しい
+    // 比較: 祝日と平日で全観測と、送った要求の列（メソッド・パス・本文、GET を含み順序つき）が深く等しい
     expect(holiday.observed).toEqual(weekday.observed);
+    expect(holiday.requestLog).toEqual(weekday.requestLog);
   });
 });
