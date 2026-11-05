@@ -834,6 +834,33 @@ describe("ロール切替・通信中", () => {
     });
   });
 
+  // M-2「ロール切替」（T-3。2026-11-04 人間の決定、PR #156 往復3 の W-1 を往復4 で直す。形は AI 起案）。
+  it("ロールを Engineer から Approver へ替えて描き直すと、R-1 の応答を保留する間は古い注記・入力の button・「締める」が無く aria-busy=true。応答（④の Draft・真偽 true）の後は入力の button と「締める」が出る", async () => {
+    const DRAFT_NOTE = "下書きの勤務月です。カレンダーの日を選んで、開始・終了・休憩を入力してください。";
+    const pending = deferredResponse();
+    let gets = 0;
+    const fake = backend({
+      [`GET ${MONTH}`]: () => {
+        gets += 1;
+        return gets === 1 ? jsonResponse(workMonthBody({ ownership: true, state: "Draft" })) : pending.promise;
+      },
+    });
+    const { rerender, container } = await renderLoaded({ viewer: ENGINEER });
+    expect(screen.getByText(DRAFT_NOTE)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "締める" })).toBeTruthy();
+
+    rerender(view({ viewer: APPROVER }));
+    await waitFor(() => expect(fake.count("GET", MONTH)).toBe(2));
+    expect(screen.queryByText(DRAFT_NOTE)).toBeNull();
+    expectNoOperations();
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+
+    pending.resolve(jsonResponse(workMonthBody({ ownership: true, state: "Draft" })));
+    await waitFor(() => expect(screen.getByRole("button", { name: "締める" })).toBeTruthy());
+    expect(dayButtons()).not.toHaveLength(0);
+    expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
   it("通信中: 保存の応答を待つ間に保存をもう一度押しても PUT は1回", async () => {
     const pending = deferredResponse();
     const putPath = `${MONTH}/daily-records/2026-07-03`;
