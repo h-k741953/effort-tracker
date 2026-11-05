@@ -75,7 +75,8 @@ export function WorkMonthView({
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<OperationFailureKind | null>(null);
-  // 締めた直後の注記は、締めた時点の取得のキーと一緒に持つ。キーが変われば偽になる。
+  // 締めた直後の注記は、取り直しの結果を反映する時点（applyLoad。409 の取り直しの開始でも偽にする）で偽にする。
+  // 締めた時点の取得のキーと一緒に持つのは併用であり、キーの照合だけでは同じキーへ戻ったときに偽へ戻せない。
   const fetchKey = `${contractId}|${yearMonth}|${key}`;
   const [closedFor, setClosedFor] = useState<string | undefined>(undefined);
   const justClosed = closedFor === fetchKey;
@@ -104,7 +105,7 @@ export function WorkMonthView({
     return () => {
       seq.current += 1;
     };
-  }, [contractId, yearMonth, key, fetchKey, attempt]);
+  }, [contractId, yearMonth, fetchKey, attempt]);
 
   const retry = () => {
     setLoad(undefined);
