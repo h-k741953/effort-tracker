@@ -892,6 +892,8 @@ describe("① 祝日と平日で業務の振る舞いが変わらない（入力
   const EDITED_RECORD = dailyRecord(TARGET, t(9, 0), t(17, 0), { start: t(12, 0), end: t(13, 0) }, hm(7, 0));
 
   const totalText = () => screen.getByRole("heading", { name: "総稼働時間" }).parentElement?.textContent ?? "";
+  /** 総稼働時間の値そのもの（見出しの字面を除いた残り）。部分一致で読まない。 */
+  const totalValue = (text: unknown) => String(text).replace(/^総稼働時間/, "").replace(/\s*時間\s*$/, "").trim();
   const previewText = (container: HTMLElement) => container.querySelector('[aria-live="polite"]')?.textContent ?? "";
   /** フォームの選択中の表示（開始・終了・休憩開始・休憩終了の時と分）。 */
   const formLabels = () =>
@@ -953,8 +955,8 @@ describe("① 祝日と平日で業務の振る舞いが変わらない（入力
     fireEvent.click(dayButton(OTHER_DAY));
     fireEvent.click(dayButton(/^7月3日/));
     observed.editInitial = readFormValues();
+    expect(observed.editInitial).toEqual(formAtSave); // 深い比較を先に（欄が消えたとき getByRole の例外に化けさせない）
     observed.editInitialLabels = formLabels();
-    expect(observed.editInitial).toEqual(formAtSave);
     setTime("終了", 17, 0);
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(screen.getByText(/^\s*23\.75\s*(時間)?\s*$/)).toBeTruthy());
@@ -1002,10 +1004,10 @@ describe("① 祝日と平日で業務の振る舞いが変わらない（入力
       expect(side.observed.rejectPuts).toBe(0);
       expect(side.observed.rejectMessages).toEqual([true]);
       expect(String(side.observed.preview)).toContain("8.0");
-      expect(String(side.observed.totalBefore)).toMatch(/16\.75/);
+      expect(totalValue(side.observed.totalBefore)).toBe("16.75");
       expect(side.observed.putCount).toBe(1);
       expect(side.observed.putRequests).toEqual([{ pathname: PUT_PATH, body: putBody(18) }]);
-      expect(String(side.observed.totalAfterSave)).toMatch(/24\.5/);
+      expect(totalValue(side.observed.totalAfterSave)).toBe("24.5");
       expect(side.observed.deleteButtonAfterSave).toBe(true);
       expect(side.observed.editInitialLabels).toEqual(["9", "00", "18", "00", "12", "00", "13", "00"]);
       expect((side.observed.editInitial as TimeEntryForm).hasBreak).toBe(true);
@@ -1014,7 +1016,7 @@ describe("① 祝日と平日で業務の振る舞いが変わらない（入力
         { pathname: PUT_PATH, body: putBody(18) },
         { pathname: PUT_PATH, body: putBody(17) },
       ]);
-      expect(String(side.observed.totalAfterEdit)).toMatch(/23\.75/);
+      expect(totalValue(side.observed.totalAfterEdit)).toBe("23.75");
       expect(side.observed.deleteCount).toBe(1);
       expect(side.observed.closeCount).toBe(1);
       // 要求の列: 最初は R-1 の GET、状態を変える要求は PUT・PUT・DELETE・POST の順
