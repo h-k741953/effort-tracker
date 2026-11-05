@@ -881,3 +881,107 @@ describe("ロール切替・通信中", () => {
     expect(fake.count("PUT", putPath)).toBe(1);
   });
 });
+
+// 入力 UI 9-10（業務への非影響）。設計 T-3。祝日かどうかだけを変えた2通り（isHoliday は props の Fake。lib/holidays/ を輸入しない）
+// で同じ操作を行い、操作要素の提供・送る要求・保存前の稼働時間・総稼働時間の表示が一致することを読む。
+describe("① 祝日と平日で業務の振る舞いが変わらない（入力 UI 9-10）", () => {
+  const TARGET = "2026-07-03"; // 金曜・今日（2026-08-15）より過去
+  const PUT_PATH = `${MONTH}/daily-records/${TARGET}`;
+  const REJECT_MESSAGE = "終了は開始より後の時刻にしてください";
+
+  const totalText = () => screen.getByRole("heading", { name: "総稼働時間" }).parentElement?.textContent ?? "";
+  const previewText = (container: HTMLElement) => container.querySelector('[aria-live="polite"]')?.textContent ?? "";
+
+  async function scenario(isHoliday: (date: string) => boolean) {
+    const fake = backend({
+      [`GET ${MONTH}`]: () => jsonResponse(workMonthBody({ ownership: true })),
+      [`PUT ${PUT_PATH}`]: () =>
+        jsonResponse(workMonthBody({ ownership: true, totalHours: hm(24, 30), dailyRecords: [...JULY_RECORDS, SAVED_RECORD] })),
+      [`DELETE ${PUT_PATH}`]: () => jsonResponse(workMonthBody({ ownership: true })),
+      [`POST ${MONTH}/close`]: () =>
+        jsonResponse(workMonthBody({ ownership: true, state: "PendingApproval", excess: hm(0, 0), shortfall: hm(123, 15) })),
+    });
+    const { container } = await renderLoaded({ isHoliday });
+    const cell = dayButton(/^7月3日/);
+    const marker = {
+      badges: screen.queryAllByText("祝").length,
+      dow: cell.getAttribute("data-dow"),
+    };
+    const observed: Record<string, unknown> = {
+      isButton: cell.tagName,
+      buttonCount: dayButtons().length,
+      closeButton: screen.queryByRole("button", { name: "締める" }) !== null,
+      totalBefore: totalText(),
+    };
+    fireEvent.click(cell);
+    observed.comboboxes = screen.getAllByRole("combobox").length;
+    observed.saveButton = screen.queryByRole("button", { name: "保存" }) !== null;
+
+    // 弾く組（終了が開始より前）
+    setTime("開始", 18, 0);
+    setTime("終了", 9, 0);
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    observed.rejectPuts = fake.count("PUT", PUT_PATH);
+    observed.rejectMessages = screen.queryAllByText(REJECT_MESSAGE).map((el) => el.closest("[role='alert']") !== null);
+    observed.rejectMessageCount = screen.queryAllByText(REJECT_MESSAGE).length;
+
+    // 受け付ける組
+    enterWorkingDay();
+    observed.preview = previewText(container);
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(screen.getByText(/^\s*24\.5\s*(時間)?\s*$/)).toBeTruthy());
+    observed.putCount = fake.count("PUT", PUT_PATH);
+    observed.putRequests = fake.requests.filter((r) => r.method === "PUT").map((r) => ({ pathname: r.pathname, body: r.body }));
+    observed.totalAfterSave = totalText();
+    observed.deleteButtonAfterSave = screen.queryByRole("button", { name: "削除" }) !== null;
+
+    // 削除・締め
+    fireEvent.click(screen.getByRole("button", { name: "削除" }));
+    await waitFor(() => expect(screen.getByText(/^\s*16\.75\s*(時間)?\s*$/)).toBeTruthy());
+    observed.deleteCount = fake.count("DELETE", PUT_PATH);
+    fireEvent.click(screen.getByRole("button", { name: "締める" }));
+    await confirmDialog("締める");
+    await waitFor(() => expect(screen.getByText("締め済")).toBeTruthy());
+    observed.closeCount = fake.count("POST", `${MONTH}/close`);
+    cleanup();
+    return { marker, observed };
+  }
+
+  it("対象の日だけ祝日にした側と平日の側で、操作要素・PUT の要求・稼働時間・総稼働時間・削除・締めが一致する", async () => {
+    const holiday = await scenario((date) => date === TARGET);
+    const weekday = await scenario(() => false);
+
+    // 陽性対照: 差し替えが効いている（比べる2つが同じ描画ではない）
+    expect(holiday.marker).toEqual({ badges: 1, dow: "hol" });
+    expect(weekday.marker.badges).toBe(0);
+    expect(weekday.marker.dow).not.toBe("hol");
+
+    // 期待する値そのもの（両側が同じく誤っていても緑にしない）
+    for (const side of [holiday, weekday]) {
+      expect(side.observed.isButton).toBe("BUTTON");
+      expect(side.observed.buttonCount).toBe(31);
+      expect(side.observed.closeButton).toBe(true);
+      expect(side.observed.saveButton).toBe(true);
+      expect(side.observed.rejectPuts).toBe(0);
+      expect(side.observed.rejectMessageCount).toBe(1);
+      expect(String(side.observed.preview)).toContain("8.0");
+      expect(side.observed.putCount).toBe(1);
+      expect(side.observed.putRequests).toEqual([
+        {
+          pathname: PUT_PATH,
+          body: {
+            startTime: { hour: 9, minute: 0 },
+            endTime: { hour: 18, minute: 0 },
+            break: { start: { hour: 12, minute: 0 }, end: { hour: 13, minute: 0 } },
+          },
+        },
+      ]);
+      expect(side.observed.deleteButtonAfterSave).toBe(true);
+      expect(side.observed.deleteCount).toBe(1);
+      expect(side.observed.closeCount).toBe(1);
+    }
+
+    // 比較: 祝日と平日で全観測が深く等しい
+    expect(holiday.observed).toEqual(weekday.observed);
+  });
+});
