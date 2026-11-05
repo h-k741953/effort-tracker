@@ -6,7 +6,10 @@ import { isHoliday } from "./index";
 // 期待値は HOLIDAY_ROWS から読む（日付を字面で書かない）。原本は読まない。
 
 const DATES = new Set(HOLIDAY_ROWS.map((r) => r.date));
-const FIRST_YEAR = Number(HOLIDAY_ROWS[0]?.date.slice(0, 4));
+// 並び順に頼らず、最初の年・最後の年を値から求める
+const YEARS = HOLIDAY_ROWS.map((r) => Number(r.date.slice(0, 4)));
+const FIRST_YEAR = Math.min(...YEARS);
+const LAST_YEAR = Math.max(...YEARS);
 
 describe("isHoliday（10-2・10-5）", () => {
   it("HOLIDAY_ROWS が0件でない（以下を空の列で恒真にしない）", () => {
@@ -37,9 +40,7 @@ describe("isHoliday（10-2・10-5）", () => {
 
 describe("isHoliday（9-7・10-5。最後の年より後）", () => {
   it("データの最後の年より後の日（翌年の 01-01）は偽（対象の年の外は祝日なし。計算で補わない）", () => {
-    // HOLIDAY_ROWS は日付の昇順であることに頼らず、最大の年を読む
-    const maxYear = Math.max(...HOLIDAY_ROWS.map((r) => Number(r.date.slice(0, 4))));
-    expect(maxYear).toBeGreaterThanOrEqual(FIRST_YEAR);
-    expect(isHoliday(`${String(maxYear + 1).padStart(4, "0")}-01-01`)).toBe(false);
+    expect(LAST_YEAR).toBeGreaterThanOrEqual(FIRST_YEAR);
+    expect(isHoliday(`${String(LAST_YEAR + 1).padStart(4, "0")}-01-01`)).toBe(false);
   });
 });
