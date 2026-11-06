@@ -30,7 +30,7 @@ export function ownWorkMonthsPath(params: { contractId?: string }): string {
   return `${OWN_WORK_MONTHS_PATH}?${new URLSearchParams({ contract: params.contractId }).toString()}`;
 }
 
-/** ヘルプ（C-2。ページは本仕様では置かない）。 */
+/** ヘルプ（C-2。ページは readonly-screens-implementation-design.md の H 節）。 */
 export const HELP_PATH = "/help";
 
 /** 契約一覧（C-2。ページは本仕様では置かない）。 */
