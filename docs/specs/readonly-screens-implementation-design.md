@@ -4,8 +4,8 @@
 
 **要求（受け入れ条件）はこの仕様へ書き写さない。** 正解は各 UI 仕様（`help-ui.md`・`contracts-ui.md`・`work-trends-ui.md`）と、それらが参照する条文（`login-ui.md`・`work-month-listing-ui.md`・`design-system.md` ほか）にあり、本仕様は AC 番号で参照するだけである（ADR 0004）。本仕様が決めるのは実装設計に限る。文言・節の構成・書かないことを本仕様に写さない。
 
-- **決定者**: 3画面のページ設計と文言の置き場を、`web-screens-implementation-design.md` とは別の新しい実装設計の仕様（本仕様）にまとめることは、**2026-11-05 人間の明示選択（問2 = 新しい実装設計の仕様）**による。H 節の起案のうち、末尾「人間の承認」に挙げた8項目は AI 起案であり、**2026-11-06 人間が承認（AskUserQuestion で明示選択）した**。それ以外の本仕様の決定は、出所を添えたものを除き、仕様工程の **AI 起案であり人間の承認前**である
-- **日付**: 2026-11-05（ヘルプの節＝H 節を起こした）
+- **決定者**: 3画面のページ設計と文言の置き場を、`web-screens-implementation-design.md` とは別の新しい実装設計の仕様（本仕様）にまとめることは、**2026-11-05 人間の明示選択（問2 = 新しい実装設計の仕様）**による。H 節の起案は AI 起案であり、末尾「人間の承認」に挙げた8項目と、それ以外の H 節の残りのすべてを、**2026-11-06 人間が承認（AskUserQuestion で明示選択）した**。H 節に人間の承認前の起案は残らない
+- **日付**: 2026-11-05（ヘルプの節＝H 節を起こした）。2026-11-06、H 節の起案へ人間の承認を反映した（末尾「人間の承認」の8項目と、それ以外の H 節の残りのすべて）
 - **前提の仕様**: `web-screens-implementation-design.md`（C-1 置き場所の規則・C-2 ルート表・C-3 利用者の区分の解決・C-4 開ける画面の判定・W-1 の構成・W-6 サイドバー・T-0 差し替えの方針）。H 節はこれに加えて `help-ui.md`（AC-1〜AC-6）／`login-ui.md` AC-6-7〜6-9-b・AC-9／`work-month-listing-ui.md` AC-10-1〜10-6／`design-system.md` AC-5-1・5-3・AC-6 の 6-1・6-4・AC-8 の 8-1-j・8-5-a／`bff-wiring.md` AC-1
 
 ---
@@ -23,7 +23,7 @@
 
 ## H. ヘルプ
 
-本節で AC 番号だけを書いたものは `help-ui.md` の AC である。**本節の決定は、出所を添えたものを除き、AI 起案であり人間の承認前である。** このうち末尾「人間の承認」に挙げた8項目は、2026-11-06 人間が承認（AskUserQuestion で明示選択）した（各所に出所を添えた）。ファイル名・関数名は、`web-screens-implementation-design.md` の C-1（置き場所の規則）・W-1（薄いページ＋本体の screen 関数＋`AppShell`）・T-0-2（`ScreenDeps` の注入）を当てはめて決まるものとして起案した。
+本節で AC 番号だけを書いたものは `help-ui.md` の AC である。**本節の決定は AI 起案であり、そのすべてを 2026-11-06 人間が承認（AskUserQuestion で明示選択）した。** 末尾「人間の承認」に挙げた8項目には各所に出所を添えた。出所を添えていない決定も、同日の2度目の承認（末尾「人間の承認」の、8項目の一覧に続く段落）で承認済みである。ファイル名・関数名は、`web-screens-implementation-design.md` の C-1（置き場所の規則）・W-1（薄いページ＋本体の screen 関数＋`AppShell`）・T-0-2（`ScreenDeps` の注入）を当てはめて決まるものとして起案した。
 
 ### H-1. 構成
 
@@ -40,7 +40,7 @@ flowchart TD
 
 | ファイル | 種別 | 責務 | 主に担う AC | 出所 |
 |---|---|---|---|---|
-| `app/help/page.tsx` | サーバー（async。薄い層） | `helpScreen(serverScreenDeps)` を返すだけ。判定も描画の組み立ても持たない。`searchParams` を受けない（ヘルプは条件を受け取らない） | — | パス `/help` は `web-screens-implementation-design.md` C-2（2026-10-29 人間の明示選択 Q-7 = (a)）。ファイル名は C-1・T-0-2 の当てはめ（AI 起案。2026-11-06 人間が承認（AskUserQuestion で明示選択）） |
+| `app/help/page.tsx` | サーバー（async。薄い層） | `helpScreen(serverScreenDeps)` を返すだけ。判定も描画の組み立ても持たない。`searchParams` を受けない（ヘルプは条件を受け取らない） | — | パス `/help` は `web-screens-implementation-design.md` C-2（2026-10-29 人間の明示選択 Q-7 = (a)）。ファイル名は C-1・T-0-2 の当てはめ。`helpScreen(serverScreenDeps)` を返すだけであること・`searchParams` を受けないことも含めて AI 起案（2026-11-06 人間が承認（AskUserQuestion で明示選択）） |
 | `app/_components/help-screen.tsx` | サーバー（async 関数。依存を引数で受ける） | `helpScreen(deps: ScreenDeps)`。`deps.getCurrentViewer()` が `misconfigured` なら例外を投げる（C-3）。`decideScreen("help", viewer)` が `redirect` なら移す（C-4。`login-ui.md` 6-7 によりヘルプは全区分で `show` になるが、判定を省かない＝C-4 の「どのページも」）。`show` なら `deps.getTheme()` を待ち、`AppShell`（`current="help"`）の中に `HelpView` を描く。`screen-deps.ts`・`current-viewer.ts` を値として輸入しない（T-0-2） | 1-1・1-4・1-5 | 関数名・ファイル名は W-1 の `demoWorkMonthsScreen` の形の当てはめ（AI 起案。2026-11-06 人間が承認（AskUserQuestion で明示選択）） |
 | `app/_components/help-view.tsx` | フックを持たない（`"use client"` を付けない。props を受けない） | `HelpView()`。見出し（`h1`）と、3つの節を `Card`（`title` に節の見出しを渡す。`Card` は `title` を `h2` で描く）で並べる。勤務月の流れの節では、状態の行の先頭に `StatusBadge` を置く。文言は AC-3 の表の字面をこのファイルの中に定数として持つ。取得・状態・操作要素を持たない | AC-2・AC-3・AC-4・AC-5 | ファイル名・関数名は W-1 の `*-view.tsx` の当てはめ。文言をこのファイルに置くこと・フックを持たない部品にすることは AI 起案。いずれも 2026-11-06 人間が承認（AskUserQuestion で明示選択） |
 | `lib/screen-routes.ts`（既存） | 純粋 | `HELP_PATH` を使うだけで、値を変えない。付いているコメント「ページは本仕様では置かない」は、ページが入った時点で本仕様（H 節）を指すように改める | — | C-2。コメントを改めることは AI 起案（2026-11-06 人間が承認（AskUserQuestion で明示選択）） |
@@ -54,7 +54,7 @@ flowchart TD
 
 本文の要求（見出し・節の数と順・`Card`・`StatusBadge`・文言・書かないこと）は AC-2〜AC-4 が持ち、ここには写さない。ここで決めるのは、それを満たす DOM の組み方だけである（AC-6-3 により画面固有の合成は画面 Issue が持つ）。
 
-- 文言は AC-3 の表の各行（3-1-b〜3-1-g・3-2-b〜3-2-i・3-3-b〜3-3-e）を、**1行につき1つの要素**として、表の記載順に置く（AI 起案。2026-11-06 人間が承認（AskUserQuestion で明示選択））。節の見出しの行（3-1-a・3-2-a・3-3-a）は `Card` の `title` へ渡す。要素の種類（段落か一覧の項目か）と余白は実装工程が選ぶ（実装工程に委ねることは AI 起案・人間の承認前。2026-11-06 の承認の対象に含まない）
+- 文言は AC-3 の表の各行（3-1-b〜3-1-g・3-2-b〜3-2-i・3-3-b〜3-3-e）を、**1行につき1つの要素**として、表の記載順に置く（AI 起案。2026-11-06 人間が承認（AskUserQuestion で明示選択））。節の見出しの行（3-1-a・3-2-a・3-3-a）は `Card` の `title` へ渡す。要素の種類（段落か一覧の項目か）と余白は実装工程が選ぶ（実装工程に委ねることは AI 起案。2026-11-06 人間が承認（AskUserQuestion で明示選択））
 - 状態の行（2-4）は、出典が状態を名指す3行 —— 3-1-b（出典 `work-month-screen-ui.md` AC-3 の `Draft` の行）→ `Draft`、3-1-c（同 `PendingApproval` の行）→ `PendingApproval`、3-1-d（ユビキタス言語「承認済」）→ `Approved` —— である。各行を「`StatusBadge` ＋ 文言の要素」の組で包み、組の先頭に `StatusBadge` を置く。3-1-e〜3-1-g には置かない（行の対応の読み方と、組で包む形は AI 起案。2026-11-06 人間が承認（AskUserQuestion で明示選択））
 - 文言の字面は `help-view.tsx` の中にだけ持ち、`lib/` や他の画面と共有しない（AI 起案。2026-11-06 人間が承認（AskUserQuestion で明示選択）。共有すると AC-2-5 の「画面固有の合成」の外へ出るため）
 - 出典の条文が改まったときは、`help-ui.md` AC-3 の表を先に改め、`help-view.tsx` の字面とテストの期待値をそれに合わせる（AC-6-1 の運用）。本仕様は字面を持たないため改めない
@@ -104,6 +104,12 @@ T-0 の差し替えの方針（`web-screens-implementation-design.md` T-0-1・T-
 7. 4-4 を語の不在で読むこと、および読む語の集合 → H-4 の表の後の第1項
 8. `screen-routes.ts` の `HELP_PATH` のコメントを本仕様を指すように改めること → H-1（`screen-routes.ts` の行）
 
+同じ 2026-11-06、人間が H 節の残りの起案を、書かれている内容のまま、まとめて承認した（AskUserQuestion で明示選択）。上の8項目に含まれず出所を書いていなかったものであり、次を含む:
+
+- H-2 第1項のうち、要素の種類（段落か一覧の項目か）と余白を実装工程が選ぶこと → H-2 第1項
+- H-1 の `app/help/page.tsx` の行のうち、ファイル名を除く形（`helpScreen(serverScreenDeps)` を返すだけであること・`searchParams` を受けないこと） → H-1（`page.tsx` の行）
+- 出所を書いていなかった H 節の残りのすべて（H-1「新しく作らないもの」「使う既存の部品・lib」「サイドバーとヘッダー」「ロール切替の後・URL を直に開いたとき」、H-2 第4項、H-3 第1項、H-4 の前文の第1文とテストの表の置き場、表の後の第2項・第3項（4-2・4-1 の読み方）、テストで担保しないもの） → H 節の前文
+
 ### 起案のまま残るもの
 
-H 節のうち、上の8項目に含まれず出所を書いていない決定は、AI の起案のまま人間の承認前であり、レビューで人間が確かめる対象として残る。H-2 の第1項のうち、要素の種類（段落か一覧の項目か）と余白を実装工程に委ねることは、8項目に含まれないため承認前のまま残す。H-1 の `app/help/page.tsx` の行のうち、ファイル名を除く形（`helpScreen(serverScreenDeps)` を返すだけであること・`searchParams` を受けないこと）も同じく承認前のまま残す。
+H 節には無い。
