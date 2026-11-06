@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { Card } from "@/components/card";
+import { StatusBadge } from "@/components/status-badge";
 import { installFakeFetch } from "@/test-support/work-month-list";
 import { HelpView } from "./help-view";
 
@@ -114,6 +115,16 @@ describe("節の器（2-3）", () => {
 
 describe("状態の表示（2-4）", () => {
   it("StatusBadge はちょうど3つ。下書き・締め済・承認済の順に各1回、3-1-b・3-1-c・3-1-d の文言と同じ組の先頭にある", () => {
+    // StatusBadge の印（要素名と className）は、各 state を単体で描いて得る（実装の写しを持たない）。
+    const marks = (["Draft", "PendingApproval", "Approved"] as const).map((state) => {
+      const sample = render(<StatusBadge state={state} />);
+      const el = sample.container.firstElementChild!;
+      const mark = { tag: el.tagName, className: el.className };
+      sample.unmount();
+      return mark;
+    });
+    expect(new Set(marks.map((m) => m.className)).size).toBe(3);
+
     render(<HelpView />);
     // バッジの文言（design-system 6-1 / work-month-screen-ui 2-2 の呼称）は、要素の文言が全文一致するものだけを数える。
     const labels = ["下書き", "締め済", "承認済"];
@@ -121,6 +132,10 @@ describe("状態の表示（2-4）", () => {
       const found = screen.getAllByText(label, { exact: true });
       expect(found).toHaveLength(1);
       return found[0];
+    });
+    // 見つけた3要素は、それぞれの state の StatusBadge と同じ印を持つ（素の span などでは通らない）。
+    badges.forEach((badge, i) => {
+      expect({ tag: badge.tagName, className: badge.className }, labels[i]).toEqual(marks[i]);
     });
     // 並びが 下書き → 締め済 → 承認済 の順
     expect(badges[0].compareDocumentPosition(badges[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
