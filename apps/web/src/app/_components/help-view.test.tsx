@@ -191,6 +191,26 @@ describe("文言（AC-3）", () => {
   });
 });
 
+describe("隠された要素（AC-2・AC-3）", () => {
+  const HIDDEN = '[hidden], [aria-hidden="true"]';
+
+  it("陽性対照: 同じ走査が、hidden・aria-hidden の要素を見つける", () => {
+    const control = render(
+      <div>
+        <p hidden>a</p>
+        <p aria-hidden="true">b</p>
+      </div>,
+    );
+    expect(control.container.querySelectorAll(HIDDEN)).toHaveLength(2);
+  });
+
+  it("HelpView に hidden・aria-hidden の要素が無い（見出しも AC-3 の行も隠さない）", () => {
+    const { container } = render(<HelpView />);
+    expect(container.textContent).toContain("精算幅");
+    expect(container.querySelectorAll(HIDDEN)).toHaveLength(0);
+  });
+});
+
 describe("書かないこと（AC-4）", () => {
   function bodyText() {
     return document.body.textContent ?? "";
@@ -210,7 +230,10 @@ describe("書かないこと（AC-4）", () => {
 
   it("4-2: 3-1-d の行に「確定」が無い", () => {
     render(<HelpView />);
-    expect(oneLine(SECTIONS[0].lines["3-1-d"]).textContent).not.toContain("確定");
+    // 3-1-d の行は、承認済のバッジと 3-1-d の文言が並ぶ組。組の DOM を読み、期待値から結果が決まらないようにする。
+    const group = oneLine("承認済").parentElement!;
+    expect(group.textContent).toBe("承認済" + SECTIONS[0].lines["3-1-d"]);
+    expect(group.textContent).not.toContain("確定");
   });
 
   it("4-3: 本文に「目安」が無い", () => {
