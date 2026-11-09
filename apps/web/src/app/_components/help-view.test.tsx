@@ -228,6 +228,38 @@ describe("書かないこと（AC-4）", () => {
     expect(bodyText()).not.toContain("13:00");
   });
 
+  it("4-1: 文言を持つ要素の textContent が、h1・h2 3つ・状態の表示3つ・AC-3 の18行の計25個と過不足なく一致する（出典の無い文を置かない）", () => {
+    // 文言を持つ要素 = 直下に空白以外のテキストノードを持つ要素。期待値は直書きの字面から組む。
+    const ownText = (root: ParentNode) =>
+      [...root.querySelectorAll<HTMLElement>("*")]
+        .filter((el) => [...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim() !== ""))
+        .map((el) => el.textContent ?? "");
+    // 陽性対照: 同じ走査が、文言を持つ要素を（重複も含めて）見つけ、持たない要素は数えない。
+    const control = render(
+      <div>
+        <p>a</p>
+        <p>a</p>
+        <div>
+          <span>b</span>
+        </div>
+      </div>,
+    );
+    expect(ownText(control.container).sort()).toEqual(["a", "a", "b"]);
+    control.unmount();
+
+    const { container } = render(<HelpView />);
+    const expected = [
+      H1,
+      ...SECTIONS.map((s) => s.heading),
+      "下書き",
+      "締め済",
+      "承認済",
+      ...ALL_LINES.map(([, text]) => text),
+    ];
+    expect(expected).toHaveLength(25);
+    expect(ownText(container).sort()).toEqual([...expected].sort());
+  });
+
   it("4-2: 3-1-d の行に「確定」が無い", () => {
     render(<HelpView />);
     // 3-1-d の行は、承認済のバッジと 3-1-d の文言が並ぶ組。組の DOM を読み、期待値から結果が決まらないようにする。
