@@ -230,8 +230,9 @@ describe("書かないこと（AC-4）", () => {
 
   it("4-1: 文言を持つ要素の textContent が、h1・h2 3つ・状態の表示3つ・AC-3 の18行の計25個と過不足なく一致する（出典の無い文を置かない）", () => {
     // 文言を持つ要素 = 直下に空白以外のテキストノードを持つ要素。期待値は直書きの字面から組む。
-    const ownText = (root: ParentNode) =>
-      [...root.querySelectorAll<HTMLElement>("*")]
+    // 母集団に描画の根（render の container）を含める。Fragment で根の直下に置かれた裸のテキストを拾うため。
+    const ownText = (root: HTMLElement) =>
+      [root, ...root.querySelectorAll<HTMLElement>("*")]
         .filter((el) => [...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim() !== ""))
         .map((el) => el.textContent ?? "");
     // 陽性対照: 同じ走査が、文言を持つ要素を（重複も含めて）見つけ、持たない要素は数えない。
@@ -246,6 +247,14 @@ describe("書かないこと（AC-4）", () => {
     );
     expect(ownText(control.container).sort()).toEqual(["a", "a", "b"]);
     control.unmount();
+    // 陽性対照: 根の直下の裸のテキストを、根そのものとして拾う。
+    const bare = render(
+      <>
+        c<p>a</p>
+      </>,
+    );
+    expect(ownText(bare.container).sort()).toEqual(["a", "ca"]);
+    bare.unmount();
 
     const { container } = render(<HelpView />);
     const expected = [
