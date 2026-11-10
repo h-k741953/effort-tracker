@@ -45,6 +45,37 @@ describe("hiddenChain の陽性対照（表を隠す形ごと）", () => {
     expect(hiddenChain(container.querySelector("table")!)).toContain("sr-only");
   });
 
+  it("h-0・w-0 は overflow-hidden か overflow-clip と一緒のときだけ検出する", () => {
+    for (const [cls, kind] of [
+      ["w-0 overflow-hidden", "w-0"],
+      ["size-0 overflow-clip", "size-0"],
+      ["max-h-0 overflow-hidden", "max-h-0"],
+    ]) {
+      const { container, unmount } = render(<div className={cls}>{T}</div>);
+      expect(hiddenChain(container.querySelector("table")!), cls).toContain(kind);
+      unmount();
+    }
+  });
+
+  it("陰性対照: 大きさ 0 のクラスだけ・任意セレクタの変種・名前の近いクラスは隠す形に数えない", () => {
+    for (const cls of [
+      "w-0 flex-1",
+      "w-0 flex-1 overflow-x-auto",
+      "h-0 flex-1 overflow-auto",
+      "[&_svg]:hidden",
+      "min-w-0",
+      "min-h-0",
+      "not-sr-only",
+      "overflow-x-hidden",
+      "opacity-100",
+      "h-0.5",
+    ]) {
+      const { container, unmount } = render(<div className={cls}>{T}</div>);
+      expect(hiddenChain(container.querySelector("table")!), cls).toEqual([]);
+      unmount();
+    }
+  });
+
   it("陰性対照: overflow-hidden・通常のクラス・style は隠す形に数えない", () => {
     const { container } = render(
       <div className="overflow-hidden flex gap-3" style={{ display: "block", opacity: 1 }}>

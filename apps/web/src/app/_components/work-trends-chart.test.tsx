@@ -116,9 +116,12 @@ function barSpans(root: Element): Span[] {
   }
   return out;
 }
+/** 文字を持たない赤い要素の全数（root 自身と子孫）。barSpans が読んだ赤の数と比べ、読まれない赤い要素（style なし・top/bottom だけ等）を見つける。 */
+const textlessDanger = (root: Element) =>
+  [root, ...root.querySelectorAll("*")].filter((el) => text(el) === "" && hasDangerClass(el));
 // 割合は実装が小数第3位で丸めるため、比べる側は小数第1位で丸める（丸めの境界にかかる値は使っていない）。
-const round3 = (x: number) => Math.round(x * 10) / 10;
-const roundSpan = ([lo, hi]: [number, number]) => ({ lo: round3(lo), hi: round3(hi) });
+const round1 = (x: number) => Math.round(x * 10) / 10;
+const roundSpan = ([lo, hi]: [number, number]) => ({ lo: round1(lo), hi: round1(hi) });
 /** 重なる・接する（0.01% 以内）区間を1つにまとめる。高さ 0 の区間は捨てる。 */
 function mergeSpans(spans: { lo: number; hi: number }[]): { lo: number; hi: number }[] {
   const sorted = spans.filter((s) => s.hi - s.lo > 0.001).sort((a, b) => a.lo - b.lo);
@@ -128,7 +131,7 @@ function mergeSpans(spans: { lo: number; hi: number }[]): { lo: number; hi: numb
     if (last !== undefined && s.lo <= last.hi + 0.01) last.hi = Math.max(last.hi, s.hi);
     else out.push({ lo: s.lo, hi: s.hi });
   }
-  return out.map((s) => ({ lo: round3(s.lo), hi: round3(s.hi) }));
+  return out.map((s) => ({ lo: round1(s.lo), hi: round1(s.hi) }));
 }
 const styleSignature = (root: Element) =>
   [root, ...root.querySelectorAll("*")]
@@ -309,8 +312,13 @@ describe("赤（--danger）の当て先（5-4・5-4-a・5-5・P-12）", () => {
     render(<WorkTrendsChart rows={MIXED} />);
     const col = columnOf(figure(), label, value);
     const spans = barSpans(col);
+    // 赤い要素は、すべて barSpans が読める形（style の bottom・height）で置かれている。読まれない赤い要素を残さない。
+    expect(spans.filter((s) => s.red), `${label} の列の文字を持たない赤い要素は、すべて棒の部分として読まれている`).toHaveLength(
+      textlessDanger(col).length,
+    );
     expect(mergeSpans(spans.filter((s) => s.red)), `${label} の赤い部分`).toEqual(expectedRed.map((s) => roundSpan(s)));
     const plain = spans.filter((s) => !s.red && s.lo < 0.01); // 下端から始まる赤くない要素（帯は下限から始まるので含まない）
+    // 注: 超過の月の赤くない棒が [0, 上限] で終わる厳密比較は、5-4 の条文（赤は上限を超えた部分だけ）より踏み込んだ構造の固定である。
     if (expectedPlainBar === null) {
       expect(plain, `${label} は下端から始まる赤くない要素を持たない`).toEqual([]);
     } else {
