@@ -4,6 +4,7 @@
 import type { ContractListItem } from "./contract-list";
 import { currentJstYearMonth } from "./jst-month";
 import type { ContractSummary, WorkMonthRow } from "./work-month-list";
+import type { WorkTrendRow } from "./work-trends";
 
 export type FetchResult<T> = { kind: "ok"; value: T } | { kind: "refresh" } | { kind: "failed" };
 
@@ -13,6 +14,7 @@ const OWN_PATH = "/api/work-months/own";
 const PENDING_PATH = "/api/work-months/pending-approval";
 const DEMO_PATH = "/api/work-months/demo";
 const CONTRACTS_PATH = "/api/contracts";
+const WORK_TRENDS_PATH = "/api/work-trends";
 
 async function getJson(url: string, fetchImpl: typeof fetch): Promise<FetchResult<Record<string, unknown>>> {
   try {
@@ -98,4 +100,10 @@ export async function fetchContractList(
   const result = await getJson(`${CONTRACTS_PATH}?${query.toString()}`, fetchImpl);
   if (result.kind !== "ok") return result;
   return { kind: "ok", value: result.value.items as ContractListItem[] };
+}
+
+export async function fetchWorkTrends(fetchImpl: typeof fetch = fetch): Promise<FetchResult<WorkTrendRow[]>> {
+  const result = await getJson(WORK_TRENDS_PATH, fetchImpl);
+  if (result.kind !== "ok") return result;
+  return { kind: "ok", value: result.value.items as WorkTrendRow[] };
 }
