@@ -1,0 +1,98 @@
+# 0024. デプロイロールの IAM 権限を Action と Resource の単位で狭め、自身と凍結ポリシーへの書き込みを拒む
+
+- **ステータス**: 提案中
+- **日付**: 2026-11-10
+- **決定者**: 人間（プロジェクトオーナー）。2026-11-10 に、discussion #143 について AskUserQuestion で「(c)＋自己保護」を明示選択した（オーケストレーター経由で受領）。本文の起草は仕様工程
+
+> 決定の中身（下の決定1〜5）は、人間が 2026-11-10 に明示選択したものである。各決定の中で「仕様工程の定め」と書いた細部は人間の決定ではない。受け入れ条件として `docs/specs/infra-terraform.md` が持ち、本 ADR の決定には含めない。この ADR の文面は **AI（仕様工程）が起草した**。AI は ADR を「承認済み」で起票しないため（ADR 0001 運用ルール5）、ステータスは「提案中」とする。
+>
+> 本 ADR は既存の ADR を置き換えない。`docs/specs/infra-terraform.md` D-15（デプロイロールの権限範囲。人間が 2026-08-21 に確定し、2026-10-27 に Scheduler を足した）の内側で、IAM の権限を狭める決定である。D-15 のうち「本仕様が作るサービスに限定列挙する」「管理者相当・`Action = "*"` を置かない」「ロールを増やさない」は維持する（決定4）。
+
+## コンテキスト
+
+1. **IAM だけはサービスの単位でしか限っていない** — D-15 は、GitHub Actions が引き受けるデプロイロールの権限を、本構成が作るサービスに限って列挙すると定めた（`docs/specs/infra-terraform.md` AC-7-8）。限っているのはサービスの単位までである。2026-11-10 時点の実装（`infra/terraform/iam_github_oidc.tf` の `aws_iam_role_policy.github_actions_deploy`）は、IAM について `iam:*` と `Resource "*"` を許している
+2. **その広さは、ほかの限定を素通りさせる** — `iam:*` と `Resource "*"` があれば、デプロイロールは任意のロールを作り、任意のロールを `iam:PassRole` で渡せる。#56 で足した Scheduler 用ロールへの `iam:PassRole` も、この広い権限の中に入っている（`docs/specs/demo-data-reset.md` 13-10）。さらに、デプロイロールは**自分自身**へ `iam:PutRolePolicy` で任意のインラインポリシーを書ける。この口が残る限り、IAM の Action を列挙して狭めても、乗っ取られたワークフローから見たデプロイロールは管理者相当のままである
+3. **凍結の相手もデプロイロールである** — Budget Actions は、閾値に達するとデプロイロールへ凍結ポリシー（`Deny`）を付ける（`docs/specs/infra-terraform.md` AC-5-3）。凍結ポリシーは `aws_iam_policy.budget_freeze_new_resources` であり、デプロイロールが IAM を広く持つ限り、デプロイロール自身が凍結ポリシーを外す・書き換える・消すことができる
+4. **#56 の範囲ではないので切り出した** — 人間が 2026-10-27 に、この広さを #56 の範囲に入れないと決め、discussion #143 へ切り出した（`docs/specs/demo-data-reset.md` 13-10）
+5. **狭めることのコスト** — 列挙を細かくすると、扱うリソースが増えるたびにポリシーの更新が要る（D-15 の帰結）。足りない権限は apply したときの `AccessDenied` で初めて分かる（`docs/specs/infra-terraform.md` 12-10）
+
+## 決定
+
+### 1. IAM の Action を、作るロール・ポリシー・OIDC プロバイダの管理に要るものへ列挙する
+
+- デプロイロールの IAM の Action から `iam:*` をやめる。IAM の Action にワイルドカードを使わない
+- 列挙するのは、本構成が作る IAM のリソース（ロール・ロールのインラインポリシー・管理ポリシー・GitHub Actions 向けの OIDC プロバイダ）の作成・読み取り・更新・削除と、ロールを渡す `iam:PassRole` に要る Action である
+- 列挙そのもの（具体的な Action の名前）は受け入れ条件として `docs/specs/infra-terraform.md` AC-7-8 が持ち、本 ADR へ書き写さない（ADR 0004）。**列挙は、構成が作るリソースから仕様工程が導いたものである（仕様工程の定め）。** Terraform の provider が読み取り・削除の内部で呼ぶ Action のうち、構成の記述から導けないものは、同仕様 Q-10 として人間の判断を待つ
+
+### 2. IAM の Resource を、本構成の名前の接頭辞と OIDC プロバイダの ARN に限る
+
+- IAM の Resource は次の3つの形に限る。`<account>` は、構成側が呼び出し元のアカウントから組み立てる
+  - `arn:aws:iam::<account>:role/effort-tracker-*`
+  - `arn:aws:iam::<account>:policy/effort-tracker-*`
+  - `arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`
+- OIDC プロバイダの名前は発行者の URL から決まり、`effort-tracker-` の接頭辞に入らない。このため、その ARN を明示する
+
+### 3. `iam:PassRole` の渡し先を、`iam:PassedToService` 条件で3つのサービスに限る
+
+- 渡し先は `lambda.amazonaws.com`・`scheduler.amazonaws.com`・`budgets.amazonaws.com` の3つに限る
+- Issue #143 の選択肢 (c) は Lambda と Scheduler だけを挙げていた。人間は、Budget Action の実行ロールを Budget Action へ渡すときにも `iam:PassRole` が要ると見て、`budgets.amazonaws.com` を足した
+- **`budgets.amazonaws.com` への `iam:PassRole` が実際に要ることは、AWS の公開文書で確認できていない（未確認）。** 確認を試みた方法と失敗の理由、確認すべき文書の候補は `docs/specs/infra-terraform.md` 12-40 が持つ。**本 ADR は、要ることを確定した事実として扱わない**
+
+### 4. 自己保護 — デプロイロール自身と凍結ポリシーへの書き込みを、明示的な Deny 文で拒む
+
+- デプロイロールのポリシーに、`Effect = "Deny"` の文を置く。対象は、デプロイロール自身のロール（そのインラインポリシーを含む）と、凍結ポリシー（`aws_iam_policy.budget_freeze_new_resources`）である
+- 拒む Action は、少なくとも `iam:PutRolePolicy`・`iam:DeleteRolePolicy`・`iam:AttachRolePolicy`・`iam:DetachRolePolicy`・`iam:UpdateAssumeRolePolicy`・`iam:DeleteRole`・`iam:CreatePolicyVersion`・`iam:DeletePolicyVersion`・`iam:SetDefaultPolicyVersion`・`iam:DeletePolicy` である。読み取りの Action は拒まない
+- plan と refresh は読み取りだけで済む。デプロイロール自身の権限と凍結ポリシーに差分が無ければ、apply は通る
+- **デプロイロール自身の権限、または凍結ポリシーを変えるときは、人間が別の資格情報で apply する。** これは「権限を広げる判断は人間の承認事項である」（`docs/specs/infra-terraform.md` 12-10）と整合する
+- **ロールは1つのまま**とする。D-15 の「ロールを増やさない」「管理者相当・`Action = "*"` を置かない」は維持する
+
+### 5. `budgets:*` が凍結を外せることは、#143 の範囲に入れない
+
+- デプロイロールが `budgets:*` を持つ限り、Budget Action そのものを削除・更新して、凍結を外せる。これは IAM の権限の話ではなく、#143 の範囲の外である
+- 限界として `docs/specs/infra-terraform.md` 12-39 に記録する。別 Issue の候補であり、本 ADR の起草では起票しない
+
+決定を受け入れ条件に落とした仕様は `docs/specs/infra-terraform.md`（D-15 の 2026-11-10 追記・AC-7-8・10-4-o・12-10・12-29・12-39〜12-41・Q-10・Q-11）である。
+
+## 影響
+
+### 良い影響
+
+- **任意のロールを作る・渡すことができなくなる。** ロールとポリシーは `effort-tracker-` の接頭辞を持つものに限られ、ロールの渡し先は3つのサービスに限られる
+- **デプロイロールが自分を管理者相当へ書き換える口を塞ぐ。** 自分への `iam:PutRolePolicy`・`iam:AttachRolePolicy` を Deny 文で拒むため、IAM の Action の列挙が、自分への書き込みで素通りされない
+- **凍結がデプロイロール自身から外されなくなる（IAM の経路に限る）。** 凍結ポリシーの付け外しは Budget Action の実行ロールが行い、デプロイロールは凍結ポリシーの付け外し・書き換え・削除を拒まれる
+- **ロールを増やさない。** D-15 の構成（ロールは1つ）を保ったまま狭められる
+
+### 悪い影響 / トレードオフ
+
+- **列挙を保つ手間が増える。** IAM のリソースの種別や属性が増えるたびに、AC-7-8 の列挙の更新が要る。足りないことは `AccessDenied` として初めて分かる（12-10）
+- **読み取りの Action が足りないと、plan そのものが落ちる。** provider は plan の前の refresh で IAM のリソースを読む。読み取りに要る Action が列挙から漏れていれば、apply に進む前に plan が `AccessDenied` で落ち、デプロイが止まる。provider が内部で呼ぶ読み取り・一覧の Action は構成から導けず、Q-10 で人間の判断を待つ
+- **デプロイロール自身の権限と凍結ポリシーは、CI からは変えられなくなる。** 変えるたびに、人間が別の資格情報で apply する手順が要る。本 ADR の決定を構成へ入れる最初の apply も、デプロイロール自身のポリシーを変える apply であり、この手順に当たる
+- **構成全体の destroy も CI からはできなくなる。** デプロイロール自身の削除（`iam:DeleteRole`）と凍結ポリシーの削除（`iam:DeletePolicy`）を拒むためである
+- **`budgets.amazonaws.com` への `iam:PassRole` は未確認のまま許す。** 要らなかったとき、渡し先が1つ余分に開いている（12-40）
+
+### 残る限界
+
+- **`budgets:*` による凍結の解除**（決定5。12-39）
+- **ほかの `effort-tracker-*` のロールを経由した権限の拡大は、自己保護では塞がらない。** 決定1〜3 の後も、デプロイロールは `role/effort-tracker-*` のロールにインラインポリシーを書け（`iam:PutRolePolicy`）、そのロールを Lambda へ渡せ（`iam:PassRole`）、Lambda を作って呼べる（`lambda:*`）。この組み合わせで、広い権限を持たせたロールの下でコードを動かせる。決定4 の Deny 文の対象はデプロイロール自身と凍結ポリシーだけであり、この経路に掛からない。経路は許可の組み合わせから導いたものであり、AWS の公開文書での確認はしていない（12-40 と同じ理由）。限界として 12-41 に記録し、塞ぐかどうかは `docs/specs/infra-terraform.md` Q-11 で人間の判断を待つ
+- **構成どおりに適用されていることは検査しない。** `terraform test` が見るのは構成の記述までであり、適用済みのロールが構成どおりであること、Deny 文が実際に効くことは検査しない（`docs/specs/infra-terraform.md` 12-1 と同型）
+
+## 検討した代替案
+
+却下理由は、2026-11-10 に人間が選んだときの根拠である。表の字面は仕様工程が起草した。
+
+| 案 | 却下理由 |
+|---|---|
+| (a) 現状のまま（D-15 の字面どおり、サービスの単位で限る） | `iam:*` と `Resource "*"` が残り、任意のロールを作って渡せる。自分への `iam:PutRolePolicy` で管理者相当へ書き換えられる。凍結ポリシーもデプロイロール自身から外せる |
+| (b) IAM の Action を列挙し、`Resource` をロール名の接頭辞で絞る | ロールの渡し先を限らないため、`iam:PassRole` で任意のサービスへロールを渡せる。自分への `iam:PutRolePolicy` が残る限り、列挙しても管理者相当のままである |
+| (c) (b) に加えて、`iam:PassRole` の渡し先を Lambda と Scheduler に限る（Issue #143 の字面のまま） | 次の3点が漏れる。①Budget Action の実行ロールを渡す `budgets.amazonaws.com`（人間がこれも要ると見た。未確認＝決定3）。②OIDC プロバイダの ARN（名前が `effort-tracker-` の接頭辞に入らないため、ロール名の接頭辞だけで絞ると、OIDC プロバイダを管理できなくなる）。③自分への書き込みによる自己昇格と、凍結ポリシーの解除（自己保護が無い） |
+| IAM の操作だけを別のロールへ切り出す | D-15 が退けた（ロールを増やさない）。本 ADR でも維持する |
+
+## 関連
+
+- ADR 0001: ADR は書き換えず、追記もしない／運用ルール5（AI は「承認済み」で起票しない）
+- ADR 0004: Issue と docs のレファレンス型運用（決定の正は本 ADR と仕様にあり、#143 に書き写さない。Action の列挙は仕様が持つ）
+- ADR 0013: AWS ネイティブのホスティングとコストガードレール（Budget Actions による凍結）
+- ADR 0014: 実行ロールで呼ぶ・権限最小化
+- ADR 0022: デモデータの日次リセット（Scheduler 用ロールと、Scheduler の4つの Action）
+- `docs/specs/infra-terraform.md`: D-15・AC-5-3・AC-7-8・10-4-o・10-4-u・12-10・12-29・12-39〜12-41・Q-10・Q-11（本 ADR の決定を受け入れ条件に落とした先）
+- `docs/specs/demo-data-reset.md` 13-10（本 ADR が扱う広さを #56 から切り出した記録）
