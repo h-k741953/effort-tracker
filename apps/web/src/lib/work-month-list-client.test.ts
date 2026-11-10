@@ -22,6 +22,7 @@ import {
   fetchOwnContracts,
   fetchOwnWorkMonths,
   fetchPendingApprovalWorkMonths,
+  fetchWorkTrends,
 } from "./work-month-list-client";
 
 // docs/specs/work-month-listing-ui.md AC-1-1・7-3。設計 W-2・W-3・W-8・T-0・T-2。
@@ -353,6 +354,92 @@ describe("fetchContractList（R-10。KP-2・KP-3）", () => {
     const fake = installFakeFetch({ [CONTRACTS_PATH]: () => jsonResponse({ items: [LIST_ITEM_1] }) });
     expect(await fetchContractList(NOW)).toEqual({ kind: "ok", value: [LIST_ITEM_1] });
     expect(fake.count(CONTRACTS_PATH)).toBe(1);
+    expect(fake.methods).toEqual(["GET"]);
+  });
+});
+
+// ---- fetchWorkTrends（R-11。SP-2・SP-5。docs/specs/work-trends-ui.md 8-4・9-2）----
+
+const WORK_TRENDS_PATH = "/api/work-trends";
+
+const TREND_APPROVED = {
+  contractId: "c-1",
+  yearMonth: "2026-08",
+  state: "Approved",
+  settlementRange: { lowerBound: { hours: 140, minutes: 0 }, upperBound: { hours: 180, minutes: 0 } },
+  totalHours: { hours: 180, minutes: 15 },
+  excess: { hours: 0, minutes: 15 },
+  shortfall: { hours: 0, minutes: 0 },
+};
+const TREND_DRAFT = {
+  contractId: "c-1",
+  yearMonth: "2026-09",
+  state: "Draft",
+  settlementRange: { lowerBound: { hours: 140, minutes: 0 }, upperBound: { hours: 180, minutes: 0 } },
+  totalHours: { hours: 96, minutes: 30 },
+  excess: null,
+  shortfall: null,
+};
+
+describe("fetchWorkTrends（R-11。SP-2・SP-5）", () => {
+  it("GET を1回だけ、R-11 のパスへ、クエリ（engineerId を含む）も本文も持たずに送る", async () => {
+    const { impl, calls } = fakeFetchImpl(() => jsonResponse({ items: [TREND_APPROVED] }));
+    await fetchWorkTrends(impl);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url.pathname).toBe(WORK_TRENDS_PATH);
+    expect(calls[0].method).toBe("GET");
+    expect(calls[0].body).toBeUndefined();
+    expect(calls[0].url.search).toBe("");
+    expect(calls[0].url.searchParams.has("engineerId")).toBe(false);
+  });
+
+  it("陽性対照: 記録の仕組みは、クエリ・engineerId・本文・GET 以外を実際に検出する", async () => {
+    const { impl, calls } = fakeFetchImpl(() => jsonResponse({}));
+    await impl("/api/work-trends?engineerId=x", { method: "POST", body: "{}" });
+    expect(calls[0].url.search).toBe("?engineerId=x");
+    expect(calls[0].url.searchParams.has("engineerId")).toBe(true);
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].body).toBe("{}");
+  });
+
+  it("200 → ok（items を AC-10-5 のキーのまま、応答の順で返す。Draft の excess・shortfall の null を保つ）", async () => {
+    const { impl } = fakeFetchImpl(() => jsonResponse({ items: [TREND_APPROVED, TREND_DRAFT] }));
+    const result = await fetchWorkTrends(impl);
+    expect(result).toEqual({ kind: "ok", value: [TREND_APPROVED, TREND_DRAFT] });
+    if (result.kind === "ok") {
+      expect(result.value[1].excess).toBeNull();
+      expect(result.value[1].shortfall).toBeNull();
+    }
+  });
+
+  it("200 で items が空 → ok（空の配列）", async () => {
+    const { impl } = fakeFetchImpl(() => jsonResponse({ items: [] }));
+    expect(await fetchWorkTrends(impl)).toEqual({ kind: "ok", value: [] });
+  });
+
+  it.each<{ name: string; respond: () => Response; kind: string }>([
+    { name: "401", respond: () => jsonResponse({}, 401), kind: "refresh" },
+    { name: "403", respond: () => jsonResponse({}, 403), kind: "refresh" },
+    { name: "429", respond: () => jsonResponse({}, 429), kind: "failed" },
+    { name: "500", respond: () => jsonResponse({}, 500), kind: "failed" },
+    { name: "items が配列でない", respond: () => jsonResponse({ items: {} }), kind: "failed" },
+    { name: "JSON でない本文", respond: () => new Response("x", { status: 200 }), kind: "failed" },
+  ])("$name → $kind", async ({ respond, kind }) => {
+    const { impl } = fakeFetchImpl(respond);
+    expect(await fetchWorkTrends(impl)).toEqual({ kind });
+  });
+
+  it("fetch が例外 → failed", async () => {
+    const impl = (async () => {
+      throw new TypeError("network");
+    }) as typeof fetch;
+    expect(await fetchWorkTrends(impl)).toEqual({ kind: "failed" });
+  });
+
+  it("fetchImpl を省くと、呼び出しの時点の globalThis.fetch を使う", async () => {
+    const fake = installFakeFetch({ [WORK_TRENDS_PATH]: () => jsonResponse({ items: [TREND_APPROVED] }) });
+    expect(await fetchWorkTrends()).toEqual({ kind: "ok", value: [TREND_APPROVED] });
+    expect(fake.count(WORK_TRENDS_PATH)).toBe(1);
     expect(fake.methods).toEqual(["GET"]);
   });
 });
