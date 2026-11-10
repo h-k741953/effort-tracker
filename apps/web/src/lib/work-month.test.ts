@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   OPERATOR_OWNERSHIP_KEY,
   formatHours,
+  formatSettlementRange,
   formatTimeOfDay,
   formatTimeRange,
   readOwnership,
@@ -119,5 +120,24 @@ describe("キー名の持ち主が1つであること（M-3）", () => {
     ]) {
       expect(pathsContaining([{ path: "a.ts", content }], OPERATOR_OWNERSHIP_KEY)).toEqual(["a.ts"]);
     }
+  });
+});
+
+describe("formatSettlementRange（K-1・2-2-a。formatHours の丸めで下限〜上限。単位を含まない）", () => {
+  it.each([
+    [{ lowerBound: { hours: 140, minutes: 0 }, upperBound: { hours: 180, minutes: 0 } }, "140.0〜180.0"],
+    [{ lowerBound: { hours: 140, minutes: 15 }, upperBound: { hours: 180, minutes: 30 } }, "140.25〜180.5"],
+  ])("%j → %s", (range, expected) => {
+    expect(formatSettlementRange(range)).toBe(expected);
+  });
+
+  it("単位「時間」を含まない（呼ぶ側が添える）", () => {
+    const text = formatSettlementRange({
+      lowerBound: { hours: 140, minutes: 0 },
+      upperBound: { hours: 180, minutes: 0 },
+    });
+    expect(text.includes("時間")).toBe(false);
+    // 陽性対照: 単位を含む字面を、この判定は検出する。
+    expect("140.0〜180.0 時間".includes("時間")).toBe(true);
   });
 });

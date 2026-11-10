@@ -17,6 +17,7 @@ import {
 } from "@/test-support/work-month-list";
 import {
   fetchAllWorkMonths,
+  fetchContractList,
   fetchDemoWorkMonths,
   fetchOwnContracts,
   fetchOwnWorkMonths,
@@ -271,5 +272,87 @@ describe("fetchImpl を省いたとき（W-8。T-0-1）", () => {
     const { impl } = fakeFetchImpl(pagedListHandler(OWN_ROWS, 1000));
     await fetchOwnWorkMonths(impl);
     expect(fake.urls).toHaveLength(0);
+  });
+});
+
+// ---- fetchContractList（R-10。KP-2・KP-3。docs/specs/contracts-ui.md 6-3・7-3）----
+
+const LIST_ITEM_1 = {
+  contractId: "c-1",
+  contractDisplayName: "A社 / 保守",
+  settlementRange: { lowerBound: { hours: 140, minutes: 0 }, upperBound: { hours: 180, minutes: 0 } },
+  contractPeriod: { start: "2025-04", end: "2027-03" },
+  workMonth: { yearMonth: "2026-10", state: "PendingApproval", generated: true },
+};
+const LIST_ITEM_2 = {
+  contractId: "c-2",
+  contractDisplayName: "B社 / 開発",
+  settlementRange: { lowerBound: { hours: 150, minutes: 0 }, upperBound: { hours: 190, minutes: 0 } },
+  contractPeriod: { start: "2025-04", end: null },
+  workMonth: { yearMonth: "2026-10", state: "Draft", generated: false },
+};
+
+describe("fetchContractList（R-10。KP-2・KP-3）", () => {
+  const NOW = new Date("2026-10-01T00:00:00Z");
+
+  it.each([
+    ["2026-10-31T14:59:59Z", "2026-10"],
+    ["2026-10-31T15:00:00Z", "2026-11"],
+  ])("now=%s → GET を1回、yearMonth=%s だけを付け、本文を持たず、engineerId を付けない", async (iso, yearMonth) => {
+    const { impl, calls } = fakeFetchImpl(() => jsonResponse({ items: [LIST_ITEM_1] }));
+    await fetchContractList(new Date(iso), impl);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url.pathname).toBe(CONTRACTS_PATH);
+    expect(calls[0].method).toBe("GET");
+    expect(calls[0].body).toBeUndefined();
+    expect(calls[0].url.searchParams.get("yearMonth")).toBe(yearMonth);
+    expect(calls[0].url.searchParams.has("engineerId")).toBe(false);
+    expect([...calls[0].url.searchParams.keys()]).toEqual(["yearMonth"]);
+  });
+
+  it("陽性対照: 記録の仕組みは、engineerId・本文・GET 以外を実際に検出する", async () => {
+    const { impl, calls } = fakeFetchImpl(() => jsonResponse({}));
+    await impl("/api/contracts?engineerId=x&yearMonth=2026-10", { method: "POST", body: "{}" });
+    expect(calls[0].url.searchParams.has("engineerId")).toBe(true);
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].body).toBe("{}");
+  });
+
+  it("200 → ok（items を AC-10-4 のキーのまま、応答の順で返す。contractPeriod.end の null を保つ）", async () => {
+    const { impl } = fakeFetchImpl(() => jsonResponse({ items: [LIST_ITEM_2, LIST_ITEM_1] }));
+    const result = await fetchContractList(NOW, impl);
+    expect(result).toEqual({ kind: "ok", value: [LIST_ITEM_2, LIST_ITEM_1] });
+    if (result.kind === "ok") expect(result.value[0].contractPeriod.end).toBeNull();
+  });
+
+  it("200 で items が空 → ok（空の配列）", async () => {
+    const { impl } = fakeFetchImpl(() => jsonResponse({ items: [] }));
+    expect(await fetchContractList(NOW, impl)).toEqual({ kind: "ok", value: [] });
+  });
+
+  it.each<[string, () => Response, string]>([
+    ["401", () => jsonResponse({}, 401), "refresh"],
+    ["403", () => jsonResponse({}, 403), "refresh"],
+    ["429", () => jsonResponse({}, 429), "failed"],
+    ["500", () => jsonResponse({}, 500), "failed"],
+    ["items が配列でない", () => jsonResponse({ items: {} }), "failed"],
+    ["JSON でない本文", () => new Response("x", { status: 200 }), "failed"],
+  ])("%s → %s", async (_name, respond, kind) => {
+    const { impl } = fakeFetchImpl(respond);
+    expect(await fetchContractList(NOW, impl)).toEqual({ kind });
+  });
+
+  it("fetch が例外 → failed", async () => {
+    const impl = (async () => {
+      throw new TypeError("network");
+    }) as typeof fetch;
+    expect(await fetchContractList(NOW, impl)).toEqual({ kind: "failed" });
+  });
+
+  it("fetchImpl を省くと、呼び出しの時点の globalThis.fetch を使う", async () => {
+    const fake = installFakeFetch({ [CONTRACTS_PATH]: () => jsonResponse({ items: [LIST_ITEM_1] }) });
+    expect(await fetchContractList(NOW)).toEqual({ kind: "ok", value: [LIST_ITEM_1] });
+    expect(fake.count(CONTRACTS_PATH)).toBe(1);
+    expect(fake.methods).toEqual(["GET"]);
   });
 });
