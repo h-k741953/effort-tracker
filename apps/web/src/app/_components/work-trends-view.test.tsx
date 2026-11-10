@@ -498,3 +498,27 @@ describe("閲覧のみ（6-1・6-2・6-3）", () => {
     expect(new Set(fake.methods)).toEqual(new Set(["POST"]));
   });
 });
+
+/** 表の自身か祖先（document の根まで）が、視覚的にも支援技術にも隠されているか（sr-only・hidden・aria-hidden="true"）。 */
+function hiddenChain(el: Element): string[] {
+  const found: string[] = [];
+  for (let cur: Element | null = el; cur !== null; cur = cur.parentElement) {
+    if (cur.classList.contains("sr-only")) found.push("sr-only");
+    if (cur.hasAttribute("hidden")) found.push("hidden");
+    if (cur.getAttribute("aria-hidden") === "true") found.push("aria-hidden");
+  }
+  return found;
+}
+
+describe("表を画面に見える形で置く（決定2・SP-3。本体の側が表を隠さない）", () => {
+  it("取得後の本体に描かれた表の自身と祖先（document の根まで）に、sr-only・hidden・aria-hidden=\"true\" が無い", async () => {
+    backend();
+    const { container } = render(<WorkTrendsView />);
+    await loaded();
+    const table = container.querySelector("table");
+    expect(table).not.toBeNull();
+    expect(container.querySelectorAll("table tbody tr").length).toBeGreaterThan(0); // 表が描かれていること
+    expect(hiddenChain(table!)).toEqual([]);
+    expect(screen.getByRole("table")).toBe(table);
+  });
+});
