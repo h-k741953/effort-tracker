@@ -1,6 +1,7 @@
 // docs/specs/web-screens-implementation-design.md W-2・W-3・W-8。ブラウザで動く。
 // 一覧の取得は BFF の Route Handler への GET だけで、本文を持たない。
 
+import type { ContractListItem } from "./contract-list";
 import { currentJstYearMonth } from "./jst-month";
 import type { ContractSummary, WorkMonthRow } from "./work-month-list";
 
@@ -87,4 +88,14 @@ export async function fetchOwnContracts(
   const result = await getJson(`${CONTRACTS_PATH}?${query.toString()}`, fetchImpl);
   if (result.kind !== "ok") return result;
   return { kind: "ok", value: result.value.items as ContractSummary[] };
+}
+
+export async function fetchContractList(
+  now: Date,
+  fetchImpl: typeof fetch = fetch,
+): Promise<FetchResult<ContractListItem[]>> {
+  const query = new URLSearchParams({ yearMonth: currentJstYearMonth(now) });
+  const result = await getJson(`${CONTRACTS_PATH}?${query.toString()}`, fetchImpl);
+  if (result.kind !== "ok") return result;
+  return { kind: "ok", value: result.value.items as ContractListItem[] };
 }

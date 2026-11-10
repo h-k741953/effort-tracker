@@ -33,7 +33,7 @@ export function ownWorkMonthsPath(params: { contractId?: string }): string {
 /** ヘルプ（C-2。ページは readonly-screens-implementation-design.md の H 節）。 */
 export const HELP_PATH = "/help";
 
-/** 契約一覧（C-2。ページは本仕様では置かない）。 */
+/** 契約一覧（C-2。ページは readonly-screens-implementation-design.md の KP 節）。 */
 export const CONTRACTS_PATH = "/contracts";
 
 /** 稼働の推移（C-2。ページは本仕様では置かない）。 */

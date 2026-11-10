@@ -53,3 +53,8 @@ export function formatTimeOfDay(time: TimeOfDay): string {
 export function formatTimeRange(start: TimeOfDay, end: TimeOfDay): string {
   return `${formatTimeOfDay(start)}〜${formatTimeOfDay(end)}`;
 }
+
+/** K-1 の精算幅の形（「140.0〜180.0」）。単位「時間」は含めず、呼ぶ側が添える。 */
+export function formatSettlementRange(range: { lowerBound: WorkingHours; upperBound: WorkingHours }): string {
+  return `${formatHours(range.lowerBound)}〜${formatHours(range.upperBound)}`;
+}
