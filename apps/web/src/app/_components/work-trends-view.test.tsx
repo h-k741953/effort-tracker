@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { EmptyState } from "@/components/empty-state";
 import type { ContractListItem } from "@/lib/contract-list";
+import { hiddenChain } from "@/test-support/hidden-chain";
 import type { WorkTrendRow } from "@/lib/work-trends";
 import { CONTRACTS_PATH, installFakeFetch, jsonResponse } from "@/test-support/work-month-list";
 import { WorkTrendsView } from "./work-trends-view";
@@ -499,19 +500,8 @@ describe("閲覧のみ（6-1・6-2・6-3）", () => {
   });
 });
 
-/** 表の自身か祖先（document の根まで）が、視覚的にも支援技術にも隠されているか（sr-only・hidden・aria-hidden="true"）。 */
-function hiddenChain(el: Element): string[] {
-  const found: string[] = [];
-  for (let cur: Element | null = el; cur !== null; cur = cur.parentElement) {
-    if (cur.classList.contains("sr-only")) found.push("sr-only");
-    if (cur.hasAttribute("hidden")) found.push("hidden");
-    if (cur.getAttribute("aria-hidden") === "true") found.push("aria-hidden");
-  }
-  return found;
-}
-
 describe("表を画面に見える形で置く（決定2・SP-3。本体の側が表を隠さない）", () => {
-  it("取得後の本体に描かれた表の自身と祖先（document の根まで）に、sr-only・hidden・aria-hidden=\"true\" が無い", async () => {
+  it("取得後の本体に描かれた表の自身と祖先（document の根まで）に、隠す形（sr-only・hidden・invisible・opacity-0 等のクラス、hidden 属性、aria-hidden、style の display:none 等）が無い", async () => {
     backend();
     const { container } = render(<WorkTrendsView />);
     await loaded();
