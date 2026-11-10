@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
+import { hiddenChain } from "@/test-support/hidden-chain";
 import type { WorkTrendRow } from "@/lib/work-trends";
 import { WorkTrendsTable } from "./work-trends-table";
 
@@ -55,17 +56,6 @@ function bodyCells(table: HTMLElement): string[][] {
     .getAllByRole("row")
     .slice(1)
     .map((r) => [...r.querySelectorAll("th, td")].map((c) => c.textContent ?? ""));
-}
-
-/** 表の自身か祖先が、視覚的にも支援技術にも隠されているか（sr-only・hidden・aria-hidden="true"）。 */
-function hiddenChain(table: Element): string[] {
-  const found: string[] = [];
-  for (let cur: Element | null = table; cur !== null; cur = cur.parentElement) {
-    if (cur.classList.contains("sr-only")) found.push("sr-only");
-    if (cur.hasAttribute("hidden")) found.push("hidden");
-    if (cur.getAttribute("aria-hidden") === "true") found.push("aria-hidden");
-  }
-  return found;
 }
 
 describe("列・行（5-6・S-1）", () => {
@@ -124,7 +114,7 @@ describe("列・行（5-6・S-1）", () => {
 });
 
 describe("画面に見える形で置く（決定2）", () => {
-  it("表とその祖先に sr-only のクラス・hidden 属性・aria-hidden=\"true\" が無い", () => {
+  it("表とその祖先に、隠す形（sr-only・hidden・invisible・opacity-0 等のクラス、hidden 属性、aria-hidden、style の display:none 等）が無い", () => {
     const { container } = render(<WorkTrendsTable rows={ROWS} />);
     const table = container.querySelector("table");
     expect(table).not.toBeNull();
@@ -135,23 +125,7 @@ describe("画面に見える形で置く（決定2）", () => {
   it("表の中（見出し・行・セル）にも sr-only・hidden・aria-hidden が無い", () => {
     const { container } = render(<WorkTrendsTable rows={ROWS} />);
     expect(container.querySelectorAll("table td, table th").length).toBeGreaterThan(0); // 表が描かれていること
-    const bad = [...container.querySelectorAll("table, table *")].filter(
-      (el) =>
-        el.classList.contains("sr-only") || el.hasAttribute("hidden") || el.getAttribute("aria-hidden") === "true",
-    );
+    const bad = [...container.querySelectorAll("table, table *")].filter((el) => hiddenChain(el).length > 0);
     expect(bad).toEqual([]);
-  });
-
-  it.each([
-    ["sr-only の祖先", <div key="a" className="sr-only"><table><tbody><tr><td>x</td></tr></tbody></table></div>, "sr-only"],
-    ["hidden 属性の祖先", <div key="a" hidden><table><tbody><tr><td>x</td></tr></tbody></table></div>, "hidden"],
-    ["aria-hidden の祖先", <div key="a" aria-hidden="true"><table><tbody><tr><td>x</td></tr></tbody></table></div>, "aria-hidden"],
-    ["表自身の sr-only", <table key="a" className="sr-only"><tbody><tr><td>x</td></tr></tbody></table>, "sr-only"],
-    ["遠い祖先の sr-only", <section key="a" className="sr-only"><div><div><table><tbody><tr><td>x</td></tr></tbody></table></div></div></section>, "sr-only"],
-  ])("陽性対照: %s は、同じ判定で検出される", (_name, element, kind) => {
-    const { container, unmount } = render(<div>{element}</div>);
-    const table = container.querySelector("table")!;
-    expect(hiddenChain(table)).toContain(kind);
-    unmount();
   });
 });

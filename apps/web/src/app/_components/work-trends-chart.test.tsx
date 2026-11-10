@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import { hiddenChain } from "@/test-support/hidden-chain";
 import type { WorkTrendRow } from "@/lib/work-trends";
 import { WorkTrendsChart } from "./work-trends-chart";
 
@@ -100,6 +101,34 @@ function percentsIn(root: Element): number[] {
     for (const m of style.matchAll(/(-?\d+(?:\.\d+)?)%/g)) out.push(Number(m[1]));
   }
   return out;
+}
+/** 文字を持たない要素のうち、style に bottom と height（%）を持つもの（棒の部分・帯）の、下端と上端（%）と、赤か。 */
+type Span = { lo: number; hi: number; red: boolean };
+function barSpans(root: Element): Span[] {
+  const out: Span[] = [];
+  for (const el of [root, ...root.querySelectorAll("*")]) {
+    if (text(el) !== "") continue;
+    const style = el.getAttribute("style") ?? "";
+    const bottom = /bottom:\s*(-?\d+(?:\.\d+)?)%/.exec(style);
+    const height = /height:\s*(-?\d+(?:\.\d+)?)%/.exec(style);
+    if (bottom === null || height === null) continue;
+    out.push({ lo: Number(bottom[1]), hi: Number(bottom[1]) + Number(height[1]), red: hasDangerClass(el) });
+  }
+  return out;
+}
+// 割合は実装が小数第3位で丸めるため、比べる側は小数第1位で丸める（丸めの境界にかかる値は使っていない）。
+const round3 = (x: number) => Math.round(x * 10) / 10;
+const roundSpan = ([lo, hi]: [number, number]) => ({ lo: round3(lo), hi: round3(hi) });
+/** 重なる・接する（0.01% 以内）区間を1つにまとめる。高さ 0 の区間は捨てる。 */
+function mergeSpans(spans: { lo: number; hi: number }[]): { lo: number; hi: number }[] {
+  const sorted = spans.filter((s) => s.hi - s.lo > 0.001).sort((a, b) => a.lo - b.lo);
+  const out: { lo: number; hi: number }[] = [];
+  for (const s of sorted) {
+    const last = out[out.length - 1];
+    if (last !== undefined && s.lo <= last.hi + 0.01) last.hi = Math.max(last.hi, s.hi);
+    else out.push({ lo: s.lo, hi: s.hi });
+  }
+  return out.map((s) => ({ lo: round3(s.lo), hi: round3(s.hi) }));
 }
 const styleSignature = (root: Element) =>
   [root, ...root.querySelectorAll("*")]
@@ -269,17 +298,45 @@ describe("赤（--danger）の当て先（5-4・5-4-a・5-5・P-12）", () => {
     }
   });
 
-  it("超過の月・不足の月の列には、文字を持たない赤い要素（棒）がある", () => {
+  // 5-4 (i)(ii): 赤にする部分と赤にしない部分を、棒の部分ごとに割合で確かめる。縦軸は MIXED で 70〜200（幅 130）。
+  //   超過の月 2026-01（総稼働 185.25・精算幅 140〜180）: 赤は上限を超えた部分 [180, 185.25] だけ。上限までの部分 [70, 180] は赤にしない（(i)・「赤で示さない」）。
+  //   不足の月 2026-02（総稼働 137・精算幅 140〜180）: 赤は棒の全体 [70, 137] と上端から下限までの [137, 140]。つながって [70, 140]（(ii)）。
+  const at = (hours: number) => ((hours - 70) / 130) * 100;
+  it.each<[string, string, string, [number, number][], [number, number] | null]>([
+    ["超過の月: 赤は上限を超えた部分だけ。上限までの棒は赤にしない", "2026年1月", "185.25", [[at(180), at(185.25)]], [0, at(180)]],
+    ["不足の月: 赤は棒の全体と、上端から下限までの不足の部分", "2月", "137.0", [[0, at(140)]], null],
+  ])("5-4: %s", (_name, label, value, expectedRed, expectedPlainBar) => {
     render(<WorkTrendsChart rows={MIXED} />);
-    const fig = figure();
-    for (const [label, value] of [
-      ["2026年1月", "185.25"],
-      ["2月", "137.0"],
-    ]) {
-      const col = columnOf(fig, label, value);
-      const bars = [col, ...col.querySelectorAll("*")].filter((el) => hasDangerClass(el) && text(el) === "");
-      expect(bars.length, label).toBeGreaterThan(0);
+    const col = columnOf(figure(), label, value);
+    const spans = barSpans(col);
+    expect(mergeSpans(spans.filter((s) => s.red)), `${label} の赤い部分`).toEqual(expectedRed.map((s) => roundSpan(s)));
+    const plain = spans.filter((s) => !s.red && s.lo < 0.01); // 下端から始まる赤くない要素（帯は下限から始まるので含まない）
+    if (expectedPlainBar === null) {
+      expect(plain, `${label} は下端から始まる赤くない要素を持たない`).toEqual([]);
+    } else {
+      expect(mergeSpans(plain), `${label} の赤くない棒`).toEqual([roundSpan(expectedPlainBar)]);
     }
+  });
+
+  it("陽性対照: 棒の部分の読み取りは、style の bottom・height と赤の有無を実際に拾い、つながった赤を1つにまとめる", () => {
+    const { container, unmount } = render(
+      <div>
+        <div className="bg-danger" style={{ bottom: "0%", height: "50%" }} />
+        <div className="bg-danger/40" style={{ bottom: "50%", height: "10%" }} />
+        <div className="bg-primary/15" style={{ bottom: "20%", height: "30%" }} />
+        <div className="bg-danger" style={{ bottom: "80%", height: "5%" }}>
+          文字
+        </div>
+      </div>,
+    );
+    const spans = barSpans(container);
+    expect(spans).toEqual([
+      { lo: 0, hi: 50, red: true },
+      { lo: 50, hi: 60, red: true },
+      { lo: 20, hi: 50, red: false },
+    ]);
+    expect(mergeSpans(spans.filter((s) => s.red))).toEqual([{ lo: 0, hi: 60 }]);
+    unmount();
   });
 
   it("収まった月・入力中の月の列には、自身にも子孫にも赤い要素が無い（棒・語・値・帯・横軸）", () => {
@@ -397,6 +454,17 @@ describe("帯と棒（5-1・5-2。割合を与える値）", () => {
     expect(has((20 / 70) * 100) || has((10 / 70) * 100), `帯の位置 ${percents.join(",")}`).toBe(true);
   });
 
+  // 下限だけが他と違う月（上限は A と同じ 180）。縦軸は変わらない（最小 140 → 120、最大 190 → 200。幅 80）。
+  //   C: 総稼働 160・精算幅 150〜180 → 棒 [0, 40/80=50%]、帯は下限 30/80=37.5% から高さ 30/80=37.5%。
+  //   A: 総稼働 150・精算幅 140〜180 → 棒 [0, 30/80=37.5%]、帯は下限 20/80=25% から高さ 40/80=50%。
+  it("下限だけが違う月（上限は同じ）で、帯の位置と高さが月ごとの下限で決まる（下限を固定値にしない）", () => {
+    const C = tr("2026-08", { totalHours: hm(160), settlementRange: { lowerBound: hm(150), upperBound: hm(180) } });
+    render(<WorkTrendsChart rows={[A, B, A2, C]} />);
+    const fig = figure();
+    expect([...percentsIn(columnOf(fig, "2026年5月", "150.0"))].sort((a, b) => a - b)).toEqual([0, 25, 37.5, 50]);
+    expect([...percentsIn(columnOf(fig, "8月", "160.0"))].sort((a, b) => a - b)).toEqual([0, 37.5, 37.5, 50]);
+  });
+
   it("陽性対照: 割合の読み取りは、style の % を実際に拾い、別の値を拾わない", () => {
     const { container, unmount } = render(
       <div>
@@ -445,19 +513,8 @@ describe("縦軸の注記と目盛り（5-7。SP-7 (b)）", () => {
   });
 });
 
-/** 表の自身か祖先（document の根まで）が、視覚的にも支援技術にも隠されているか（sr-only・hidden・aria-hidden="true"）。 */
-function hiddenChain(el: Element): string[] {
-  const found: string[] = [];
-  for (let cur: Element | null = el; cur !== null; cur = cur.parentElement) {
-    if (cur.classList.contains("sr-only")) found.push("sr-only");
-    if (cur.hasAttribute("hidden")) found.push("hidden");
-    if (cur.getAttribute("aria-hidden") === "true") found.push("aria-hidden");
-  }
-  return found;
-}
-
 describe("表を画面に見える形で置く（決定2・SP-3。図の側が表を隠さない）", () => {
-  it("図と一緒に描いた表の自身と祖先（document の根まで）に、sr-only・hidden・aria-hidden=\"true\" が無い", () => {
+  it("図と一緒に描いた表の自身と祖先（document の根まで）に、隠す形（sr-only・hidden・invisible・opacity-0 等のクラス、hidden 属性、aria-hidden、style の display:none 等）が無い", () => {
     const { container } = render(<WorkTrendsChart rows={MIXED} />);
     const table = container.querySelector("table");
     expect(table).not.toBeNull();
