@@ -1,8 +1,13 @@
 # AC-10（docs/specs/infra-terraform.md）の検査。
 #
-# 本ファイルが検査するのは、デプロイロールのポリシーの Action だけである
-# （Action = "*" の文を持たないこと、D-15 が列挙するサービス接頭辞
-# （S3/CloudFront/Lambda/IAM/SSM/Budgets/Logs）に収まること＝AC-7-8）。
+# 本ファイルが検査するのは、デプロイロールのポリシー
+# （aws_iam_role_policy.github_actions_deploy）の本文である。
+# - Action: "*" の文を持たないこと、D-15 が列挙するサービス接頭辞
+#   （S3/CloudFront/Lambda/IAM/SSM/Budgets/Logs）に収まること（AC-7-8）
+# - IAM の権限の限定（10-4-o (1)〜(7)、AC-7-8 ①〜⑦）: iam: の Action の列挙・
+#   Resource の形・iam:PassRole の文の形と渡し先の条件・自己保護の Deny・
+#   for 式が空を回って緑になることの防止
+# 各条の中身は仕様が持ち、ここへ写さない。
 #
 # mock_provider を用い、実際の AWS API を呼ばない（AC-10-2）。
 # 構成（*.tf のリソース定義）は実装済みであり、各 run はその構成に対して実際に
@@ -158,12 +163,12 @@ run "deploy_role_policy_iam_passrole_is_limited_to_services" {
   command = plan
 
   assert {
-    condition     = alltrue([for stmt in [for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Allow" && contains(try(tolist(stmt.Action), [stmt.Action]), "iam:PassRole")] : try(tolist(stmt.Action), [stmt.Action]) == tolist(["iam:PassRole"])])
+    condition     = alltrue([for stmt in [for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Allow" && contains(try(tolist(stmt.Action), [stmt.Action]), "iam:PassRole")] : tolist(try(tolist(stmt.Action), [stmt.Action])) == tolist(["iam:PassRole"])])
     error_message = "iam:PassRole を持つ Allow の文は、Action を iam:PassRole の1つだけとしなければならない（10-4-o (4)・AC-7-8 ③）"
   }
 
   assert {
-    condition     = alltrue([for stmt in [for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Allow" && contains(try(tolist(stmt.Action), [stmt.Action]), "iam:PassRole")] : try(tolist(stmt.Resource), [stmt.Resource]) == tolist([format("arn:aws:iam::%s:role/effort-tracker-*", data.aws_caller_identity.current.account_id)])])
+    condition     = alltrue([for stmt in [for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Allow" && contains(try(tolist(stmt.Action), [stmt.Action]), "iam:PassRole")] : tolist(try(tolist(stmt.Resource), [stmt.Resource])) == tolist([format("arn:aws:iam::%s:role/effort-tracker-*", data.aws_caller_identity.current.account_id)])])
     error_message = "iam:PassRole を持つ Allow の文の Resource は role/effort-tracker-* の形だけでなければならない（10-4-o (4)）"
   }
 
