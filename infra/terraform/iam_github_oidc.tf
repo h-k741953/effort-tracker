@@ -60,6 +60,12 @@ resource "aws_iam_role" "github_actions_deploy" {
 
 # AC-7-8: 本仕様が作るサービスに限定して列挙する(D-15)。
 # Action = "*" を書かない。管理者相当のポリシーを付けない。
+# IAM の権限の限定(Action 24個・Resource 3形・PassRole の渡し先・自己保護の
+# Deny)は AC-7-8 の 2026-11-10 追記・10-4-o・ADR 0024 が持つ。列挙の中身は
+# そちらが正であり、ここでは広げない(12-10)。
+# Deny 文の Resource は、デプロイロール自身と凍結ポリシーの ARN(AC-7-8 ⑦)。
+# 凍結ポリシーの ARN は computed のため、command = plan 下ではこの本文が
+# unknown になりうる。10-4-o は両 ARN を override_resource で与えている。
 resource "aws_iam_role_policy" "github_actions_deploy" {
   name = "deploy-permissions"
   role = aws_iam_role.github_actions_deploy.id
@@ -74,12 +80,88 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
           "s3:*",
           "cloudfront:*",
           "lambda:*",
-          "iam:*",
           "ssm:*",
           "budgets:*",
           "logs:*",
         ]
         Resource = "*"
+      },
+      {
+        # AC-7-8 ①②: iam: の Allow は24個の列挙と3形の Resource に限る。
+        # iam:* と * を含む iam: の Action を書かない。provider が内部で呼ぶ
+        # 5個((vi))は人間の決定(D-15)。タグ操作は含めない。
+        Sid    = "DeployIamScoped"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole",
+          "iam:GetRole",
+          "iam:DeleteRole",
+          "iam:UpdateAssumeRolePolicy",
+          "iam:PutRolePolicy",
+          "iam:GetRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:CreatePolicy",
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion",
+          "iam:CreatePolicyVersion",
+          "iam:DeletePolicy",
+          "iam:CreateOpenIDConnectProvider",
+          "iam:GetOpenIDConnectProvider",
+          "iam:DeleteOpenIDConnectProvider",
+          "iam:UpdateOpenIDConnectProviderThumbprint",
+          "iam:AddClientIDToOpenIDConnectProvider",
+          "iam:RemoveClientIDFromOpenIDConnectProvider",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole",
+          "iam:ListPolicyVersions",
+          "iam:DeletePolicyVersion",
+        ]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/effort-tracker-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/effort-tracker-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com",
+        ]
+      },
+      {
+        # AC-7-8 ③: PassRole は単独の文にし、渡し先を Condition で限る。
+        # budgets.amazonaws.com が要ることは未確認(12-40)。
+        Sid      = "DeployPassRole"
+        Effect   = "Allow"
+        Action   = ["iam:PassRole"]
+        Resource = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/effort-tracker-*"]
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = [
+              "lambda.amazonaws.com",
+              "scheduler.amazonaws.com",
+              "budgets.amazonaws.com",
+            ]
+          }
+        }
+      },
+      {
+        # AC-7-8 ⑤⑦: 自己保護の Deny。Condition を付けず、読み取りを拒まない。
+        # Resource は当該ロールと凍結ポリシーの2つだけ("*"・接頭辞のワイルドカード
+        # にしない)。
+        Sid    = "DenyWriteToSelfAndFreezePolicy"
+        Effect = "Deny"
+        Action = [
+          "iam:PutRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:UpdateAssumeRolePolicy",
+          "iam:DeleteRole",
+          "iam:CreatePolicyVersion",
+          "iam:DeletePolicyVersion",
+          "iam:SetDefaultPolicyVersion",
+          "iam:DeletePolicy",
+        ]
+        Resource = [
+          aws_iam_role.github_actions_deploy.arn,
+          aws_iam_policy.budget_freeze_new_resources.arn,
+        ]
       },
       {
         # D-15・AC-7-8（2026-10-27 改訂・ADR 0022）: Scheduler はスケジュールを
