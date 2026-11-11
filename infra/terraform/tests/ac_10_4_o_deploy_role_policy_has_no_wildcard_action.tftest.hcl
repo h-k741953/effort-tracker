@@ -2,12 +2,14 @@
 #
 # 本ファイルが検査するのは、デプロイロールのポリシー
 # （aws_iam_role_policy.github_actions_deploy）の本文である。
-# - Action: "*" の文を持たないこと、D-15 が列挙するサービス接頭辞
-#   （S3/CloudFront/Lambda/IAM/SSM/Budgets/Logs）に収まること（AC-7-8）
+# - Action: "*" の文を持たないこと、Action が D-15 の列挙（AC-7-8）の
+#   サービス接頭辞に収まること、scheduler: の Action が AC-7-8 の
+#   scheduler の4つに限られること（2026-10-27 改訂）
 # - IAM の権限の限定（10-4-o (1)〜(7)、AC-7-8 ①〜⑦）: iam: の Action の列挙・
 #   Resource の形・iam:PassRole の文の形と渡し先の条件・自己保護の Deny・
 #   for 式が空を回って緑になることの防止
-# 各条の中身は仕様が持ち、ここへ写さない。
+# 期待値の持ち主は AC-7-8（D-15）。本ファイルは列挙の写しを持つが、
+# 変更は AC-7-8 が先（下の 2026-11-10 追記の節も同じ）。
 #
 # mock_provider を用い、実際の AWS API を呼ばない（AC-10-2）。
 # 構成（*.tf のリソース定義）は実装済みであり、各 run はその構成に対して実際に
