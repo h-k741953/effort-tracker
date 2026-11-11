@@ -549,7 +549,7 @@ Issue #8 の本文は起票時点で「S3 + DynamoDB lock」を書いている�
 - `docs/adr/0003-lambda-function-url-iam-auth.md`: Function URL の IAM 認証と多層防御
 - `docs/adr/0013-aws-native-hosting-over-vercel.md`: ホスティング構成・CloudFront の従量リスク・OpenNext（**BFF・SSR を Node ランタイムで動かすこと**＝D-16 の根拠）
 - `docs/adr/0014-execution-role-over-vercel-oidc.md`: 実行ロールで呼ぶ・権限最小化
-- `docs/adr/0024-narrow-deploy-role-iam-with-self-protection.md`（提案中）: デプロイロールの IAM の権限を Action と Resource の単位で狭め、自身と凍結ポリシーへの書き込みを拒む（D-15 の 2026-11-10・2026-11-11 追記・AC-7-8 の 2026-11-10 追記・10-4-o・12-10・12-29・12-39〜12-41）
+- `docs/adr/0024-narrow-deploy-role-iam-with-self-protection.md`（承認済み）: デプロイロールの IAM の権限を Action と Resource の単位で狭め、自身と凍結ポリシーへの書き込みを拒む（D-15 の 2026-11-10・2026-11-11 追記・AC-7-8 の 2026-11-10 追記・10-4-o・12-10・12-29・12-39〜12-41）
 - `docs/adr/0009-branch-protection-via-ruleset.md`: GitHub provider による codify を #8 のスコープ外とした判断（非スコープ）
 - `docs/adr/0007-testing-with-stdlib-and-go-cmp.md`: テストは標準 `testing` + go-cmp のみ／モック・アサーションライブラリを入れない（**SDK を最小の interface 越しに受ける根拠**＝AC-8-11・AC-9-12・AC-11-15・11-19）
 - `docs/adr/0010-harness-engineering.md` §A: **依存ライブラリの許可リストは人間の承認事項**／**列挙されていない改変は弱体化の疑いがある側に倒す**（D-19・AC-9-15・AC-9-18・11-16）
