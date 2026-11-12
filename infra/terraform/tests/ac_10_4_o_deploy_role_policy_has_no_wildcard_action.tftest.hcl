@@ -79,7 +79,7 @@ run "deploy_role_policy_has_no_wildcard_action" {
   }
 
   # D-15 が限定列挙するサービス（S3 / CloudFront / Lambda / IAM / SSM /
-  # Budgets / Logs）のサービス接頭辞に、Action が収まっていることを見る。
+  # Budgets / Logs / Scheduler）のサービス接頭辞に、Action が収まっていることを見る。
   # 列挙が十分かどうかは検査しない（12-10）。弾くのは裸の "*" だけであり、
   # s3:* のようなサービス内ワイルドカードは対象外（12-29・10-4-f/g/h とは
   # 別枠）。
@@ -193,23 +193,30 @@ run "deploy_role_policy_iam_passrole_is_limited_to_services" {
 run "deploy_role_policy_has_self_protection_deny" {
   command = plan
 
+  # AC-7-8 ⑤の Deny の10個の列挙（写し。持ち主は AC-7-8）。下の3つの assert が
+  # var.self_protection_deny_actions として共有する。モジュールは同名の変数を
+  # 宣言していない（テスト内だけの値）。
+  variables {
+    self_protection_deny_actions = ["iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:UpdateAssumeRolePolicy", "iam:DeleteRole", "iam:CreatePolicyVersion", "iam:DeletePolicyVersion", "iam:SetDefaultPolicyVersion", "iam:DeletePolicy"]
+  }
+
   assert {
     condition     = length([for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Deny"]) >= 1
     error_message = "Effect が Deny の文が1つ以上なければならない（10-4-o (5)）"
   }
 
   assert {
-    condition     = anytrue([for stmt in [for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Deny"] : alltrue([for n in ["iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:UpdateAssumeRolePolicy", "iam:DeleteRole", "iam:CreatePolicyVersion", "iam:DeletePolicyVersion", "iam:SetDefaultPolicyVersion", "iam:DeletePolicy"] : contains(try(tolist(stmt.Action), [stmt.Action]), n)])])
+    condition     = anytrue([for stmt in [for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Deny"] : alltrue([for n in var.self_protection_deny_actions : contains(try(tolist(stmt.Action), [stmt.Action]), n)])])
     error_message = "Deny の文のうち少なくとも1つが、AC-7-8 ⑤の10個の Action をすべて含まなければならない（10-4-o (5)(i)）"
   }
 
   assert {
-    condition     = anytrue([for stmt in [for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Deny"] : alltrue([for n in ["iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:UpdateAssumeRolePolicy", "iam:DeleteRole", "iam:CreatePolicyVersion", "iam:DeletePolicyVersion", "iam:SetDefaultPolicyVersion", "iam:DeletePolicy"] : contains(try(tolist(stmt.Action), [stmt.Action]), n)]) && !anytrue([for a in try(tolist(stmt.Action), [stmt.Action]) : startswith(a, "iam:Get") || startswith(a, "iam:List")]) && !contains(keys(stmt), "Condition") && !anytrue([for r in try(tolist(stmt.Resource), [stmt.Resource]) : strcontains(r, "*")]) && toset(try(tolist(stmt.Resource), [stmt.Resource])) == toset([aws_iam_role.github_actions_deploy.arn, aws_iam_policy.budget_freeze_new_resources.arn]) && length(try(tolist(stmt.Resource), [stmt.Resource])) == 2])
+    condition     = anytrue([for stmt in [for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Deny"] : alltrue([for n in var.self_protection_deny_actions : contains(try(tolist(stmt.Action), [stmt.Action]), n)]) && !anytrue([for a in try(tolist(stmt.Action), [stmt.Action]) : startswith(a, "iam:Get") || startswith(a, "iam:List")]) && !contains(keys(stmt), "Condition") && !anytrue([for r in try(tolist(stmt.Resource), [stmt.Resource]) : strcontains(r, "*")]) && toset(try(tolist(stmt.Resource), [stmt.Resource])) == toset([aws_iam_role.github_actions_deploy.arn, aws_iam_policy.budget_freeze_new_resources.arn]) && length(try(tolist(stmt.Resource), [stmt.Resource])) == 2])
     error_message = "Deny の文のうち少なくとも1つが、(i) 10個を含み (ii) iam:Get・iam:List を含まず (iii) Condition を持たず (iv) Resource が * を含まずデプロイロールと凍結ポリシーの ARN（構成側の属性）の2つだけでなければならない（10-4-o (5)）"
   }
 
   assert {
-    condition     = anytrue([for stmt in [for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Deny"] : alltrue([for n in ["iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:UpdateAssumeRolePolicy", "iam:DeleteRole", "iam:CreatePolicyVersion", "iam:DeletePolicyVersion", "iam:SetDefaultPolicyVersion", "iam:DeletePolicy"] : contains(try(tolist(stmt.Action), [stmt.Action]), n)]) && !anytrue([for a in try(tolist(stmt.Action), [stmt.Action]) : strcontains(a, "*")])])
+    condition     = anytrue([for stmt in [for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Deny"] : alltrue([for n in var.self_protection_deny_actions : contains(try(tolist(stmt.Action), [stmt.Action]), n)]) && !anytrue([for a in try(tolist(stmt.Action), [stmt.Action]) : strcontains(a, "*")])])
     error_message = "自己保護の Deny 文の Action は * を含んではならない（10-4-o (5)・AC-7-8 ⑤）"
   }
 }
