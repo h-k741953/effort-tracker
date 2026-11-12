@@ -65,7 +65,7 @@ resource "aws_iam_role" "github_actions_deploy" {
 # そちらが正であり、ここでは広げない(12-10)。
 # Deny 文の Resource は、デプロイロール自身と凍結ポリシーの ARN(AC-7-8 ⑦)。
 # 凍結ポリシーの ARN は computed のため、command = plan 下ではこの本文が
-# unknown になりうる。10-4-o は両 ARN を override_resource で与えている。
+# unknown になりうる(plan 下の検査の扱いは 10-4-o のテストファイルが持つ)。
 resource "aws_iam_role_policy" "github_actions_deploy" {
   name = "deploy-permissions"
   role = aws_iam_role.github_actions_deploy.id
