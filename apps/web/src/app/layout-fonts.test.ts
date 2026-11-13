@@ -78,9 +78,11 @@ const SYNTAX_ONLY_OPTIONS: ts.CompilerOptions = { jsx: ts.JsxEmit.Preserve, noLi
 /**
  * テキストを TSX の構文木として読む。構文の誤りがあれば投げる（読めないファイルの輸入を素通りさせない）。
  *
- * 構文の誤りは、1ファイルだけの Program の getSyntacticDiagnostics で取る。ts.transpileModule も内部で
- * 同じ診断を返すが、JS の出力まで行うため遅い。(ii) は母集団の全ファイルにこれを掛けるので、出力の分だけ
+ * 構文の誤りは、1ファイルだけの Program の getSyntacticDiagnostics で取る。旧実装の ts.transpileModule も
+ * 構文の誤りを返すが、JS の出力まで行うため遅い。(ii) は母集団の全ファイルにこれを掛けるので、出力の分だけ
  * make verify の負荷の下で 5000ms を超えた（#169）。構文木は1回だけ作り、診断と読み取りの両方に使う。
+ * なお旧実装は目標版を指定せず既定の ES5 で診断していたため、BMP の外の文字（サロゲートペア）を使った
+ * 識別子だけは結果が分かれ、旧実装は正しいコードを誤りと判定していた。ここは ScriptTarget.Latest で読む。
  */
 function parseSource(text: string): ts.SourceFile {
   const source = ts.createSourceFile(SOURCE_NAME, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
