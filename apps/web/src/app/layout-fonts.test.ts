@@ -72,17 +72,35 @@ function readFontsBase(specText: string): string {
 const EXPECTATIONS = readExpectations(spec);
 const FONTS_BASE = readFontsBase(spec);
 
+const SOURCE_NAME = "source.tsx";
+const SYNTAX_ONLY_OPTIONS: ts.CompilerOptions = { jsx: ts.JsxEmit.Preserve, noLib: true, noResolve: true, types: [] };
+
+/**
+ * テキストを TSX の構文木として読む。構文の誤りがあれば投げる（読めないファイルの輸入を素通りさせない）。
+ *
+ * 構文の誤りは、1ファイルだけの Program の getSyntacticDiagnostics で取る。ts.transpileModule も内部で
+ * 同じ診断を返すが、JS の出力まで行うため遅い。(ii) は母集団の全ファイルにこれを掛けるので、出力の分だけ
+ * make verify の負荷の下で 5000ms を超えた（#169）。構文木は1回だけ作り、診断と読み取りの両方に使う。
+ */
 function parseSource(text: string): ts.SourceFile {
-  const { diagnostics = [] } = ts.transpileModule(text, {
-    fileName: "source.tsx",
-    reportDiagnostics: true,
-    compilerOptions: { jsx: ts.JsxEmit.Preserve },
-  });
+  const source = ts.createSourceFile(SOURCE_NAME, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const host: ts.CompilerHost = {
+    getSourceFile: (name) => (name === SOURCE_NAME ? source : undefined),
+    writeFile: () => {},
+    getDefaultLibFileName: () => "lib.d.ts",
+    useCaseSensitiveFileNames: () => true,
+    getCanonicalFileName: (name) => name,
+    getCurrentDirectory: () => "",
+    getNewLine: () => "\n",
+    fileExists: (name) => name === SOURCE_NAME,
+    readFile: () => undefined,
+  };
+  const diagnostics = ts.createProgram([SOURCE_NAME], SYNTAX_ONLY_OPTIONS, host).getSyntacticDiagnostics(source);
   if (diagnostics.length > 0) {
     const messages = diagnostics.map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"));
     throw new Error(`構文として読めないテキストである: ${messages.join(" / ")}`);
   }
-  return ts.createSourceFile("source.tsx", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  return source;
 }
 
 const FONT_LOCAL = "next/font/local";
