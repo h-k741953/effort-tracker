@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { readAcSection } from "../test-support/design-system";
-import { DEEP_FIXTURE_DIR, definePopulation, withFixture } from "../test-support/source-population";
+import { DEEP_FIXTURE_DIR, deepestDirectoryDepth, definePopulation, withFixture } from "../test-support/source-population";
 
 // docs/specs/design-system.md AC-1 / AC-2 / AC-4-1〜4-3 / AC-4-8 / AC-4-9
 // （検証手段は AC-10-1・10-1-a・10-3-m）。
@@ -548,6 +548,10 @@ describe("母集団の読み取り（10-1-b / AC-1-1）", () => {
     "top.ts",
   ].sort();
 
+  it("fixture の深い階層は、src の実データの最も深いファイルより深い（.ts / .tsx と .css の両方。階層を落とす変異を fixture で落とす前提）", () => {
+    expect(deepestDirectoryDepth(IMPLEMENTATION_POPULATION.walk(srcDir))).toBeLessThan(DEEP_FIXTURE_DIR.split(path.sep).length);
+    expect(deepestDirectoryDepth(CSS_POPULATION.walk(srcDir))).toBeLessThan(DEEP_FIXTURE_DIR.split(path.sep).length);
+  });
   it("10-1-b: 走査は、.ts と .tsx を深い階層まで含み、検査ファイルと他の拡張子を除く", () => {
     withFixture(implementationFixture, (root) => expect(IMPLEMENTATION_POPULATION.scan(root)).toEqual(implementationExpected));
   });

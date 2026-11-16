@@ -4,7 +4,7 @@ import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { readAcSection, readDesignSystemSpec } from "../test-support/design-system";
-import { definePopulation, withFixture } from "../test-support/source-population";
+import { DEEP_FIXTURE_DIR, deepestDirectoryDepth, definePopulation, withFixture } from "../test-support/source-population";
 
 // docs/specs/design-system.md AC-4-2 / AC-4-3 / 4-3-a〜4-3-d（検証手段は AC-10-1-c・10-1-d）。
 //
@@ -334,7 +334,7 @@ describe("layout.tsx のフォント読み込み - AC-4-3 / 4-3-a〜4-3-c（AC-1
   // 通り、layout.tsx の足場も残る。期待値を fixture 側に置き、両方の関数がそれぞれ条文どおりの母集団を返すことを読む。
   // 階層は src の実データより深く置く（階層を落とす形も同じ理由で落とす）。
   describe("母集団の読み取り（10-1-b）", () => {
-    const deep = path.join("a", "b", "c", "d", "e", "f", "g", "h", "i");
+    const deep = DEEP_FIXTURE_DIR;
     const fixture = {
       [path.join("app", "layout.tsx")]: "export default function L() { return null; }",
       "top.ts": "export const a = 1;",
@@ -348,6 +348,9 @@ describe("layout.tsx のフォント読み込み - AC-4-3 / 4-3-a〜4-3-c（AC-1
     };
     const expected = [path.join("app", "layout.tsx"), path.join(deep, "deep.ts"), path.join(deep, "deep.tsx"), "top.ts"].sort();
 
+    it("fixture の深い階層は、src の実データの最も深いファイルより深い（階層を落とす変異を fixture で落とす前提）", () => {
+      expect(deepestDirectoryDepth(walkPopulation(srcDir))).toBeLessThan(DEEP_FIXTURE_DIR.split(path.sep).length);
+    });
     it("走査は、.ts と .tsx を深い階層まで含み、検査ファイルと他の拡張子を除く", () => {
       withFixture(fixture, (root) => expect(scanPopulation(root)).toEqual(expected));
     });
