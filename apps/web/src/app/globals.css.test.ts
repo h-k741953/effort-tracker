@@ -1,9 +1,9 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { readAcSection } from "../test-support/design-system";
+import { definePopulation } from "../test-support/source-population";
 
 // docs/specs/design-system.md AC-1 / AC-2 / AC-4-1〜4-3 / AC-4-8 / AC-4-9
 // （検証手段は AC-10-1・10-1-a・10-3-m）。
@@ -17,6 +17,26 @@ import { readAcSection } from "../test-support/design-system";
 const appDir = fileURLToPath(new URL(".", import.meta.url));
 const cssPath = path.join(appDir, "globals.css");
 const css = readFileSync(cssPath, "utf8");
+const srcDir = path.join(appDir, "..");
+
+/** AC-1-1 の CSS 走査の母集団（src 配下の *.css）。 */
+const CSS_POPULATION = definePopulation({
+  extensions: [".css"],
+  excludesFile: () => false,
+  skipsDirectory: (_relative, name) => name === "node_modules",
+});
+
+/** 10-1-b の母集団（src 配下の実装 *.ts / *.tsx。検査ファイルを除く）。 */
+const IMPLEMENTATION_POPULATION = definePopulation({
+  extensions: [".ts", ".tsx"],
+  excludesFile: (file) => /\.test\.tsx?$/.test(file),
+  skipsDirectory: (_relative, name) => name === "node_modules",
+});
+
+/** 4-3: 母集団のうち next/font/google の字面を持つファイル（root からの相対パス）。 */
+function nextFontGoogleUsers(root: string, files: readonly string[]): string[] {
+  return files.filter((file) => /next\/font\/google/.test(readFileSync(path.join(root, file), "utf8")));
+}
 
 // AC-2 の32トークン（表 2-1-a 〜 2-1-af）。名前と明色・暗色の値は AC-2 の表の字面から
 // 読む（AC-10-1）。テスト側に書いた写しを期待値にすると、表を書き換えても写しと
@@ -190,28 +210,12 @@ function alphaFormViolations(tokens: Map<string, string>, allowedNames: readonly
 
 describe("globals.css - AC-1: トークンの定義場所と形式", () => {
   it("1-1: globals.css 以外に CSS ファイルを持たない（src 配下）", () => {
-    const srcDir = path.join(appDir, "..");
-    const cssFiles: string[] = [];
-    const walk = (dir: string) => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (entry.name === "node_modules") continue;
-          walk(full);
-        } else if (entry.name.endsWith(".css")) {
-          cssFiles.push(path.relative(srcDir, full));
-        }
-      }
-    };
-    walk(srcDir);
+    const cssFiles = CSS_POPULATION.walk(srcDir);
     // AC-10-1: 走査の範囲を狭める変更（階層を落とす形）が、範囲の外に置いた CSS を
     // 見逃したまま通らないよう、走査とは別の手段で数えた集合と突き合わせる。
-    const independent = ts.sys
-      .readDirectory(srcDir, [".css"])
-      .map((full) => path.relative(srcDir, full))
-      .sort();
+    const independent = CSS_POPULATION.scan(srcDir);
     expect(independent.length).toBeGreaterThan(0);
-    expect([...cssFiles].sort()).toEqual(independent);
+    expect(cssFiles).toEqual(independent);
     expect(cssFiles).toEqual(["app/globals.css"]);
   });
 
@@ -503,46 +507,22 @@ describe("globals.css - AC-4-1〜4-3", () => {
   // TypeScript / TSX の全体とする。layout.tsx だけを読むと、他のファイル
   // （page.tsx 等）での使用が素通りする。読めたファイルが0件のときは失敗させる。
   it("4-3: next/font/google を使わない（src 配下の全ファイル）", () => {
-    const srcDir = path.join(appDir, "..");
-    const sources: Array<{ file: string; text: string }> = [];
-    const walk = (dir: string) => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (entry.name === "node_modules") continue;
-          walk(full);
-        } else if (
-          (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) &&
-          !entry.name.endsWith(".test.ts") &&
-          !entry.name.endsWith(".test.tsx")
-        ) {
-          // 検査ファイル自身は母集団から外す（アプリの出力に入らないうえ、
-          // 禁じた文字列を期待値として持つため自己言及で落ちる）。10-3 が
-          // *.test.tsx を除くのと同じ扱い。
-          sources.push({ file: path.relative(srcDir, full), text: readFileSync(full, "utf8") });
-        }
-      }
-    };
-    walk(srcDir);
-    expect(sources.length).toBeGreaterThan(0);
+    // 検査ファイル自身は母集団から外す（アプリの出力に入らないうえ、
+    // 禁じた文字列を期待値として持つため自己言及で落ちる）。10-3 が
+    // *.test.tsx を除くのと同じ扱い。
+    const files = IMPLEMENTATION_POPULATION.walk(srcDir);
+    expect(files.length).toBeGreaterThan(0);
     // layout.tsx が母集団に入っていることを明示的に読む（走査が空振りして
     // いないことの陽性側の足場）。
     expect(existsSync(path.join(appDir, "layout.tsx"))).toBe(true);
-    expect(sources.map((s) => s.file)).toContain(path.join("app", "layout.tsx"));
+    expect(files).toContain(path.join("app", "layout.tsx"));
     // AC-10-1-b: 1件の足場だけでは、走査の範囲を狭める変更（拡張子・階層を落とす形）が
     // layout.tsx を残したまま他のファイルを落として通る。走査とは別の手段で数えた
     // 集合と過不足なく一致することを読む（10-3-k と同じ理由）。
-    const independent = ts.sys
-      .readDirectory(srcDir, [".ts", ".tsx"])
-      .map((full) => path.relative(srcDir, full))
-      .filter((file) => !/\.test\.tsx?$/.test(file))
-      .sort();
+    const independent = IMPLEMENTATION_POPULATION.scan(srcDir);
     expect(independent.length).toBeGreaterThan(0);
-    expect(sources.map((s) => s.file).sort()).toEqual(independent);
-    const offending = sources
-      .filter((s) => /next\/font\/google/.test(s.text))
-      .map((s) => s.file);
-    expect(offending).toEqual([]);
+    expect(files).toEqual(independent);
+    expect(nextFontGoogleUsers(srcDir, files)).toEqual([]);
   });
 });
 

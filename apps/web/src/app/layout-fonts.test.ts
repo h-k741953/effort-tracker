@@ -4,6 +4,7 @@ import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { readAcSection, readDesignSystemSpec } from "../test-support/design-system";
+import { definePopulation, withFixture } from "../test-support/source-population";
 
 // docs/specs/design-system.md AC-4-2 / AC-4-3 / 4-3-a〜4-3-d（検証手段は AC-10-1-c・10-1-d）。
 //
@@ -289,53 +290,20 @@ function hasLicenseFile(directory: string): boolean {
 }
 
 /**
- * 10-1-b の母集団（root 配下の実装 *.ts / *.tsx。検査ファイルを除く）を走査で読む。root からの相対パスで、整列済み。
- * 実ケース（src）と fixture の両方へ同じ関数を当てる（下の「母集団の読み取り」）。走査と数え直しの両方を同じように
- * 狭める変異（拡張子・階層を落とす形）は、両者の突き合わせだけでは一致したまま通るため、fixture の期待値で落とす（#170）。
+ * 10-1-b の母集団（src 配下の実装 *.ts / *.tsx。検査ファイルを除く）。走査と数え直しの2通りで読む。
+ * 実ケース（src）と fixture の両方へ同じ定義を当てる（下の「母集団の読み取り」。#170）。
  */
-function scanPopulation(root: string): string[] {
-  return ts.sys
-    .readDirectory(root, [".ts", ".tsx"])
-    .filter((file) => !/\.test\.tsx?$/.test(file))
-    .map((file) => path.relative(root, file))
-    .sort();
-}
-
-/** 10-1-b: 走査とは別の手段（再帰の readdirSync）で、同じ母集団を数え直す。 */
-function walkPopulation(root: string): string[] {
-  const walked: string[] = [];
-  const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name !== "node_modules") walk(full);
-      } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
-        walked.push(path.relative(root, full));
-      }
-    }
-  };
-  walk(root);
-  return walked.sort();
-}
+const IMPLEMENTATION_POPULATION = definePopulation({
+  extensions: [".ts", ".tsx"],
+  excludesFile: (file) => /\.test\.tsx?$/.test(file),
+  skipsDirectory: (_relative, name) => name === "node_modules",
+});
+const scanPopulation = IMPLEMENTATION_POPULATION.scan;
+const walkPopulation = IMPLEMENTATION_POPULATION.walk;
 
 /** (ii) 母集団のうち next/font/local を輸入するファイル（root からの相対パス）。 */
 function nextFontLocalImporters(root: string, population: readonly string[]): string[] {
   return population.filter((file) => importsNextFontLocal(readFileSync(path.join(root, file), "utf8")));
-}
-
-/** files（root からの相対パス → 中身）を一時ディレクトリへ書き、body に渡す。終われば消す。 */
-function withFixture(files: Record<string, string>, body: (root: string) => void): void {
-  const root = mkdtempSync(path.join(os.tmpdir(), "et-population-"));
-  try {
-    for (const [relative, content] of Object.entries(files)) {
-      const full = path.join(root, relative);
-      mkdirSync(path.dirname(full), { recursive: true });
-      writeFileSync(full, content);
-    }
-    body(root);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
 }
 
 const layoutText = readFileSync(layoutPath, "utf8");

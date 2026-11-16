@@ -4,11 +4,12 @@
 // 検査専用の補助がアプリの出力に混ざると、検査の都合で実装のふるまいが変わる。
 // import はモジュール指定子を構文として読む（コメントや文字列の中の語は数えない）。
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { definePopulation } from "./source-population";
 
 const testSupportDir = fileURLToPath(new URL(".", import.meta.url));
 const srcDir = path.join(testSupportDir, "..");
@@ -50,25 +51,14 @@ function importsTestSupport(text: string): boolean {
 }
 
 /** アプリの実装（src 配下の *.ts / *.tsx。*.test.* と test-support/ 自身を除く）。 */
+const IMPLEMENTATION_POPULATION = definePopulation({
+  extensions: [".ts", ".tsx"],
+  excludesFile: (file) => /\.test\.tsx?$/.test(file) || file.startsWith(`test-support${path.sep}`),
+  skipsDirectory: (relative) => relative === "test-support",
+});
+
 function listImplementationFiles(): string[] {
-  const files: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (full === path.join(srcDir, "test-support")) continue;
-        walk(full);
-      } else if (
-        (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) &&
-        !entry.name.endsWith(".test.ts") &&
-        !entry.name.endsWith(".test.tsx")
-      ) {
-        files.push(path.relative(srcDir, full));
-      }
-    }
-  };
-  walk(srcDir);
-  return files.sort();
+  return IMPLEMENTATION_POPULATION.walk(srcDir);
 }
 
 describe("AC-10-3-k: アプリの実装は test-support を import しない", () => {
@@ -80,11 +70,7 @@ describe("AC-10-3-k: アプリの実装は test-support を import しない", (
     expect(files.some((file) => file.startsWith(`test-support${path.sep}`))).toBe(false);
     // 1件の足場だけでは、走査の範囲を狭める変更（拡張子・階層を落とす形）が通る。
     // 走査とは別の手段で数えた集合と過不足なく一致することを読む（AC-10-3-k）。
-    const independent = ts.sys
-      .readDirectory(srcDir, [".ts", ".tsx"])
-      .map((full) => path.relative(srcDir, full))
-      .filter((file) => !/\.test\.tsx?$/.test(file) && !file.startsWith(`test-support${path.sep}`))
-      .sort();
+    const independent = IMPLEMENTATION_POPULATION.scan(srcDir);
     expect(independent.length).toBeGreaterThan(0);
     expect(files).toEqual(independent);
   });
