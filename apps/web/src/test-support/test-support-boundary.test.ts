@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { DEEP_FIXTURE_DIR, definePopulation, withFixture } from "./source-population";
+import { DEEP_FIXTURE_DIR, deepestDirectoryDepth, definePopulation, withFixture } from "./source-population";
 
 const testSupportDir = fileURLToPath(new URL(".", import.meta.url));
 const srcDir = path.join(testSupportDir, "..");
@@ -100,6 +100,9 @@ describe("AC-10-3-k: アプリの実装は test-support を import しない", (
       "top.ts",
     ].sort();
 
+    it("fixture の深い階層は、src の実データの最も深いファイルより深い（階層を落とす変異を fixture で落とす前提）", () => {
+      expect(deepestDirectoryDepth(IMPLEMENTATION_POPULATION.walk(srcDir))).toBeLessThan(DEEP_FIXTURE_DIR.split(path.sep).length);
+    });
     it("走査は、.ts と .tsx を深い階層まで含み、検査ファイル・test-support/ の中・他の拡張子を除く", () => {
       withFixture(fixture, (root) => expect(IMPLEMENTATION_POPULATION.scan(root)).toEqual(expected));
     });
