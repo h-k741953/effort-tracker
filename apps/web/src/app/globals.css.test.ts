@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { readAcSection } from "../test-support/design-system";
-import { definePopulation } from "../test-support/source-population";
+import { DEEP_FIXTURE_DIR, definePopulation, withFixture } from "../test-support/source-population";
 
 // docs/specs/design-system.md AC-1 / AC-2 / AC-4-1〜4-3 / AC-4-8 / AC-4-9
 // （検証手段は AC-10-1・10-1-a・10-3-m）。
@@ -523,6 +523,58 @@ describe("globals.css - AC-4-1〜4-3", () => {
     expect(independent.length).toBeGreaterThan(0);
     expect(files).toEqual(independent);
     expect(nextFontGoogleUsers(srcDir, files)).toEqual([]);
+  });
+});
+
+// ---- 母集団の読み取り（10-1-b / AC-1-1）を、実ケースと同じ定義で fixture に当てる（#170） ----
+// 走査と数え直しを両方とも同じように狭める変異（拡張子を .tsx だけにする・階層を落とす）は、実ケースの突き合わせでは
+// 一致したまま通り、足場（layout.tsx / globals.css）も残る。期待値を fixture 側に置き、条文どおりの母集団を返すことを読む。
+describe("母集団の読み取り（10-1-b / AC-1-1）", () => {
+  const deep = DEEP_FIXTURE_DIR;
+  const implementationFixture = {
+    [path.join("app", "layout.tsx")]: "export default function L() { return null; }",
+    "top.ts": "export const a = 1;",
+    [path.join(deep, "deep.ts")]: "export const b = 1;",
+    [path.join(deep, "deep.tsx")]: "export const c = 1;",
+    [path.join("app", "page.test.tsx")]: "export {};",
+    [path.join(deep, "x.test.ts")]: "export {};",
+    "styles.css": "",
+    "script.js": "",
+  };
+  const implementationExpected = [
+    path.join("app", "layout.tsx"),
+    path.join(deep, "deep.ts"),
+    path.join(deep, "deep.tsx"),
+    "top.ts",
+  ].sort();
+
+  it("10-1-b: 走査は、.ts と .tsx を深い階層まで含み、検査ファイルと他の拡張子を除く", () => {
+    withFixture(implementationFixture, (root) => expect(IMPLEMENTATION_POPULATION.scan(root)).toEqual(implementationExpected));
+  });
+  it("10-1-b: 数え直しも、.ts と .tsx を深い階層まで含み、検査ファイルと他の拡張子を除く", () => {
+    withFixture(implementationFixture, (root) => expect(IMPLEMENTATION_POPULATION.walk(root)).toEqual(implementationExpected));
+  });
+  it("4-3 の判定は、.ts の実装ファイルが深い階層で next/font/google を使う形を拾う（陽性対照）", () => {
+    withFixture(
+      { ...implementationFixture, [path.join(deep, "deep.ts")]: 'import { Inter } from "next/font/google";\nexport const f = Inter;' },
+      (root) => expect(nextFontGoogleUsers(root, IMPLEMENTATION_POPULATION.walk(root))).toEqual([path.join(deep, "deep.ts")]),
+    );
+  });
+
+  const cssFixture = {
+    [path.join("app", "globals.css")]: ":root {}",
+    "top.css": "",
+    [path.join(deep, "deep.css")]: "",
+    "styles.scss": "",
+    "top.ts": "export {};",
+  };
+  const cssExpected = [path.join("app", "globals.css"), path.join(deep, "deep.css"), "top.css"].sort();
+
+  it("AC-1-1: CSS の走査は、深い階層の .css まで含み、他の拡張子を除く", () => {
+    withFixture(cssFixture, (root) => expect(CSS_POPULATION.scan(root)).toEqual(cssExpected));
+  });
+  it("AC-1-1: CSS の数え直しも、深い階層の .css まで含み、他の拡張子を除く", () => {
+    withFixture(cssFixture, (root) => expect(CSS_POPULATION.walk(root)).toEqual(cssExpected));
   });
 });
 

@@ -54,6 +54,9 @@ export function definePopulation(definition: PopulationDefinition): Population {
   };
 }
 
+/** fixture の深い階層（9段）。src の実データより深く置き、両側の階層を落とす変異を fixture で落とす。 */
+export const DEEP_FIXTURE_DIR = path.join("a", "b", "c", "d", "e", "f", "g", "h", "i");
+
 /** 相対パスの並びのうち、最も深いファイルが何段のディレクトリの中にあるか（直下は 0）。 */
 export function deepestDirectoryDepth(relativePaths: readonly string[]): number {
   return Math.max(0, ...relativePaths.map((p) => p.split(path.sep).length - 1));
