@@ -1,5 +1,6 @@
 // 検査の母集団（src 配下のファイルの集合）を、走査と、それとは別の手段での数え直しの2通りで読む補助。
-// 10-1-b / 10-3-k / AC-1-1 の検査が共有する（置き場所は 10-3-k）。
+// 10-1-b / 10-3-k / AC-1-1 の検査が共有する（置き場所は 10-3-k）。10-1-b の母集団の定義と fixture は
+// 10-1-b と 10-1-c (ii) が同じものを読むため、ここに1つだけ置く（#170）。
 //
 // 2通りの突き合わせ（過不足なく一致すること）は、片方だけを狭める変異を落とす。両方を同じように狭める変異
 // （拡張子・階層を落とす形）は一致したまま通るため、各検査は同じ定義を fixture にも当て、期待値を fixture 側に
@@ -76,3 +77,31 @@ export function withFixture(files: Record<string, string>, body: (root: string) 
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+/** 10-1-b の母集団（src 配下の実装 *.ts / *.tsx。検査ファイルを除く）。10-1-b と 10-1-c (ii) が共有する。 */
+export const IMPLEMENTATION_POPULATION_10_1_B = definePopulation({
+  extensions: [".ts", ".tsx"],
+  excludesFile: (file) => /\.test\.tsx?$/.test(file),
+  skipsDirectory: (_relative, name) => name === "node_modules",
+});
+
+/** 10-1-b の母集団の定義を当てる fixture（相対パス → 中身）。実装 .ts / .tsx を深い階層まで置き、検査ファイルと他の拡張子を混ぜる。 */
+export const IMPLEMENTATION_POPULATION_FIXTURE: Record<string, string> = {
+  [path.join("app", "layout.tsx")]: "export default function L() { return null; }",
+  "top.ts": "export const a = 1;",
+  [path.join(DEEP_FIXTURE_DIR, "deep.ts")]: "export const b = 1;",
+  [path.join(DEEP_FIXTURE_DIR, "deep.tsx")]: "export const c = 1;",
+  [path.join("app", "page.test.tsx")]: "export {};",
+  [path.join(DEEP_FIXTURE_DIR, "x.test.ts")]: "export {};",
+  "styles.css": "",
+  "script.js": "",
+  "types.d.mts": "",
+};
+
+/** IMPLEMENTATION_POPULATION_FIXTURE から条文どおりに得られる母集団（整列済み）。 */
+export const IMPLEMENTATION_POPULATION_EXPECTED: readonly string[] = [
+  path.join("app", "layout.tsx"),
+  path.join(DEEP_FIXTURE_DIR, "deep.ts"),
+  path.join(DEEP_FIXTURE_DIR, "deep.tsx"),
+  "top.ts",
+].sort();
