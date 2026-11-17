@@ -3,7 +3,15 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { readAcSection } from "../test-support/design-system";
-import { DEEP_FIXTURE_DIR, deepestDirectoryDepth, definePopulation, withFixture } from "../test-support/source-population";
+import {
+  DEEP_FIXTURE_DIR,
+  IMPLEMENTATION_POPULATION_10_1_B as IMPLEMENTATION_POPULATION,
+  IMPLEMENTATION_POPULATION_EXPECTED,
+  IMPLEMENTATION_POPULATION_FIXTURE,
+  deepestDirectoryDepth,
+  definePopulation,
+  withFixture,
+} from "../test-support/source-population";
 
 // docs/specs/design-system.md AC-1 / AC-2 / AC-4-1〜4-3 / AC-4-8 / AC-4-9
 // （検証手段は AC-10-1・10-1-a・10-3-m）。
@@ -23,13 +31,6 @@ const srcDir = path.join(appDir, "..");
 const CSS_POPULATION = definePopulation({
   extensions: [".css"],
   excludesFile: () => false,
-  skipsDirectory: (_relative, name) => name === "node_modules",
-});
-
-/** 10-1-b の母集団（src 配下の実装 *.ts / *.tsx。検査ファイルを除く）。 */
-const IMPLEMENTATION_POPULATION = definePopulation({
-  extensions: [".ts", ".tsx"],
-  excludesFile: (file) => /\.test\.tsx?$/.test(file),
   skipsDirectory: (_relative, name) => name === "node_modules",
 });
 
@@ -531,22 +532,8 @@ describe("globals.css - AC-4-1〜4-3", () => {
 // 一致したまま通り、足場（layout.tsx / globals.css）も残る。期待値を fixture 側に置き、条文どおりの母集団を返すことを読む。
 describe("母集団の読み取り（10-1-b / AC-1-1）", () => {
   const deep = DEEP_FIXTURE_DIR;
-  const implementationFixture = {
-    [path.join("app", "layout.tsx")]: "export default function L() { return null; }",
-    "top.ts": "export const a = 1;",
-    [path.join(deep, "deep.ts")]: "export const b = 1;",
-    [path.join(deep, "deep.tsx")]: "export const c = 1;",
-    [path.join("app", "page.test.tsx")]: "export {};",
-    [path.join(deep, "x.test.ts")]: "export {};",
-    "styles.css": "",
-    "script.js": "",
-  };
-  const implementationExpected = [
-    path.join("app", "layout.tsx"),
-    path.join(deep, "deep.ts"),
-    path.join(deep, "deep.tsx"),
-    "top.ts",
-  ].sort();
+  const implementationFixture = IMPLEMENTATION_POPULATION_FIXTURE;
+  const implementationExpected = IMPLEMENTATION_POPULATION_EXPECTED;
 
   it("fixture の深い階層は、src の実データの最も深いファイルより深い（.ts / .tsx と .css の両方。階層を落とす変異を fixture で落とす前提）", () => {
     expect(deepestDirectoryDepth(IMPLEMENTATION_POPULATION.walk(srcDir))).toBeLessThan(DEEP_FIXTURE_DIR.split(path.sep).length);

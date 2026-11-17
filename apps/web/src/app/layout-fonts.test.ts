@@ -4,7 +4,14 @@ import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { readAcSection, readDesignSystemSpec } from "../test-support/design-system";
-import { DEEP_FIXTURE_DIR, deepestDirectoryDepth, definePopulation, withFixture } from "../test-support/source-population";
+import {
+  DEEP_FIXTURE_DIR,
+  IMPLEMENTATION_POPULATION_10_1_B as IMPLEMENTATION_POPULATION,
+  IMPLEMENTATION_POPULATION_EXPECTED,
+  IMPLEMENTATION_POPULATION_FIXTURE,
+  deepestDirectoryDepth,
+  withFixture,
+} from "../test-support/source-population";
 
 // docs/specs/design-system.md AC-4-2 / AC-4-3 / 4-3-a〜4-3-d（検証手段は AC-10-1-c・10-1-d）。
 //
@@ -289,15 +296,6 @@ function hasLicenseFile(directory: string): boolean {
   return readdirSync(directory, { withFileTypes: true }).some((e) => e.isFile() && !e.name.endsWith(".woff2"));
 }
 
-/**
- * 10-1-b の母集団（src 配下の実装 *.ts / *.tsx。検査ファイルを除く）。走査と数え直しの2通りで読む。
- * 実ケース（src）と fixture の両方へ同じ定義を当てる（下の「母集団の読み取り」。#170）。
- */
-const IMPLEMENTATION_POPULATION = definePopulation({
-  extensions: [".ts", ".tsx"],
-  excludesFile: (file) => /\.test\.tsx?$/.test(file),
-  skipsDirectory: (_relative, name) => name === "node_modules",
-});
 const scanPopulation = IMPLEMENTATION_POPULATION.scan;
 const walkPopulation = IMPLEMENTATION_POPULATION.walk;
 
@@ -335,18 +333,8 @@ describe("layout.tsx のフォント読み込み - AC-4-3 / 4-3-a〜4-3-c（AC-1
   // 階層は src の実データより深く置く（階層を落とす形も同じ理由で落とす）。
   describe("母集団の読み取り（10-1-b）", () => {
     const deep = DEEP_FIXTURE_DIR;
-    const fixture = {
-      [path.join("app", "layout.tsx")]: "export default function L() { return null; }",
-      "top.ts": "export const a = 1;",
-      [path.join(deep, "deep.ts")]: "export const b = 1;",
-      [path.join(deep, "deep.tsx")]: "export const c = 1;",
-      [path.join("app", "page.test.tsx")]: "export {};",
-      [path.join(deep, "x.test.ts")]: "export {};",
-      "styles.css": "",
-      "script.js": "",
-      "types.d.mts": "",
-    };
-    const expected = [path.join("app", "layout.tsx"), path.join(deep, "deep.ts"), path.join(deep, "deep.tsx"), "top.ts"].sort();
+    const fixture = IMPLEMENTATION_POPULATION_FIXTURE;
+    const expected = IMPLEMENTATION_POPULATION_EXPECTED;
 
     it("fixture の深い階層は、src の実データの最も深いファイルより深い（階層を落とす変異を fixture で落とす前提）", () => {
       expect(deepestDirectoryDepth(walkPopulation(srcDir))).toBeLessThan(DEEP_FIXTURE_DIR.split(path.sep).length);
