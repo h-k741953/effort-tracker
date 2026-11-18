@@ -1,9 +1,9 @@
 ## 関連する仕様書
 
 <!--
-docs/ 配下へのリンクを貼ってください。正解のデータは常に docs にあります（ADR 0004）。
+docs/ 配下へのリンクを貼ってください。正解のデータは常に docs にあります（ADR 0025）。
 
-services/ または apps/ を変更する PR で docs/ への参照が無い場合、CI の spec-link ジョブが落ちます。
+services/・apps/・infra/ のいずれかを変更する PR で docs/ への参照が無い場合、CI の spec-link ジョブが落ちます。
 仕様を要さない変更（chore / ci など）には no-spec ラベルを付けてください。
 -->
 
