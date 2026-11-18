@@ -291,14 +291,14 @@ gh api repos/h-k741953/effort-tracker/rulesets/19056534 \
 
 `.github/workflows/spec-link.yml` と `.github/workflows/review-trail.yml` は上記の原則の**例外**である。いずれも PR の本文・コメント・ラベルを対象とし、**ローカルには検査対象そのものが存在しない**ため、原理的に `make verify` には入れられない。
 
-- `spec-link.yml` — PR 本文が `docs/` を参照しているか（ADR 0004）
+- `spec-link.yml` — PR 本文が `docs/` を参照しているか（ADR 0025。ADR 0004 を置き換える）
 - `review-trail.yml` — 実装↔レビューの往復証跡が定型フォーマットで残り、往復数が上限内か（上の「実装↔レビューループ」／「ループの上限値」）。上限値はこの doc の表から読み、**スクリプトにハードコードしない**（Issue #25）
 
-**ただし「検査対象がローカルに無い」ことと「チェッカのロジックを検査できない」ことは別である。** チェッカ本体（`.github/scripts/check-review-trail.sh`）は入力（`TRAIL_FILE` / `REVIEW_LOOP_DOC`）を差し替えれば完全にローカル実行でき、**そちらは通常のコード検査として `make test-scripts` が fixture で検査する**（`make test` に含まれ、CI も同じターゲットを呼ぶ）。ここを区別しないと、チェッカのバグだけが検査不能地帯に残る。
+**ただし「検査対象がローカルに無い」ことと「チェッカのロジックを検査できない」ことは別である。** チェッカ本体（`.github/scripts/check-review-trail.sh`）は入力（`TRAIL_FILE` / `REVIEW_LOOP_DOC`）を差し替えれば完全にローカル実行でき、**そちらは通常のコード検査として `make test-scripts` が fixture で検査する**（`make test` に含まれ、CI も同じターゲットを呼ぶ）。2つのプロセス検査の「SKIP／検査する／失敗」の判定（`.github/scripts/check-exclusion-axis.sh`）も同じく入力を差し替えてローカルで実行でき、`make test-scripts` が fixture で検査する（`docs/specs/process-check-exclusion-axis.md` AC-6）。ここを区別しないと、チェッカのバグだけが検査不能地帯に残る。
 
 > **実際に踏んだ。** 往復見出しを `###` ちょうどに限定していたため `## 往復 4` / `#### 往復 4` / `###往復 4` が黙殺され、**上限超過（＝人間へ上げるべき停止条件）が OK で通っていた**。`#` を1つ打ち間違えるだけで停止条件が赤くならないのは、上の「検査対象を読めなかったことは、違反が無いことを意味しない」が禁じる偽の Green である。さらに `#{1,6}` のような ERE の区間指定は **mawk（GitHub runner の既定 awk）が解釈せず条件が常に偽になる**ため、修正が黙って無効化される。どちらも fixture でしか捕まらない。
 
-> **プロセス検査は「除外軸」自体が偽の Green になりうる。** `spec-link` / `review-trail` は `services/` `apps/` の変更が無ければ SKIP する。するとチェッカを直す PR（`.github/` と docs しか触らない）では構造上いつまでも SKIP になり、**その修正が一度も実行されないまま緑になる**。`review-trail.yml` はチェッカ自身の変更を含む PR では SKIP しない。緑が「通った」なのか「素通りした」なのかを区別するという、この doc 冒頭の要求はプロセス検査にも同じく効く。**なおこの除外軸自体もパスで書かれている以上、改名・移動で静かに外れて元の「いつまでも SKIP」に戻りうる。** そのため `review-trail.yml` は対象パスの実在を確認し、ずれていたら SKIP ではなく**失敗する**（`.github/scripts/` は接頭辞で拾い、スクリプトの改名では外れない）。除外軸の劣化を黙って通さないための措置である。
+> **プロセス検査は「除外軸」自体が偽の Green になりうる。** `spec-link` / `review-trail` は `services/` `apps/` `infra/` の変更が無ければ SKIP する（範囲は ADR 0025、受け入れ条件は `docs/specs/process-check-exclusion-axis.md`）。するとチェッカを直す PR（`.github/` と docs しか触らない）では構造上いつまでも SKIP になり、**その修正が一度も実行されないまま緑になる**。review-trail はチェッカ自身の変更を含む PR では SKIP しない。緑が「通った」なのか「素通りした」なのかを区別するという、この doc 冒頭の要求はプロセス検査にも同じく効く。**なおこの除外軸自体もパスで書かれている以上、改名・移動で静かに外れて元の「いつまでも SKIP」に戻りうる。** そのため review-trail の判定（`.github/scripts/check-exclusion-axis.sh`）は対象パスの実在を確認し、ずれていたら SKIP ではなく**失敗する**（`.github/scripts/` は接頭辞で拾い、スクリプトの改名では外れない）。除外軸の劣化を黙って通さないための措置である。
 
 > **証跡コメントを足しても `review-trail` は再実行されない。** コメントの追加は `pull_request` ではなく `issue_comment` イベントで、そちらのチェック結果は PR の head SHA に紐づかず必須チェックとして機能しない。落ちた後にコメントで証跡を足したときは、push するかジョブを Re-run すること。
 

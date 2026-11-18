@@ -139,6 +139,7 @@ ADR は Nygard 形式。**書き換えず、覆すときは新しい ADR で置�
 | [0022](docs/adr/0022-scheduled-demo-data-reset-lambda.md) | デモデータの日次リセットを、EventBridge Scheduler から呼ぶ専用の Lambda で行う | 人間 |
 | [0023](docs/adr/0023-auto-provision-contract-on-first-login.md) | ログインした技術者に、初回ログイン時にシステムが契約を1件自動で用意する | 人間 |
 | [0024](docs/adr/0024-narrow-deploy-role-iam-with-self-protection.md) | デプロイロールの IAM 権限を Action と Resource の単位で狭め、自身と凍結ポリシーへの書き込みを拒む | 人間 |
+| [0025](docs/adr/0025-reference-model-with-infra-in-exclusion-axis.md) | Issue と docs のレファレンス型運用を引き継ぎ、プロセス検査の除外軸に infra/ を加える（提案中） | 人間 |
 
 **承認済みの ADR はすべて人間が決定者である。** これは偶然ではなく、`CLAUDE.md` が「技術選定の変更（ADR が必要な判断）」を人間の責務に置いているためである。AI が単独で「承認済み」の ADR を起票することを禁じている。
 
@@ -190,7 +191,7 @@ ADR は Nygard 形式。**書き換えず、覆すときは新しい ADR で置�
 
 Issue に仕様を書き写さず、`docs/` へのリンクを貼る。二重管理を避けるためだけではない — **古い docs を読んだAIは、古い仕様を正しく実装する。** テストごと古くなるので Green が無意味になる。
 
-`services/` `apps/` を変更する PR は `docs/` への参照が必須で、CI の `spec-link` が検査する。仕様を要さない変更は `no-spec` ラベルで例外扱いにする。**例外にラベルという明示的な操作を要求するのは、例外を使った事実を記録に残すためである。**
+`services/` `apps/` `infra/` を変更する PR は `docs/` への参照が必須で、CI の `spec-link` が検査する（範囲は [ADR 0025](docs/adr/0025-reference-model-with-infra-in-exclusion-axis.md)。提案中）。仕様を要さない変更は `no-spec` ラベルで例外扱いにする。**例外にラベルという明示的な操作を要求するのは、例外を使った事実を記録に残すためである。**
 
 同じ除外軸で `review-trail` が、実装↔レビューの往復証跡が PR コメントに定型フォーマットで残っているか、往復数が上限内かを検査する。上限値は `docs/harness/verification-loop.md` の表から読み、スクリプトに持たない。**ただしこの検査が見るのは記録だけである** — *PR に記録された* 形式と往復数であって実セッションの往復ではなく、記録をごまかせば擦り抜ける。「外部が書き込める場所を正解の置き場所にしない」という ADR 0004 と同じ限界を承知のうえで置いている。
 
