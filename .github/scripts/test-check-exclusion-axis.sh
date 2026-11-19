@@ -201,8 +201,8 @@ calls_script() { strip_comments "$1" | command grep -c 'check-exclusion-axis\.sh
 #       git diff を含む行）のうち、現行 yml にある次の3つの形の行以外はすべて読み手とみなす。
 #       判定の書き方（grep の形・ループ・別ディレクトリ）に依らない。
 #         - changed_file="${RUNNER_TEMP}/<固定のファイル名>"（引用符の中に $( ` | && を許さない）
-#         - git diff --name-only <引数> > "$changed_file"（$( ` | ; & < > を許さない。$BASE_SHA の変数展開は許す）
-#         - export PR_LABELS CHANGED_FILE_LIST="$changed_file" の形
+#         - git diff --name-only "$BASE_SHA" HEAD > "$changed_file"（この字面のみ。他の引数・展開は許さない）
+#         - export PR_LABELS CHANGED_FILE_LIST="$changed_file"（この字面のみ。他の変数・値は許さない）
 #   (c) services・apps・infra の名前そのものを含む行（判定は check-exclusion-axis.sh だけが持つ）。
 #       「services/apps/infra を | で並べた正規表現」はこの項に完全に含まれるため、別項を置かない
 # 各項は、その項だけが捕まえる形を陽性対照に持つ（下の (b) 専用・(c) 専用の形）。
@@ -212,8 +212,8 @@ own_axis_lines() {
   body="$(strip_comments "$f")"
   printf '%s\n' "$body" | command grep -nE 'changed|CHANGED|name-only|git diff' |
     command grep -vE -e '^[0-9]+:[[:space:]]*changed_file="\$\{RUNNER_TEMP\}/[A-Za-z0-9._-]+"[[:space:]]*$' \
-      -e '^[0-9]+:[[:space:]]*git diff --name-only ([^|;&<>$`]|\$[^(])*> "\$changed_file"[[:space:]]*$' \
-      -e '^[0-9]+:[[:space:]]*export( +[A-Za-z_]+(="\$[A-Za-z_]+")?)+[[:space:]]*$' |
+      -e '^[0-9]+:[[:space:]]*git diff --name-only "\$BASE_SHA" HEAD > "\$changed_file"[[:space:]]*$' \
+      -e '^[0-9]+:[[:space:]]*export PR_LABELS CHANGED_FILE_LIST="\$changed_file"[[:space:]]*$' |
     sed -E "s|^([0-9]+):|(b) $(basename "$f"):\1: |"
   printf '%s\n' "$body" | command grep -nE 'services|apps|infra' |
     sed -E "s|^([0-9]+):|(c) $(basename "$f"):\1: |"
@@ -233,13 +233,13 @@ done
 # 陽性対照: 写しを壊すと検出器が反応すること（片方ずつ）
 for y in spec-link review-trail; do
   f="${ROOT}/.github/workflows/${y}.yml"
-  # (a) 自前の除外軸を書き足す
+  # 対照A: 自前の除外軸を書き足す
   cp "$f" "${WORK}/${y}.axis.yml"
   printf "          if ! grep -qE '^(services|apps|infra)/' <<< \"\$changed\"; then :; fi\n" >> "${WORK}/${y}.axis.yml"
   m="$(own_axis "${WORK}/${y}.axis.yml")"
   ok=0; [ "$m" -ge 1 ] && ok=1
   report "AC-6-4 陽性対照: ${y}.yml の写しに自前の除外軸を足すと検出される" "$ok" "検出 ${m}件"
-  # (a') 列挙外の書き方でも、一覧を読む／ディレクトリ名を持つ判定は検出される
+  # 対照B: 列挙外の書き方でも、一覧を読む／ディレクトリ名を持つ判定は検出される
   i=0
   for form in \
     "grep -q -e '^services/' -e '^apps/' -e '^infra/' \"\$changed_file\"" \
@@ -260,7 +260,7 @@ for y in spec-link review-trail; do
     ok=0; [ "$m" -ge 1 ] && ok=1
     report "AC-6-4 陽性対照: ${y}.yml の写しに別の書き方の判定（形${i}）を足すと検出される" "$ok" "形: ${form} / 検出 ${m}件"
   done
-  # 項ごとの陽性対照: 「その項だけが捕まえる形」を足し、足した行（最終行）が想定の項だけで
+  # 対照C（項ごと）: 「その項だけが捕まえる形」を足し、足した行（最終行）が想定の項だけで
   # 検出されることを確かめる。片方の項を消す変異は、その項専用の形が落ちて露見する。
   #   (b) だけ: 一覧を読むが、services/apps/infra の名前を含まない形
   #   (c) だけ: 名前を含むが、一覧（changed 等）に触れない形
@@ -271,6 +271,12 @@ for y in spec-link review-trail; do
     'b|git diff --name-only "$(cat /dev/null)" HEAD > "$changed_file"' \
     'b|git diff --name-only "$BASE_SHA" HEAD > "$changed_file" | grep -q ^x/' \
     'b|git diff --name-only `echo a` HEAD > "$changed_file"' \
+    'b|git diff --name-only "$BASE_SHA" HEAD $| grep -v ^x/ > "$changed_file"' \
+    'b|git diff --name-only "$BASE_SHA" HEAD $; grep -v ^x/ "$changed_file" > "$changed_file"' \
+    'b|git diff --name-only "$BASE_SHA" HEAD $& grep -v ^x/ > "$changed_file"' \
+    'b|export PR_LABELS CHANGED_FILE_LIST="$empty"' \
+    'b|export PR_LABELS FILES_LIST="$changed_file"' \
+    'b|export PR_LABELS CHANGED_FILE_LIST="$changed_file" EXTRA="$x"' \
     'c|gh api ".../pulls/${PR_NUMBER}/files" --jq ".[].filename" | grep -q "^infra/"' \
     'c|echo "services: が変わった"' \
     'c|[ "$d" = apps ] && exit 0'; do
@@ -283,7 +289,7 @@ for y in spec-link review-trail; do
     case "$out" in *"(${want}) "*) case "$out" in *"(${other}) "*) ;; *) ok=1 ;; esac ;; esac
     report "AC-6-4 陽性対照: ${y}.yml の写しに (${want}) 項だけが捕まえる形（項${t}）を足すと (${want}) だけが検出する" "$ok" "形: ${form} / 出力: ${out}"
   done
-  # (b) 呼び出しを消す
+  # 対照D: 呼び出しを消す
   sed 's/check-exclusion-axis\.sh/x.sh/g' "$f" > "${WORK}/${y}.nocall.yml"
   n="$(calls_script "${WORK}/${y}.nocall.yml")"
   ok=0; [ "$n" = 0 ] && ok=1
