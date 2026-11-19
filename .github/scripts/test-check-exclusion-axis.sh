@@ -196,25 +196,29 @@ done
 # 2つ以上を「|」で並べた正規表現。
 strip_comments() { sed -E 's/^[[:space:]]*#.*$//' "$1"; }
 calls_script() { strip_comments "$1" | command grep -c 'check-exclusion-axis\.sh'; }
-# 検出の述語は書き方の列挙に頼らず、次の3つの合計とする（いずれも 0 でなければならない）。
-#   (a) services/apps/infra を「|」で並べた正規表現（従来の形）
+# 検出の述語は書き方の列挙に頼らず、次の2項の合計とする（いずれも 0 でなければならない）。
 #   (b) 変更ファイルの一覧を「読む」行。一覧に触れる行（changed・CHANGED・name-only・
-#       git diff を含む行）のうち、一覧を書き出す行・変数へ入れる行・export する行
-#       以外はすべて読み手とみなす。判定の書き方（grep の形・ループ・別ディレクトリ）に依らない
-#   (c) services・apps・infra の名前そのものを含む行（判定は check-exclusion-axis.sh だけが持つ）
-own_axis() {
-  local body a b c
-  body="$(strip_comments "$1")"
-  a="$(printf '%s\n' "$body" | command grep -cE '(services|apps|infra)[|]|[|](services|apps|infra)')"
-  b="$(printf '%s\n' "$body" |
-    command grep -E 'changed|CHANGED|name-only|git diff' |
-    command grep -vE -e '^[[:space:]]*changed_file="[^"]*"[[:space:]]*$' \
-      -e '^[[:space:]]*git diff --name-only [^|;&<>]*> "\$changed_file"[[:space:]]*$' \
-      -e '^[[:space:]]*export( +[A-Za-z_]+(="\$[A-Za-z_]+")?)+[[:space:]]*$' |
-    command grep -c .)"
-  c="$(printf '%s\n' "$body" | command grep -cE 'services|apps|infra')"
-  echo $((a + b + c))
+#       git diff を含む行）のうち、現行 yml にある次の3つの形の行以外はすべて読み手とみなす。
+#       判定の書き方（grep の形・ループ・別ディレクトリ）に依らない。
+#         - changed_file="${RUNNER_TEMP}/<固定のファイル名>"（引用符の中に $( ` | && を許さない）
+#         - git diff --name-only <引数> > "$changed_file"（$( ` | ; & < > を許さない。$BASE_SHA の変数展開は許す）
+#         - export PR_LABELS CHANGED_FILE_LIST="$changed_file" の形
+#   (c) services・apps・infra の名前そのものを含む行（判定は check-exclusion-axis.sh だけが持つ）。
+#       「services/apps/infra を | で並べた正規表現」はこの項に完全に含まれるため、別項を置かない
+# 各項は、その項だけが捕まえる形を陽性対照に持つ（下の (b) 専用・(c) 専用の形）。
+# 出力は検出した行（ファイル名:行番号: 行内容）。件数は own_axis、表示は own_axis_lines。
+own_axis_lines() {
+  local f="$1" body
+  body="$(strip_comments "$f")"
+  printf '%s\n' "$body" | command grep -nE 'changed|CHANGED|name-only|git diff' |
+    command grep -vE -e '^[0-9]+:[[:space:]]*changed_file="\$\{RUNNER_TEMP\}/[A-Za-z0-9._-]+"[[:space:]]*$' \
+      -e '^[0-9]+:[[:space:]]*git diff --name-only ([^|;&<>$`]|\$[^(])*> "\$changed_file"[[:space:]]*$' \
+      -e '^[0-9]+:[[:space:]]*export( +[A-Za-z_]+(="\$[A-Za-z_]+")?)+[[:space:]]*$' |
+    sed -E "s|^([0-9]+):|(b) $(basename "$f"):\1: |"
+  printf '%s\n' "$body" | command grep -nE 'services|apps|infra' |
+    sed -E "s|^([0-9]+):|(c) $(basename "$f"):\1: |"
 }
+own_axis() { own_axis_lines "$1" | command grep -c .; }
 
 for y in spec-link review-trail; do
   f="${ROOT}/.github/workflows/${y}.yml"
@@ -223,7 +227,7 @@ for y in spec-link review-trail; do
   report "AC-6-4 ${y}.yml が check-exclusion-axis.sh を呼ぶ（${n}件）" "$ok" "呼び出しが0件"
   m="$(own_axis "$f")"
   ok=0; [ "$m" = 0 ] && ok=1
-  report "AC-6-4 ${y}.yml が除外軸の判定を自前で持たない（${m}件）" "$ok" "自前の除外軸が${m}行ある"
+  report "AC-6-4 ${y}.yml が除外軸の判定を自前で持たない（${m}件）" "$ok" "自前の除外軸が${m}行ある: $(own_axis_lines "$f" | tr '\n' ' ')"
 done
 
 # 陽性対照: 写しを壊すと検出器が反応すること（片方ずつ）
@@ -255,6 +259,29 @@ for y in spec-link review-trail; do
     m="$(own_axis "${WORK}/${y}.form${i}.yml")"
     ok=0; [ "$m" -ge 1 ] && ok=1
     report "AC-6-4 陽性対照: ${y}.yml の写しに別の書き方の判定（形${i}）を足すと検出される" "$ok" "形: ${form} / 検出 ${m}件"
+  done
+  # 項ごとの陽性対照: 「その項だけが捕まえる形」を足し、足した行（最終行）が想定の項だけで
+  # 検出されることを確かめる。片方の項を消す変異は、その項専用の形が落ちて露見する。
+  #   (b) だけ: 一覧を読むが、services/apps/infra の名前を含まない形
+  #   (c) だけ: 名前を含むが、一覧（changed 等）に触れない形
+  t=0
+  for spec in \
+    'b|changed_file="$(grep -q ^\.devcontainer/ ${RUNNER_TEMP}/changed-files.txt && echo /dev/null || echo ${RUNNER_TEMP}/changed-files.txt)"' \
+    'b|changed_file="${RUNNER_TEMP}/changed-files.txt" && grep -q ^x/ "$changed_file"' \
+    'b|git diff --name-only "$(cat /dev/null)" HEAD > "$changed_file"' \
+    'b|git diff --name-only "$BASE_SHA" HEAD > "$changed_file" | grep -q ^x/' \
+    'b|git diff --name-only `echo a` HEAD > "$changed_file"' \
+    'c|gh api ".../pulls/${PR_NUMBER}/files" --jq ".[].filename" | grep -q "^infra/"' \
+    'c|echo "services: が変わった"' \
+    'c|[ "$d" = apps ] && exit 0'; do
+    t=$((t + 1)); want="${spec%%|*}"; form="${spec#*|}"
+    { cat "$f"; printf '          %s\n' "$form"; } > "${WORK}/${y}.term${t}.yml"
+    ln="$(wc -l < "${WORK}/${y}.term${t}.yml")"
+    out="$(own_axis_lines "${WORK}/${y}.term${t}.yml" | command grep -E ":${ln}: " || true)"
+    other=c; [ "$want" = c ] && other=b
+    ok=0
+    case "$out" in *"(${want}) "*) case "$out" in *"(${other}) "*) ;; *) ok=1 ;; esac ;; esac
+    report "AC-6-4 陽性対照: ${y}.yml の写しに (${want}) 項だけが捕まえる形（項${t}）を足すと (${want}) だけが検出する" "$ok" "形: ${form} / 出力: ${out}"
   done
   # (b) 呼び出しを消す
   sed 's/check-exclusion-axis\.sh/x.sh/g' "$f" > "${WORK}/${y}.nocall.yml"
