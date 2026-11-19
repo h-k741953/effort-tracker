@@ -297,6 +297,7 @@ build-lambda-demo-data-reset: ## デモデータ日次リセット Lambda を Li
 test-scripts: ## .github/scripts のチェッカを fixture で検査（apps/web の Makefile 契約・設定契約を含む）
 	@echo "==> test-scripts"
 	@bash .github/scripts/test-check-review-trail.sh
+	@bash .github/scripts/test-check-exclusion-axis.sh
 	@bash .github/scripts/test-makefile-web.sh
 	@bash .github/scripts/test-apps-web-contract.sh "$(CURDIR)/$(WEB_DIR)"
 	@bash .github/scripts/test-gitleaks-allowlist.sh "$(CURDIR)/.gitleaks.toml"
