@@ -31,6 +31,7 @@ esac
 [ "${PR_LABELS+set}" = set ] || undetermined "PR_LABELS が未設定"
 
 # 2. no-spec ラベル（行全体の完全一致。一覧は読まない）
+# <<< は末尾改行を足すため `|| [ -n ]` は通常不要だが、改行なし入力の取りこぼしを防ぐ守りとして残す
 while IFS= read -r label || [ -n "$label" ]; do
   if [ "$label" = "no-spec" ]; then
     echo "SKIP: no-spec ラベルが付いている（仕様を要さない変更）" >&2
@@ -55,20 +56,35 @@ fi
 # 4. 変更ファイルの一覧
 [ -n "${CHANGED_FILE_LIST:-}" ] || undetermined "CHANGED_FILE_LIST が未設定または空"
 [ -f "$CHANGED_FILE_LIST" ] || undetermined "CHANGED_FILE_LIST が読めるファイルではない"
+[ -r "$CHANGED_FILE_LIST" ] || undetermined "CHANGED_FILE_LIST が読めない（権限）"
 
 # 5. review-trail のみ: チェッカ自身の変更は SKIP させない
-if [ "$name" = "review-trail" ] &&
-  grep -qE '^\.github/(scripts/|workflows/review-trail\.yml$)' "$CHANGED_FILE_LIST"; then
-  echo "検査を実行: チェッカ自身の変更を含む PR（SKIP させない）" >&2
-  echo "CHECK"
-  exit 0
+# grep の終了コード: 0=一致 / 1=不一致 / 2以上=読み取り失敗等（判定できない。不一致に潰さない）
+if [ "$name" = "review-trail" ]; then
+  grep -qE '^\.github/(scripts/|workflows/review-trail\.yml$)' "$CHANGED_FILE_LIST"
+  rc=$?
+  case "$rc" in
+    0)
+      echo "検査を実行: チェッカ自身の変更を含む PR（SKIP させない）" >&2
+      echo "CHECK"
+      exit 0
+      ;;
+    1) ;;
+    *) undetermined "変更ファイルの一覧を grep できない（終了コード $rc）" ;;
+  esac
 fi
 
 # 6. 除外軸
-if grep -qE '^(services|apps|infra)/' "$CHANGED_FILE_LIST"; then
-  echo "CHECK"
-  exit 0
-fi
+grep -qE '^(services|apps|infra)/' "$CHANGED_FILE_LIST"
+rc=$?
+case "$rc" in
+  0)
+    echo "CHECK"
+    exit 0
+    ;;
+  1) ;;
+  *) undetermined "変更ファイルの一覧を grep できない（終了コード $rc）" ;;
+esac
 echo "SKIP: プロダクトコード等（services/ apps/ infra/）の変更なし" >&2
 echo "SKIP"
 exit 0
