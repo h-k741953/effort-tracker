@@ -54,6 +54,20 @@ run_case() {
     MISSING)   listpath="$d/no-such-list.txt" ;;
     DIR)       mkdir -p "$d/listdir"; listpath="$d/listdir" ;;
     EMPTYFILE) : > "$d/list.txt"; listpath="$d/list.txt" ;;
+    UNREADABLE)
+      # 実在するが読めないファイル（AC-6-7 6-7-17・6-7-18。中身は読めれば CHECK になる一覧）。
+      # 読めないことを実際に読んで確かめる。読めてしまう環境（root 等）では判別できないので、
+      # 緑として数えず FAIL にする（黙って PASS・skip にしない）。
+      printf 'infra/terraform/main.tf\n' > "$d/list.txt"
+      chmod 000 "$d/list.txt"
+      listpath="$d/list.txt"
+      if (: < "$listpath") 2> /dev/null; then
+        chmod 600 "$d/list.txt"
+        report "$id: 読めないファイルを作れなかった（root 等で読めてしまう）。この行は判別できない" 0 \
+          "権限を外しても読めた。読めない環境で回し直すこと（緑にも skip にもしない）"
+        return
+      fi
+      ;;
     *)         printf '%b' "$list" > "$d/list.txt"; listpath="$d/list.txt" ;;
   esac
 
@@ -164,6 +178,8 @@ run_case "AC-6-7 6-7-13" SKIP  "no-spec" MISSING BOTH review-trail
 run_case "AC-6-7 6-7-14" FAIL  "" MISSING NO_SCRIPT review-trail
 run_case "AC-6-7 6-7-15" CHECK "" 'infra/terraform/main.tf' BOTH spec-link
 run_case "AC-6-7 6-7-16" CHECK "" "$DEF" NONE spec-link
+run_case "AC-6-7 6-7-17" UNDET "" UNREADABLE BOTH spec-link
+run_case "AC-6-7 6-7-18" UNDET "" UNREADABLE BOTH review-trail
 
 # --- AC-7-1: SKIP の理由の文（標準エラー出力）が3つの範囲を挙げる ------------------
 for name in review-trail spec-link; do
@@ -180,8 +196,24 @@ done
 # 2つ以上を「|」で並べた正規表現。
 strip_comments() { sed -E 's/^[[:space:]]*#.*$//' "$1"; }
 calls_script() { strip_comments "$1" | command grep -c 'check-exclusion-axis\.sh'; }
+# 検出の述語は書き方の列挙に頼らず、次の3つの合計とする（いずれも 0 でなければならない）。
+#   (a) services/apps/infra を「|」で並べた正規表現（従来の形）
+#   (b) 変更ファイルの一覧を「読む」行。一覧に触れる行（changed・CHANGED・name-only・
+#       git diff を含む行）のうち、一覧を書き出す行・変数へ入れる行・export する行
+#       以外はすべて読み手とみなす。判定の書き方（grep の形・ループ・別ディレクトリ）に依らない
+#   (c) services・apps・infra の名前そのものを含む行（判定は check-exclusion-axis.sh だけが持つ）
 own_axis() {
-  strip_comments "$1" | command grep -cE '(services|apps|infra)[|]|[|](services|apps|infra)'
+  local body a b c
+  body="$(strip_comments "$1")"
+  a="$(printf '%s\n' "$body" | command grep -cE '(services|apps|infra)[|]|[|](services|apps|infra)')"
+  b="$(printf '%s\n' "$body" |
+    command grep -E 'changed|CHANGED|name-only|git diff' |
+    command grep -vE -e '^[[:space:]]*changed_file="[^"]*"[[:space:]]*$' \
+      -e '^[[:space:]]*git diff --name-only [^|;&<>]*> "\$changed_file"[[:space:]]*$' \
+      -e '^[[:space:]]*export( +[A-Za-z_]+(="\$[A-Za-z_]+")?)+[[:space:]]*$' |
+    command grep -c .)"
+  c="$(printf '%s\n' "$body" | command grep -cE 'services|apps|infra')"
+  echo $((a + b + c))
 }
 
 for y in spec-link review-trail; do
@@ -203,6 +235,27 @@ for y in spec-link review-trail; do
   m="$(own_axis "${WORK}/${y}.axis.yml")"
   ok=0; [ "$m" -ge 1 ] && ok=1
   report "AC-6-4 陽性対照: ${y}.yml の写しに自前の除外軸を足すと検出される" "$ok" "検出 ${m}件"
+  # (a') 列挙外の書き方でも、一覧を読む／ディレクトリ名を持つ判定は検出される
+  i=0
+  for form in \
+    "grep -q -e '^services/' -e '^apps/' -e '^infra/' \"\$changed_file\"" \
+    "grep -qE '^infra/' \"\$changed_file\"" \
+    "grep -qE '^\\.devcontainer/' \"\$changed_file\" && echo x" \
+    "for d in services apps infra; do grep -q \"^\$d/\" \"\$changed_file\"; done" \
+    "grep -qE '^(services | apps | infra)/' \"\$changed_file\"" \
+    "grep -qE '^\\.devcontainer/' \"\$CHANGED_FILE_LIST\"" \
+    "cat \"\$changed_file\" | grep -q '^x/'" \
+    "while read -r p; do :; done < \"\$changed_file\"" \
+    "changed=\"\$(git diff --name-only \"\$BASE_SHA\" HEAD)\"" \
+    "git diff --name-only \"\$BASE_SHA\" HEAD | grep -q '^x/'" \
+    "git diff --name-only \"\$BASE_SHA\" HEAD > \"\$changed_file\" && grep -q '^x/' \"\$changed_file\"" \
+    "grep -q '^infra/' <<< \"\$changed\""; do
+    i=$((i + 1))
+    { cat "$f"; printf '          %s\n' "$form"; } > "${WORK}/${y}.form${i}.yml"
+    m="$(own_axis "${WORK}/${y}.form${i}.yml")"
+    ok=0; [ "$m" -ge 1 ] && ok=1
+    report "AC-6-4 陽性対照: ${y}.yml の写しに別の書き方の判定（形${i}）を足すと検出される" "$ok" "形: ${form} / 検出 ${m}件"
+  done
   # (b) 呼び出しを消す
   sed 's/check-exclusion-axis\.sh/x.sh/g' "$f" > "${WORK}/${y}.nocall.yml"
   n="$(calls_script "${WORK}/${y}.nocall.yml")"
