@@ -60,6 +60,8 @@ fi
 
 # 5. review-trail のみ: チェッカ自身の変更は SKIP させない
 # grep の終了コード: 0=一致 / 1=不一致 / 2以上=読み取り失敗等（判定できない。不一致に潰さない）
+# 2以上の分岐は、上の -r の確認と手順6が先に止めるため、現状のテストでは振る舞いが変わらない（等価変異）。
+# 前提の確認が将来外れても不一致へ潰れないよう、守りとして残す。
 if [ "$name" = "review-trail" ]; then
   grep -qE '^\.github/(scripts/|workflows/review-trail\.yml$)' "$CHANGED_FILE_LIST"
   rc=$?
