@@ -65,44 +65,32 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HAS_NO_SPEC: ${{ contains(github.event.pull_request.labels.*.name, 'no-spec') }}
+          LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
           # 上限超過を人間が承認したことを記録に残すラベル（no-spec と同じ形）。
           HAS_LOOP_EXTENDED: ${{ contains(github.event.pull_request.labels.*.name, 'loop-extended') }}
         run: |
           set -euo pipefail
 
-          # spec-link と同じ除外軸: no-spec ラベル、またはプロダクトコードの変更なし。
-          if [ "$HAS_NO_SPEC" = "true" ]; then
-            echo "SKIP: no-spec ラベルが付いている（仕様を要さない変更）"
+          # SKIP／検査する／失敗の判定は check-exclusion-axis.sh に集約している
+          # （範囲は services/ apps/ infra/。根拠は docs/adr/0025、仕様は
+          # docs/specs/process-check-exclusion-axis.md）。ここに判定を重ねて書かない。
+          # 「終了 0 かつ標準出力が SKIP」のときだけ SKIP、「終了 0 かつ CHECK」の
+          # ときだけ次へ進む。それ以外（終了 1・2、スクリプトが無い、出力が不定）は
+          # すべて失敗にする（検査対象を読めなかったことは違反が無いことを意味しない）。
+          changed_file="${RUNNER_TEMP}/changed-files.txt"
+          git diff --name-only "$BASE_SHA" HEAD > "$changed_file"
+          PR_LABELS="$(jq -r '.[]' <<< "$LABELS_JSON")"
+          export PR_LABELS CHANGED_FILE_LIST="$changed_file"
+
+          rc=0
+          result="$(bash .github/scripts/check-exclusion-axis.sh review-trail)" || rc=$?
+          if [ "$rc" -eq 0 ] && [ "$result" = "SKIP" ]; then
             exit 0
-          fi
-
-          changed="$(git diff --name-only "$BASE_SHA" HEAD)"
-
-          # チェッカ自身（このワークフローと本体スクリプト）を変更する PR では
-          # SKIP しない。この検査は spec-link と同じ除外軸を持つため、
-          # .github/ と docs/ しか触らない PR ―― つまり *チェッカを直す PR そのもの* ――
-          # では構造上いつまでも SKIP になり、gh api を通る経路が一度も実行されないまま
-          # 緑になる。それは「通った」ではなく「素通りした」であり、
-          # verification-loop.md が禁じる偽の Green（自分のルールに自分で反する）。
-          #
-          # パスを直書きすると、改名・移動で静かにマッチしなくなり、除外軸が元の
-          # 「構造上いつまでも SKIP」に戻る（誰も気づかない）。そこで
-          #   (1) 対象パスが実在することを確認して、ずれたら黙らずに落とす
-          #   (2) .github/scripts/ は接頭辞で拾い、スクリプトの改名で外れないようにする
-          for p in .github/scripts/check-review-trail.sh .github/workflows/review-trail.yml; do
-            if [ ! -e "$p" ]; then
-              echo "NG: $p が存在しない。SKIP 除外軸のパスが実態とずれている（除外軸の劣化）。"
-              echo "    移動・改名したなら review-trail.yml のこの分岐も追随させること。"
-              exit 1
-            fi
-          done
-
-          if grep -qE '^\.github/(scripts/|workflows/review-trail\.yml$)' <<< "$changed"; then
-            echo "検査を実行: チェッカ自身の変更を含む PR（SKIP させない）"
-          elif ! grep -qE '^(services|apps)/' <<< "$changed"; then
-            echo "SKIP: プロダクトコード（services/ apps/）の変更なし"
-            exit 0
+          elif [ "$rc" -eq 0 ] && [ "$result" = "CHECK" ]; then
+            echo "検査を実行"
+          else
+            echo "NG: 除外軸の判定が SKIP でも CHECK でもない（終了コード ${rc}、出力 '${result}'）"
+            exit 1
           fi
 
           # 往復証跡は PR コメント（会話タブ）に残す
