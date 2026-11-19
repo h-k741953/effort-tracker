@@ -291,7 +291,7 @@ gh api repos/h-k741953/effort-tracker/rulesets/19056534 \
 
 `.github/workflows/spec-link.yml` と `.github/workflows/review-trail.yml` は上記の原則の**例外**である。いずれも PR の本文・コメント・ラベルを対象とし、**ローカルには検査対象そのものが存在しない**ため、原理的に `make verify` には入れられない。
 
-- `spec-link.yml` — PR 本文が `docs/` を参照しているか（ADR 0025。ADR 0004 を置き換える）
+- `spec-link.yml` — PR 本文が `docs/` を参照しているか（ADR 0025。ADR 0004 を置き換える。提案中）
 - `review-trail.yml` — 実装↔レビューの往復証跡が定型フォーマットで残り、往復数が上限内か（上の「実装↔レビューループ」／「ループの上限値」）。上限値はこの doc の表から読み、**スクリプトにハードコードしない**（Issue #25）
 
 **ただし「検査対象がローカルに無い」ことと「チェッカのロジックを検査できない」ことは別である。** チェッカ本体（`.github/scripts/check-review-trail.sh`）は入力（`TRAIL_FILE` / `REVIEW_LOOP_DOC`）を差し替えれば完全にローカル実行でき、**そちらは通常のコード検査として `make test-scripts` が fixture で検査する**（`make test` に含まれ、CI も同じターゲットを呼ぶ）。2つのプロセス検査の「SKIP／検査する／失敗」の判定（`.github/scripts/check-exclusion-axis.sh`）も同じく入力を差し替えてローカルで実行でき、`make test-scripts` が fixture で検査する（`docs/specs/process-check-exclusion-axis.md` AC-6）。ここを区別しないと、チェッカのバグだけが検査不能地帯に残る。
