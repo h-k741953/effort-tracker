@@ -1,6 +1,6 @@
 name: Spec link
 
-# ADR 0025（Issue と docs のレファレンス型運用。ADR 0004 を置き換える。提案中）を機械的に担保する。
+# ADR 0025（Issue と docs のレファレンス型運用。ADR 0004 を置き換える）を機械的に担保する。
 #
 # 【make verify に入れない理由】
 #   これは PR のメタデータ（本文・ラベル）に対する検査であり、ローカルには
@@ -70,7 +70,7 @@ jobs:
 
           echo "NG: PR 本文に docs/ 配下への参照がない"
           echo ""
-          echo "  レファレンス型運用（ADR 0025。ADR 0004 を置き換える。提案中）:"
+          echo "  レファレンス型運用（ADR 0025。ADR 0004 を置き換える）:"
           echo "    決定した仕様は docs/specs/ にあり、PR はそこを指す。"
           echo "    Issue や PR 本文に仕様を書き写さない。正解のデータは常に docs にある。"
           echo ""
