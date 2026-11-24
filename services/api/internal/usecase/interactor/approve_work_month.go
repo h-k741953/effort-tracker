@@ -81,5 +81,5 @@ func (i *ApproveWorkMonth) Execute(ctx context.Context, input port.ApproveWorkMo
 	}
 
 	// ⑦ 更新後の勤務月を出力ポートへ渡す（AC-7-5）。
-	i.output.Present(newWorkMonthOutput(target, contract))
+	i.output.Present(newWorkMonthOutput(target, contract, input.Actor))
 }
