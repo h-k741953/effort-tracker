@@ -103,6 +103,7 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 		{
 			// E-1: GET /work-months/{contractId}/{yearMonth}（契約 AC-2-1・
 			// AC-2-5。操作者ヘッダ不在＝ゲストでも 200）。
+			// isOwnWorkMonth: 操作者ヘッダ不在＝ゲストなので偽（契約 AC-10-6 の 10-6-e）。
 			name: "E-1 勤務月1件の取得",
 			seed: func(db *fakeDB) {
 				db.pushQuery(newFakeRows(contractRow("ctr-e1", "契約E1", "eng-e1", 140, 0, 180, 0)), nil)
@@ -126,6 +127,7 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 					"totalHours": {"hours": 7, "minutes": 45},
 					"excess": null,
 					"shortfall": null,
+					"isOwnWorkMonth": false,
 					"dailyRecords": [
 						{
 							"date": "2026-07-05",
@@ -171,6 +173,7 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 			// E-3: PUT .../daily-records/{date}（契約 AC-4-1）。E-4 と同じパス・
 			// 同じ Fake の内容で、メソッドと要求本体の有無だけが異なる。
 			// 既にレコードのある日への送信は編集として扱う（契約 AC-4-1）。
+			// isOwnWorkMonth: Engineer かつ X-Actor-Id が契約の技術者 eng-e34 と一致するので真（契約 AC-10-6 の 10-6-a・10-6-g）。
 			name: "E-3 稼働実績の入力・編集",
 			seed: func(db *fakeDB) {
 				db.pushQuery(newFakeRows(contractRow("ctr-e34", "契約E34", "eng-e34", 140, 0, 180, 0)), nil)
@@ -203,6 +206,7 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 					"totalHours": {"hours": 8, "minutes": 0},
 					"excess": null,
 					"shortfall": null,
+					"isOwnWorkMonth": true,
 					"dailyRecords": [
 						{
 							"date": "2026-07-15",
@@ -219,6 +223,7 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 		{
 			// E-4: DELETE .../daily-records/{date}（契約 AC-5-1）。E-3 と同じ
 			// パス・同じ Fake の内容で、削除後は当該日のレコードが消える。
+			// isOwnWorkMonth: Engineer かつ X-Actor-Id が契約の技術者 eng-e34 と一致するので真（契約 AC-10-6 の 10-6-a・10-6-g）。
 			name: "E-4 稼働実績の削除",
 			seed: func(db *fakeDB) {
 				db.pushQuery(newFakeRows(contractRow("ctr-e34", "契約E34", "eng-e34", 140, 0, 180, 0)), nil)
@@ -246,6 +251,7 @@ func fullAssemblyCases(t *testing.T) []fullAssemblyCase {
 					"totalHours": {"hours": 0, "minutes": 0},
 					"excess": null,
 					"shortfall": null,
+					"isOwnWorkMonth": true,
 					"dailyRecords": []
 				}`,
 			},
