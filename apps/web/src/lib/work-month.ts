@@ -6,8 +6,8 @@ import type { WorkMonthState } from "./work-month-list";
 
 export type Ownership = "own" | "other" | "unknown";
 
-// 本人かの真偽のキー名。仮の名前であり、#155 の決定に従う。字面を持つのはここだけ（M-3）。
-export const OPERATOR_OWNERSHIP_KEY = "operatorIsOwner";
+// 本人かの真偽のキー名。契約 AC-10-1 の `isOwnWorkMonth`（#155 で決定済み）。字面を持つのはここだけ（M-3）。
+export const OPERATOR_OWNERSHIP_KEY = "isOwnWorkMonth";
 
 export function readOwnership(body: unknown): Ownership {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return "unknown";

@@ -134,7 +134,7 @@ func (i *EnterDailyRecord) Execute(ctx context.Context, input port.EnterDailyRec
 	}
 
 	// ⑦ 更新後の勤務月を出力ポートへ渡す（AC-7-5）。
-	i.output.Present(newWorkMonthOutput(target, contract))
+	i.output.Present(newWorkMonthOutput(target, contract, input.Actor))
 }
 
 // toTimeOfDay は素の時刻を値オブジェクトへ構築する。4つの時刻は同じ構築を通す（AC-3-5-a）。
