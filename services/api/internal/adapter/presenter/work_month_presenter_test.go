@@ -584,7 +584,7 @@ func TestWorkMonthPresenter_Present_FieldSetMatchesContractExactly(t *testing.T)
 
 	wantKeys := []string{
 		"contractDisplayName", "contractId", "dailyRecords", "excess", "generated",
-		"settlementRange", "shortfall", "state", "totalHours", "yearMonth",
+		"isOwnWorkMonth", "settlementRange", "shortfall", "state", "totalHours", "yearMonth",
 	}
 	sort.Strings(wantKeys)
 
@@ -641,5 +641,55 @@ func TestWorkMonthPresenter_Result_ReportsNoResultUntilPresented(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestWorkMonthPresenter_Present_IsOwnWorkMonthKeyAlwaysPresent は、出力 DTO の
+// IsOwnWorkMonth が真・偽のどちらでも、本文の JSON に isOwnWorkMonth のキーが在り、
+// 値がそれぞれ true・false であることを検証する（AC-9-11-i・AC-12-20 ③。
+// omitempty を付けた実装を偽の側で Red にする）。契約 AC-10-1・10-6-e（ゲストは null でなく false）。
+func TestWorkMonthPresenter_Present_IsOwnWorkMonthKeyAlwaysPresent(t *testing.T) {
+	tests := []struct {
+		name string
+		own  bool
+		want string
+	}{
+		{name: "真 → true", own: true, want: "true"},
+		{name: "偽 → false（キーを省略しない。null にしない）", own: false, want: "false"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := sampleClosedOutput()
+			output.IsOwnWorkMonth = tt.own
+
+			obj := presentAndUnmarshalTop(t, output)
+
+			raw, ok := obj["isOwnWorkMonth"]
+			if !ok {
+				t.Fatalf("本文に isOwnWorkMonth のキーが無い（AC-9-11-i）")
+			}
+			if string(raw) != tt.want {
+				t.Errorf("isOwnWorkMonth = %s, want %s", raw, tt.want)
+			}
+		})
+	}
+}
+
+// TestWorkMonthPresenter_PresentError_BodyHasNoIsOwnWorkMonth は、エラー応答の本文に
+// isOwnWorkMonth のキーが無いことを検証する（契約 10-6-j・AC-12-20 ③）。
+func TestWorkMonthPresenter_PresentError_BodyHasNoIsOwnWorkMonth(t *testing.T) {
+	p := presenter.NewWorkMonthPresenter()
+	p.PresentError(port.ErrContractNotFound)
+
+	result, ok := p.Result()
+	if !ok {
+		t.Fatalf("PresentError の呼び出し後に Result が保持されていない（AC-9-13-b）")
+	}
+	raw, err := json.Marshal(result.Body)
+	if err != nil {
+		t.Fatalf("json.Marshal(result.Body) failed: %v", err)
+	}
+	if strings.Contains(string(raw), "isOwnWorkMonth") {
+		t.Errorf("エラー応答の本文に isOwnWorkMonth が含まれる: %s（10-6-j）", raw)
 	}
 }

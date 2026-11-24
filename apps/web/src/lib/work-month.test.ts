@@ -123,6 +123,50 @@ describe("キー名の持ち主が1つであること（M-3）", () => {
   });
 });
 
+describe("キー名が契約 AC-10-1 の表と一致すること（M-3。字面をテストに書かず、契約の表から読む）", () => {
+  const CONTRACT_PATH = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..", "..", "..", "..", "docs", "specs", "domain-api-http-contract.md",
+  );
+
+  /** AC-10-1 の節（見出しから次の #### まで）の行を返す。 */
+  function readAc101Section(markdown: string): string[] {
+    const lines = markdown.split("\n");
+    const start = lines.findIndex((l) => l.startsWith("#### AC-10-1."));
+    if (start < 0) return [];
+    const rest = lines.slice(start + 1);
+    const end = rest.findIndex((l) => l.startsWith("####"));
+    return end < 0 ? rest : rest.slice(0, end);
+  }
+
+  /** 1列目が `key`（バッククォート囲み）で、2列目が boolean で始まる行。 */
+  function booleanRowsFor(sectionLines: readonly string[], key: string): string[] {
+    return sectionLines.filter((l) => {
+      const cells = l.split("|").map((c) => c.trim());
+      return cells.length >= 3 && cells[1] === `\`${key}\`` && cells[2].startsWith("boolean");
+    });
+  }
+
+  /** 1列目が `key` の行（2列目は問わない）。 */
+  function rowsFor(sectionLines: readonly string[], key: string): string[] {
+    return sectionLines.filter((l) => l.split("|").map((c) => c.trim())[1] === `\`${key}\``);
+  }
+
+  const section = () => readAc101Section(readFileSync(CONTRACT_PATH, "utf-8"));
+
+  it("契約 AC-10-1 の表に、定数の値を1列目・boolean を2列目に持つ行がちょうど1つある", () => {
+    expect(booleanRowsFor(section(), OPERATOR_OWNERSHIP_KEY)).toHaveLength(1);
+  });
+
+  it("陽性対照: 同じ表で generated の行がちょうど1つ見つかる（走査が空振りしていない）", () => {
+    expect(rowsFor(section(), "generated")).toHaveLength(1);
+  });
+
+  it("陽性対照: 定数の値に接尾辞を足した値では0行（どの値でも当たる述語でない）", () => {
+    expect(booleanRowsFor(section(), `${OPERATOR_OWNERSHIP_KEY}Suffix`)).toHaveLength(0);
+  });
+});
+
 describe("formatSettlementRange（K-1・2-2-a。formatHours の丸めで下限〜上限。単位を含まない）", () => {
   it.each([
     [{ lowerBound: { hours: 140, minutes: 0 }, upperBound: { hours: 180, minutes: 0 } }, "140.0〜180.0"],
