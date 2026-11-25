@@ -179,7 +179,7 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
       },
       {
         # D-15・AC-7-8（2026-11-25 追記・#162）: Cognito はユーザープール・
-        # IdP・アプリクライアント・ドメインの管理と MFA 設定の18個に限る。
+        # IdP・アプリクライアント・ドメインの管理と MFA 設定とタグの読み取りの19個に限る。
         # cognito-idp:*・タグ操作・列挙外の Action を含めない。
         Sid    = "DeployCognitoIdp"
         Effect = "Allow"
@@ -202,6 +202,26 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
           "cognito-idp:DescribeUserPoolDomain",
           "cognito-idp:UpdateUserPoolDomain",
           "cognito-idp:DeleteUserPoolDomain",
+          "cognito-idp:ListTagsForResource",
+        ]
+        Resource = "*"
+      },
+      {
+        # D-15・AC-7-8（2026-11-25 追記・#162）: SNS はトピック・購読の管理と
+        # タグの読み取りの9個に限る。sns:*・sns:Publish・タグの付け外しを含めない。
+        # iam の文と混ぜない。
+        Sid    = "DeploySns"
+        Effect = "Allow"
+        Action = [
+          "sns:CreateTopic",
+          "sns:GetTopicAttributes",
+          "sns:SetTopicAttributes",
+          "sns:DeleteTopic",
+          "sns:Subscribe",
+          "sns:GetSubscriptionAttributes",
+          "sns:SetSubscriptionAttributes",
+          "sns:Unsubscribe",
+          "sns:ListTagsForResource",
         ]
         Resource = "*"
       }
