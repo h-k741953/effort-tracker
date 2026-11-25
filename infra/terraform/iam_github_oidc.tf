@@ -176,6 +176,34 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
           "scheduler:DeleteSchedule",
         ]
         Resource = "*"
+      },
+      {
+        # D-15・AC-7-8（2026-11-25 追記・#162）: Cognito はユーザープール・
+        # IdP・アプリクライアント・ドメインの管理と MFA 設定の18個に限る。
+        # cognito-idp:*・タグ操作・列挙外の Action を含めない。
+        Sid    = "DeployCognitoIdp"
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:CreateUserPool",
+          "cognito-idp:DescribeUserPool",
+          "cognito-idp:UpdateUserPool",
+          "cognito-idp:DeleteUserPool",
+          "cognito-idp:GetUserPoolMfaConfig",
+          "cognito-idp:SetUserPoolMfaConfig",
+          "cognito-idp:CreateIdentityProvider",
+          "cognito-idp:DescribeIdentityProvider",
+          "cognito-idp:UpdateIdentityProvider",
+          "cognito-idp:DeleteIdentityProvider",
+          "cognito-idp:CreateUserPoolClient",
+          "cognito-idp:DescribeUserPoolClient",
+          "cognito-idp:UpdateUserPoolClient",
+          "cognito-idp:DeleteUserPoolClient",
+          "cognito-idp:CreateUserPoolDomain",
+          "cognito-idp:DescribeUserPoolDomain",
+          "cognito-idp:UpdateUserPoolDomain",
+          "cognito-idp:DeleteUserPoolDomain",
+        ]
+        Resource = "*"
       }
     ]
   })
