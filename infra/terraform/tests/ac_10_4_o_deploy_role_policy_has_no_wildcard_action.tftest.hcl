@@ -79,7 +79,7 @@ run "deploy_role_policy_has_no_wildcard_action" {
   }
 
   # D-15 が限定列挙するサービス（S3 / CloudFront / Lambda / IAM / SSM /
-  # Budgets / Logs / Scheduler）のサービス接頭辞に、Action が収まっていることを見る。
+  # Budgets / Logs / Scheduler / Cognito）のサービス接頭辞に、Action が収まっていることを見る。
   # 列挙が十分かどうかは検査しない（12-10）。弾くのは裸の "*" だけであり、
   # s3:* のようなサービス内ワイルドカードは対象外（12-29・10-4-f/g/h とは
   # 別枠）。
@@ -89,12 +89,12 @@ run "deploy_role_policy_has_no_wildcard_action" {
       alltrue([
         for action in try(tolist(stmt.Action), [stmt.Action]) :
         anytrue([
-          for prefix in ["s3:", "cloudfront:", "lambda:", "iam:", "ssm:", "budgets:", "logs:", "scheduler:"] :
+          for prefix in ["s3:", "cloudfront:", "lambda:", "iam:", "ssm:", "budgets:", "logs:", "scheduler:", "cognito-idp:"] :
           startswith(action, prefix)
         ])
       ])
     ])
-    error_message = "デプロイロールのポリシーの Action は D-15 の列挙（S3/CloudFront/Lambda/IAM/SSM/Budgets/Logs/Scheduler）のサービス接頭辞に収まらなければならない（AC-7-8）"
+    error_message = "デプロイロールのポリシーの Action は D-15 の列挙（S3/CloudFront/Lambda/IAM/SSM/Budgets/Logs/Scheduler/Cognito）のサービス接頭辞に収まらなければならない（AC-7-8）"
   }
 
   # 2026-10-27 改訂（#56・ADR 0022）: scheduler: で始まる Action は、スケジュールを
@@ -241,5 +241,37 @@ run "deploy_role_policy_iam_statements_are_not_vacuous" {
   assert {
     condition     = length([for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Allow" && contains(try(tolist(stmt.Action), [stmt.Action]), "iam:PassRole")]) >= 1
     error_message = "iam:PassRole を持つ Allow の文が1つ以上なければならない（10-4-o (7)。(4) の for 式が空を回って緑にならないため）"
+  }
+}
+
+# --- 2026-11-25 追記（#162）: cognito-idp の Action の列挙 (8)(9) -----------
+# 期待値の持ち主は AC-7-8 の 2026-11-25 追記の18個（本ファイルは写しを持つが、
+# 変更は AC-7-8 が先）。列挙が十分か（18個がすべて含まれるか）は検査しない
+# （12-10）。cognito-idp の文の Resource が "*" であることも assert しない。
+run "deploy_role_policy_cognito_idp_actions_are_enumerated_18" {
+  command = plan
+
+  # (8) いずれの文（Allow・Deny とも）も、cognito-idp: で始まる Action は18個のいずれかに一致する。
+  assert {
+    condition = alltrue([
+      for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement :
+      alltrue([
+        for a in try(tolist(stmt.Action), [stmt.Action]) :
+        !startswith(a, "cognito-idp:") || contains([
+          "cognito-idp:CreateUserPool", "cognito-idp:DescribeUserPool", "cognito-idp:UpdateUserPool", "cognito-idp:DeleteUserPool",
+          "cognito-idp:GetUserPoolMfaConfig", "cognito-idp:SetUserPoolMfaConfig",
+          "cognito-idp:CreateIdentityProvider", "cognito-idp:DescribeIdentityProvider", "cognito-idp:UpdateIdentityProvider", "cognito-idp:DeleteIdentityProvider",
+          "cognito-idp:CreateUserPoolClient", "cognito-idp:DescribeUserPoolClient", "cognito-idp:UpdateUserPoolClient", "cognito-idp:DeleteUserPoolClient",
+          "cognito-idp:CreateUserPoolDomain", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:UpdateUserPoolDomain", "cognito-idp:DeleteUserPoolDomain",
+        ], a)
+      ])
+    ])
+    error_message = "cognito-idp: で始まる Action は、AC-7-8 の 2026-11-25 追記の18個のいずれかに一致しなければならない（cognito-idp:*・Create* 等のワイルドカードと18個以外を含めない＝10-4-o (8)）"
+  }
+
+  # (9) 空集合で緑にならない: Allow で cognito-idp: の Action を持つ文が1つ以上ある。
+  assert {
+    condition     = length([for stmt in jsondecode(aws_iam_role_policy.github_actions_deploy.policy).Statement : stmt if stmt.Effect == "Allow" && anytrue([for a in try(tolist(stmt.Action), [stmt.Action]) : startswith(a, "cognito-idp:")])]) >= 1
+    error_message = "Effect が Allow で cognito-idp: で始まる Action を持つ文が1つ以上なければならない（10-4-o (9)。(8) の for 式が空を回って緑にならないため）"
   }
 }
