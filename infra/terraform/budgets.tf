@@ -68,6 +68,9 @@ resource "aws_iam_policy" "budget_freeze_new_resources" {
           "cognito-idp:CreateUserPoolClient",
           "cognito-idp:CreateUserPoolDomain",
           "cognito-idp:CreateIdentityProvider",
+          "scheduler:CreateSchedule",
+          "sns:CreateTopic",
+          "sns:Subscribe",
         ]
         Resource = "*"
       }
