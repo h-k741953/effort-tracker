@@ -33,7 +33,7 @@ Issue #52 のうち **`infra/terraform` に載る部分**の仕様。**方式の
 
 - **ログイン画面・ロール切替コントロールの UI** —— 後続のフロント Issue（`docs/specs/login-ui.md`。同 AC-8-3 が Cognito のインフラ構成を明示的に本工程へ送っている）
 - **BFF のトークン検証の実装** —— `docs/specs/bff-auth-termination.md` が持つ
-- **認証以外の Terraform**（ホスティング本体・コストガードレール・GitHub OIDC・IAM・SSM）—— `docs/specs/infra-terraform.md`（Issue #8）が持つ。**本仕様はそれらを再定義しない**
+- **認証以外の Terraform**（ホスティング本体・コストガードレール・GitHub OIDC・IAM・SSM）—— `docs/specs/infra-terraform.md`（Issue #8）が持つ。**本仕様はそれらを再定義しない**。**2026-11-25 追記（#162）**: 本仕様のリソースを作るための**デプロイロールの権限**（`cognito-idp`）と、**凍結ポリシーが拒む Cognito の作成の Action** も、`docs/specs/infra-terraform.md` D-15 の 2026-11-25 追記・AC-7-8・AC-5-3 が持つ（人間が決定）。本仕様はそれらの要求を持たない
 - **ユーザー・ロール管理画面、承認者の割り当て・招待・組織管理** —— `docs/rules/scope.md`／ADR 0016 が非スコープとして維持
 - **`docs/rules/` の改訂** —— 本 Issue は規約本文を書き換えない。**改訂が要ると判断したら停止して人間へ上げる**（`infra-terraform.md` 非スコープと同型。**`docs/rules/cost-guardrails.md` へ Cognito の行を足さないことは 2026-09-01 に人間が決定済み**＝Q-4 = (a)）
 - **デモ用ユーザーの作成・デモデータの日次リセット** —— 本仕様は `aws_cognito_user` を作らない（AC-10-4）
