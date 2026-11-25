@@ -64,6 +64,10 @@ resource "aws_iam_policy" "budget_freeze_new_resources" {
           "budgets:CreateBudget",
           "budgets:CreateBudgetAction",
           "logs:CreateLogGroup",
+          "cognito-idp:CreateUserPool",
+          "cognito-idp:CreateUserPoolClient",
+          "cognito-idp:CreateUserPoolDomain",
+          "cognito-idp:CreateIdentityProvider",
         ]
         Resource = "*"
       }
