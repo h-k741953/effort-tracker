@@ -84,13 +84,15 @@ type DailyRecordViewModel struct {
 
 // WorkMonthViewModel は契約 AC-10-1 の勤務月の表現（成功応答のボディ）。
 type WorkMonthViewModel struct {
-	ContractID          string                   `json:"contractId"`
-	ContractDisplayName string                   `json:"contractDisplayName"`
-	YearMonth           string                   `json:"yearMonth"`
-	State               string                   `json:"state"`
-	Generated           bool                     `json:"generated"`
-	SettlementRange     SettlementRangeViewModel `json:"settlementRange"`
-	TotalHours          HoursViewModel           `json:"totalHours"`
+	ContractID          string `json:"contractId"`
+	ContractDisplayName string `json:"contractDisplayName"`
+	YearMonth           string `json:"yearMonth"`
+	State               string `json:"state"`
+	Generated           bool   `json:"generated"`
+	// IsOwnWorkMonth は omitempty を付けない（偽でもキーを載せる。AC-9-11-i）。
+	IsOwnWorkMonth  bool                     `json:"isOwnWorkMonth"`
+	SettlementRange SettlementRangeViewModel `json:"settlementRange"`
+	TotalHours      HoursViewModel           `json:"totalHours"`
 	// Excess・Shortfall はポインタとし、未確定を null として直列化する
 	// （AC-9-11-b。0 に置き換えない）。
 	Excess    *HoursViewModel `json:"excess"`
@@ -134,6 +136,7 @@ func (p *WorkMonthPresenter) Present(output port.WorkMonthOutput) {
 		YearMonth:           output.YearMonth,
 		State:               output.State,
 		Generated:           output.Generated,
+		IsOwnWorkMonth:      output.IsOwnWorkMonth,
 		SettlementRange: SettlementRangeViewModel{
 			LowerBound: toHoursViewModel(output.SettlementRange.LowerBound),
 			UpperBound: toHoursViewModel(output.SettlementRange.UpperBound),

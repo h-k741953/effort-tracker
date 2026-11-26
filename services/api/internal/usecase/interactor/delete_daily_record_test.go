@@ -117,6 +117,7 @@ func TestDeleteDailyRecord_DoesNotGenerateWorkMonth(t *testing.T) {
 		YearMonth:           "2026-07",
 		State:               "Draft",
 		Generated:           false,
+		IsOwnWorkMonth:      true,
 		SettlementRange: port.SettlementRangeOutput{
 			LowerBound: port.Hours{Hours: 140, Minutes: 0},
 			UpperBound: port.Hours{Hours: 180, Minutes: 0},

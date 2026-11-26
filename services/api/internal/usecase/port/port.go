@@ -149,6 +149,7 @@ type WorkMonthOutput struct {
 	YearMonth           string // YYYY-MM
 	State               string
 	Generated           bool
+	IsOwnWorkMonth      bool // 操作者が技術者本人か（AC-7-22）
 	SettlementRange     SettlementRangeOutput
 	TotalHours          Hours
 	Excess              *Hours

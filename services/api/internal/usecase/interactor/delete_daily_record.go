@@ -74,7 +74,7 @@ func (i *DeleteDailyRecord) Execute(ctx context.Context, input port.DeleteDailyR
 			i.output.PresentError(workmonth.ErrDateOutOfMonth)
 			return
 		}
-		i.output.Present(newEmptyWorkMonthOutput(contract, input.YearMonth))
+		i.output.Present(newEmptyWorkMonthOutput(contract, input.YearMonth, input.Actor))
 		return
 	}
 
@@ -92,5 +92,5 @@ func (i *DeleteDailyRecord) Execute(ctx context.Context, input port.DeleteDailyR
 	}
 
 	// ⑥ 更新後の勤務月を出力ポートへ渡す（AC-7-5）。
-	i.output.Present(newWorkMonthOutput(target, contract))
+	i.output.Present(newWorkMonthOutput(target, contract, input.Actor))
 }
