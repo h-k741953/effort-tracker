@@ -57,7 +57,7 @@ resource "aws_lambda_function" "bff_ssr" {
   runtime       = var.bff_ssr_lambda_runtime
   handler       = "index.handler"
   filename      = var.bff_ssr_lambda_artifact_path
-  timeout       = 10 # 10-4-ac: 既定の 3 秒に任せず明示する
+  timeout       = 10 # AC-4-10・10-4-ac: 既定の 3 秒に任せず明示する。10 秒は bff-wiring.md AC-8-8（lambda-client の時間切れがこの Lambda 自身の時間切れより先に来ること）の前提（AC-4-10 ④）。lambda-client の値は apps/web/src/lib/lambda-client.ts が持つ
 
   reserved_concurrent_executions = 5 # docs/rules/cost-guardrails.md
 
