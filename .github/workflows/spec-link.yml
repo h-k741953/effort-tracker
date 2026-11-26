@@ -1,6 +1,6 @@
 name: Spec link
 
-# ADR 0004（Issue と docs のレファレンス型運用）を機械的に担保する。
+# ADR 0025（Issue と docs のレファレンス型運用。ADR 0004 を置き換える）を機械的に担保する。
 #
 # 【make verify に入れない理由】
 #   これは PR のメタデータ（本文・ラベル）に対する検査であり、ローカルには
@@ -40,19 +40,27 @@ jobs:
           # env 経由で渡せば、シェルは中身をコードとして解釈しない。
           PR_BODY: ${{ github.event.pull_request.body }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HAS_NO_SPEC: ${{ contains(github.event.pull_request.labels.*.name, 'no-spec') }}
+          LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
 
-          if [ "$HAS_NO_SPEC" = "true" ]; then
-            echo "SKIP: no-spec ラベルが付いている（仕様を要さない変更）"
-            exit 0
-          fi
+          # SKIP／検査する／失敗の判定は check-exclusion-axis.sh に集約している
+          # （範囲は services/ apps/ infra/。根拠は docs/adr/0025、仕様は
+          # docs/specs/process-check-exclusion-axis.md）。ここに判定を重ねて書かない。
+          # 「終了 0 かつ標準出力が SKIP」のときだけ SKIP、「終了 0 かつ CHECK」の
+          # ときだけ PR 本文の検査へ進む。それ以外はすべて失敗にする。
+          changed_file="${RUNNER_TEMP}/changed-files.txt"
+          git diff --name-only "$BASE_SHA" HEAD > "$changed_file"
+          PR_LABELS="$(jq -r '.[]' <<< "$LABELS_JSON")"
+          export PR_LABELS CHANGED_FILE_LIST="$changed_file"
 
-          changed="$(git diff --name-only "$BASE_SHA" HEAD)"
-          if ! grep -qE '^(services|apps)/' <<< "$changed"; then
-            echo "SKIP: プロダクトコード（services/ apps/）の変更なし"
+          rc=0
+          result="$(bash .github/scripts/check-exclusion-axis.sh spec-link)" || rc=$?
+          if [ "$rc" -eq 0 ] && [ "$result" = "SKIP" ]; then
             exit 0
+          elif [ "$rc" -ne 0 ] || [ "$result" != "CHECK" ]; then
+            echo "NG: 除外軸の判定が SKIP でも CHECK でもない（終了コード ${rc}、出力 '${result}'）"
+            exit 1
           fi
 
           if grep -qE 'docs/[A-Za-z0-9._/-]+\.md' <<< "$PR_BODY"; then
@@ -62,7 +70,7 @@ jobs:
 
           echo "NG: PR 本文に docs/ 配下への参照がない"
           echo ""
-          echo "  レファレンス型運用（ADR 0004）:"
+          echo "  レファレンス型運用（ADR 0025。ADR 0004 を置き換える）:"
           echo "    決定した仕様は docs/specs/ にあり、PR はそこを指す。"
           echo "    Issue や PR 本文に仕様を書き写さない。正解のデータは常に docs にある。"
           echo ""

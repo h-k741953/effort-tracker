@@ -4,6 +4,14 @@ import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { readAcSection, readDesignSystemSpec } from "../test-support/design-system";
+import {
+  DEEP_FIXTURE_DIR,
+  IMPLEMENTATION_POPULATION_10_1_B as IMPLEMENTATION_POPULATION,
+  IMPLEMENTATION_POPULATION_EXPECTED,
+  IMPLEMENTATION_POPULATION_FIXTURE,
+  deepestDirectoryDepth,
+  withFixture,
+} from "../test-support/source-population";
 
 // docs/specs/design-system.md AC-4-2 / AC-4-3 / 4-3-a〜4-3-d（検証手段は AC-10-1-c・10-1-d）。
 //
@@ -288,6 +296,14 @@ function hasLicenseFile(directory: string): boolean {
   return readdirSync(directory, { withFileTypes: true }).some((e) => e.isFile() && !e.name.endsWith(".woff2"));
 }
 
+const scanPopulation = IMPLEMENTATION_POPULATION.scan;
+const walkPopulation = IMPLEMENTATION_POPULATION.walk;
+
+/** (ii) 母集団のうち next/font/local を輸入するファイル（root からの相対パス）。 */
+function nextFontLocalImporters(root: string, population: readonly string[]): string[] {
+  return population.filter((file) => importsNextFontLocal(readFileSync(path.join(root, file), "utf8")));
+}
+
 const layoutText = readFileSync(layoutPath, "utf8");
 const layoutDir = path.dirname(layoutPath);
 
@@ -301,30 +317,46 @@ describe("layout.tsx のフォント読み込み - AC-4-3 / 4-3-a〜4-3-c（AC-1
 
   // (ii) next/font/local を輸入するファイルは layout.tsx だけ。
   it("(ii) next/font/local を輸入するのは app/layout.tsx だけである（母集団は src 配下の実装 *.ts / *.tsx）", () => {
-    const population = ts.sys
-      .readDirectory(srcDir, [".ts", ".tsx"])
-      .filter((file) => !/\.test\.tsx?$/.test(file))
-      .map((file) => path.relative(srcDir, file))
-      .sort();
+    const population = scanPopulation(srcDir);
     expect(population.length).toBeGreaterThan(0);
     expect(population).toContain(path.join("app", "layout.tsx"));
     // 10-1-b: 母集団は走査とは別の手段（再帰の readdirSync）で数えた集合と過不足なく一致する。
-    const walked: string[] = [];
-    const walk = (dir: string): void => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (entry.name !== "node_modules") walk(full);
-        } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
-          walked.push(path.relative(srcDir, full));
-        }
-      }
-    };
-    walk(srcDir);
+    const walked = walkPopulation(srcDir);
     expect(walked.length).toBeGreaterThan(0);
-    expect(population).toEqual(walked.sort());
-    const importers = population.filter((file) => importsNextFontLocal(readFileSync(path.join(srcDir, file), "utf8")));
-    expect(importers).toEqual([path.join("app", "layout.tsx")]);
+    expect(population).toEqual(walked);
+    expect(nextFontLocalImporters(srcDir, population)).toEqual([path.join("app", "layout.tsx")]);
+  });
+
+  // ---- 母集団の読み取り（10-1-b）を、実ケースと同じ関数で fixture に当てる（#170） ----
+  // 走査と数え直しを両方とも同じように狭める変異（例: 拡張子を .tsx だけにする）は、上の突き合わせでは一致したまま
+  // 通り、layout.tsx の足場も残る。期待値を fixture 側に置き、両方の関数がそれぞれ条文どおりの母集団を返すことを読む。
+  // 階層は src の実データより深く置く（階層を落とす形も同じ理由で落とす）。
+  describe("母集団の読み取り（10-1-b）", () => {
+    const deep = DEEP_FIXTURE_DIR;
+    const fixture = IMPLEMENTATION_POPULATION_FIXTURE;
+    const expected = IMPLEMENTATION_POPULATION_EXPECTED;
+
+    it("fixture の深い階層は、src の実データの最も深いファイルより深い（階層を落とす変異を fixture で落とす前提）", () => {
+      expect(deepestDirectoryDepth(walkPopulation(srcDir))).toBeLessThan(DEEP_FIXTURE_DIR.split(path.sep).length);
+    });
+    it("走査は、.ts と .tsx を深い階層まで含み、検査ファイルと他の拡張子を除く", () => {
+      withFixture(fixture, (root) => expect(scanPopulation(root)).toEqual(expected));
+    });
+    it("数え直しも、.ts と .tsx を深い階層まで含み、検査ファイルと他の拡張子を除く", () => {
+      withFixture(fixture, (root) => expect(walkPopulation(root)).toEqual(expected));
+    });
+    it("(ii) の判定は、.ts の実装ファイルが深い階層で next/font/local を輸入する形を拾う（陽性対照）", () => {
+      withFixture(
+        {
+          ...fixture,
+          [path.join("app", "layout.tsx")]: 'import localFont from "next/font/local";\nexport default function L() { return null; }',
+          [path.join(deep, "deep.ts")]: 'import localFont from "next/font/local";\nexport const f = localFont;',
+        },
+        (root) => {
+          expect(nextFontLocalImporters(root, scanPopulation(root))).toEqual([path.join("app", "layout.tsx"), path.join(deep, "deep.ts")].sort());
+        },
+      );
+    });
   });
 
   it("(iii) layout.tsx に next/font/local の呼び出しが1つ以上ある（0件は読み取りの空振りか同梱の欠落）", () => {

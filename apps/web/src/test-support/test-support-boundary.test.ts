@@ -4,11 +4,12 @@
 // 検査専用の補助がアプリの出力に混ざると、検査の都合で実装のふるまいが変わる。
 // import はモジュール指定子を構文として読む（コメントや文字列の中の語は数えない）。
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { DEEP_FIXTURE_DIR, deepestDirectoryDepth, definePopulation, withFixture } from "./source-population";
 
 const testSupportDir = fileURLToPath(new URL(".", import.meta.url));
 const srcDir = path.join(testSupportDir, "..");
@@ -50,25 +51,14 @@ function importsTestSupport(text: string): boolean {
 }
 
 /** アプリの実装（src 配下の *.ts / *.tsx。*.test.* と test-support/ 自身を除く）。 */
+const IMPLEMENTATION_POPULATION = definePopulation({
+  extensions: [".ts", ".tsx"],
+  excludesFile: (file) => /\.test\.tsx?$/.test(file) || file.startsWith(`test-support${path.sep}`),
+  skipsDirectory: (relative) => relative === "test-support",
+});
+
 function listImplementationFiles(): string[] {
-  const files: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (full === path.join(srcDir, "test-support")) continue;
-        walk(full);
-      } else if (
-        (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) &&
-        !entry.name.endsWith(".test.ts") &&
-        !entry.name.endsWith(".test.tsx")
-      ) {
-        files.push(path.relative(srcDir, full));
-      }
-    }
-  };
-  walk(srcDir);
-  return files.sort();
+  return IMPLEMENTATION_POPULATION.walk(srcDir);
 }
 
 describe("AC-10-3-k: アプリの実装は test-support を import しない", () => {
@@ -80,13 +70,54 @@ describe("AC-10-3-k: アプリの実装は test-support を import しない", (
     expect(files.some((file) => file.startsWith(`test-support${path.sep}`))).toBe(false);
     // 1件の足場だけでは、走査の範囲を狭める変更（拡張子・階層を落とす形）が通る。
     // 走査とは別の手段で数えた集合と過不足なく一致することを読む（AC-10-3-k）。
-    const independent = ts.sys
-      .readDirectory(srcDir, [".ts", ".tsx"])
-      .map((full) => path.relative(srcDir, full))
-      .filter((file) => !/\.test\.tsx?$/.test(file) && !file.startsWith(`test-support${path.sep}`))
-      .sort();
+    const independent = IMPLEMENTATION_POPULATION.scan(srcDir);
     expect(independent.length).toBeGreaterThan(0);
     expect(files).toEqual(independent);
+  });
+
+  // 母集団の読み取りを、実ケースと同じ定義で fixture に当てる（#170）。走査と数え直しを両方とも同じように狭める変異
+  // （拡張子を .tsx だけにする・階層を落とす）は、上の突き合わせでは一致したまま通り、button.tsx の足場も残る。
+  describe("母集団の読み取り（fixture）", () => {
+    const deep = DEEP_FIXTURE_DIR;
+    const fixture = {
+      [path.join("components", "button.tsx")]: "export const B = 1;",
+      "top.ts": "export const a = 1;",
+      "test-support-like.ts": "export const l = 1;",
+      [path.join(deep, "deep.ts")]: "export const b = 1;",
+      [path.join(deep, "deep.tsx")]: "export const c = 1;",
+      [path.join("test-support", "helper.ts")]: "export const h = 1;",
+      [path.join("app", "page.test.tsx")]: "export {};",
+      [path.join(deep, "x.test.ts")]: "export {};",
+      "styles.css": "",
+      "script.js": "",
+    };
+    // test-support/ の中は除き、名前が test-support で始まるだけのファイルは除かない（10-3-k）。
+    const expected = [
+      path.join("components", "button.tsx"),
+      path.join(deep, "deep.ts"),
+      path.join(deep, "deep.tsx"),
+      "test-support-like.ts",
+      "top.ts",
+    ].sort();
+
+    it("fixture の深い階層は、src の実データの最も深いファイルより深い（階層を落とす変異を fixture で落とす前提）", () => {
+      expect(deepestDirectoryDepth(IMPLEMENTATION_POPULATION.walk(srcDir))).toBeLessThan(DEEP_FIXTURE_DIR.split(path.sep).length);
+    });
+    it("走査は、.ts と .tsx を深い階層まで含み、検査ファイル・test-support/ の中・他の拡張子を除く", () => {
+      withFixture(fixture, (root) => expect(IMPLEMENTATION_POPULATION.scan(root)).toEqual(expected));
+    });
+    it("数え直しも、.ts と .tsx を深い階層まで含み、検査ファイル・test-support/ の中・他の拡張子を除く", () => {
+      withFixture(fixture, (root) => expect(IMPLEMENTATION_POPULATION.walk(root)).toEqual(expected));
+    });
+    it("判定は、.ts の実装ファイルが深い階層で test-support を import する形を拾う（陽性対照）", () => {
+      withFixture(
+        { ...fixture, [path.join(deep, "deep.ts")]: 'import { h } from "../../../../../../../../../test-support/helper";\nexport const b = h;' },
+        (root) =>
+          expect(
+            IMPLEMENTATION_POPULATION.walk(root).filter((file) => importsTestSupport(readFileSync(path.join(root, file), "utf8"))),
+          ).toEqual([path.join(deep, "deep.ts")]),
+      );
+    });
   });
 
   it.each(listImplementationFiles())("%s は test-support を import しない", (file) => {

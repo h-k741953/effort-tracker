@@ -79,6 +79,7 @@ func TestApproveWorkMonth_StateTransition(t *testing.T) {
 		YearMonth:           "2026-07",
 		State:               workmonth.StateApproved.String(),
 		Generated:           true,
+		IsOwnWorkMonth:      false,
 		SettlementRange: port.SettlementRangeOutput{
 			LowerBound: port.Hours{Hours: 140, Minutes: 0},
 			UpperBound: port.Hours{Hours: 180, Minutes: 0},

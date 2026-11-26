@@ -46,9 +46,9 @@ func (i *GetWorkMonth) Execute(ctx context.Context, input port.GetWorkMonthInput
 	target, err := i.workMonths.Find(ctx, input.ContractID, input.YearMonth)
 	switch {
 	case err == nil:
-		i.output.Present(newWorkMonthOutput(target, contract))
+		i.output.Present(newWorkMonthOutput(target, contract, input.Actor))
 	case errors.Is(err, port.ErrWorkMonthNotFound):
-		i.output.Present(newEmptyWorkMonthOutput(contract, input.YearMonth))
+		i.output.Present(newEmptyWorkMonthOutput(contract, input.YearMonth, input.Actor))
 	default:
 		i.output.PresentError(err)
 	}

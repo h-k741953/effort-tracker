@@ -561,6 +561,7 @@ func TestRun_RegisteredHandlerAnswersContractShape(t *testing.T) {
 		t.Errorf("IsBase64Encoded = true, want false（AC-10-17 ③）")
 	}
 
+	// 操作者ヘッダ不在＝ゲストなので isOwnWorkMonth は偽（契約 AC-10-6 の 10-6-e）。
 	const wantBody = `{
 		"contractId": "ctr-boot",
 		"contractDisplayName": "契約ブート",
@@ -574,6 +575,7 @@ func TestRun_RegisteredHandlerAnswersContractShape(t *testing.T) {
 		"totalHours": {"hours": 8, "minutes": 0},
 		"excess": null,
 		"shortfall": null,
+		"isOwnWorkMonth": false,
 		"dailyRecords": [
 			{
 				"date": "2026-07-03",

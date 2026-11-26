@@ -16,7 +16,7 @@ import (
 // 契約表示名は集約が持たないため、リードモデル（port.Contract）から取る（AC-2-2・AC-6-3）。
 // 精算幅は生成時に複写した集約側の値を使い、契約の現在値で上書きしない
 // （docs/specs/daily-record-entry.md AC-1-2）。
-func newWorkMonthOutput(target *workmonth.WorkMonth, contract port.Contract) port.WorkMonthOutput {
+func newWorkMonthOutput(target *workmonth.WorkMonth, contract port.Contract, actor port.Actor) port.WorkMonthOutput {
 	records := target.DailyRecords()
 	outputs := make([]port.DailyRecordOutput, 0, len(records))
 	for _, record := range records {
@@ -36,6 +36,7 @@ func newWorkMonthOutput(target *workmonth.WorkMonth, contract port.Contract) por
 		YearMonth:           formatYearMonth(target.YearMonth()),
 		State:               target.State().String(),
 		Generated:           true,
+		IsOwnWorkMonth:      isOwnWorkMonth(actor, contract),
 		SettlementRange:     toSettlementRangeOutput(target.SettlementRange()),
 		TotalHours:          toHours(target.TotalHours()),
 		// 超過／不足は集約のアクセサから詰める。締め時に確定し（AC-5-2・AC-5-3）、
@@ -44,6 +45,12 @@ func newWorkMonthOutput(target *workmonth.WorkMonth, contract port.Contract) por
 		Shortfall:    shortfallOutput(target),
 		DailyRecords: outputs,
 	}
+}
+
+// isOwnWorkMonth は操作者がその勤務月の技術者本人かを求める（実装設計 AC-7-22）。
+// 未認証は識別子によらず偽。ロールは見ない。認可ではなく、結果で要求を弾かない（AC-8-13）。
+func isOwnWorkMonth(actor port.Actor, contract port.Contract) bool {
+	return actor.Authenticated && actor.ID == contract.EngineerID
 }
 
 // breakOutput は稼働実績の休憩を出力 DTO へ落とす。休憩なしなら nil（AC-7-18-a）。
@@ -84,13 +91,14 @@ func shortfallOutput(target *workmonth.WorkMonth) *port.Hours {
 //
 // 勤務月を生成しないため、精算幅は契約が現在定める値を返す
 // （docs/specs/domain-api-http-contract.md AC-5-3・AC-2-2）。
-func newEmptyWorkMonthOutput(contract port.Contract, yearMonth workmonth.YearMonth) port.WorkMonthOutput {
+func newEmptyWorkMonthOutput(contract port.Contract, yearMonth workmonth.YearMonth, actor port.Actor) port.WorkMonthOutput {
 	return port.WorkMonthOutput{
 		ContractID:          contract.ID.String(),
 		ContractDisplayName: contract.DisplayName,
 		YearMonth:           formatYearMonth(yearMonth),
 		State:               workmonth.StateDraft.String(),
 		Generated:           false,
+		IsOwnWorkMonth:      isOwnWorkMonth(actor, contract),
 		SettlementRange:     toSettlementRangeOutput(contract.SettlementRange),
 		TotalHours:          port.Hours{},
 		Excess:              nil,
