@@ -71,3 +71,22 @@ run "scheduler_role_trust_policy_has_source_account_and_source_arn_conditions" {
     error_message = "Scheduler ロールの信頼ポリシーは Condition.StringLike・Condition.ArnLike を持ってはならない（AC-12-3-b ③・AC-12-10 ④ (iv)）"
   }
 }
+
+# (iii) を既定と異なるリージョンでも確かめる（AC-12-10 ④ (iii)）。
+# 既定と同じ値だけだと、<region> をリテラルで書く変異が期待値と一致して落ちない。
+run "scheduler_role_trust_policy_source_arn_follows_region_variable" {
+  command = plan
+
+  variables {
+    aws_region = "us-east-1"
+  }
+
+  assert {
+    condition = alltrue([
+      for s in jsondecode(aws_iam_role.demo_data_reset_scheduler.assume_role_policy).Statement :
+      try(s.Condition.StringEquals["aws:SourceArn"], null) == "arn:aws:scheduler:${var.aws_region}:${data.aws_caller_identity.current.account_id}:schedule-group/default"
+      if toset(try(tolist(s.Principal.Service), [s.Principal.Service])) == toset(["scheduler.amazonaws.com"])
+    ])
+    error_message = "aws_region = us-east-1 でも各文の Condition.StringEquals[\"aws:SourceArn\"] は arn:aws:scheduler:<region>:<account>:schedule-group/default と一致しなければならない（AC-12-3-b ②・AC-12-10 ④ (iii)）"
+  }
+}
