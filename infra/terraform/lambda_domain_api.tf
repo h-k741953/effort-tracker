@@ -60,6 +60,7 @@ resource "aws_lambda_function" "domain_api" {
   runtime       = "provided.al2023"
   handler       = "bootstrap"
   filename      = var.domain_api_lambda_artifact_path
+  timeout       = 5 # 10-4-ac: 既定の 3 秒に任せず明示する
 
   reserved_concurrent_executions = 5 # docs/rules/cost-guardrails.md
 

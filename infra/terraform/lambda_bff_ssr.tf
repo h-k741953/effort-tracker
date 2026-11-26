@@ -57,6 +57,7 @@ resource "aws_lambda_function" "bff_ssr" {
   runtime       = var.bff_ssr_lambda_runtime
   handler       = "index.handler"
   filename      = var.bff_ssr_lambda_artifact_path
+  timeout       = 10 # 10-4-ac: 既定の 3 秒に任せず明示する
 
   reserved_concurrent_executions = 5 # docs/rules/cost-guardrails.md
 

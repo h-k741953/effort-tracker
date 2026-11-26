@@ -59,6 +59,7 @@ resource "aws_lambda_function" "cloudfront_killswitch" {
   runtime       = "provided.al2023" # D-17
   handler       = "bootstrap"
   filename      = var.cloudfront_killswitch_lambda_artifact_path
+  timeout       = 30 # 10-4-ac: 既定の 3 秒に任せず明示する
 
   reserved_concurrent_executions = 1 # docs/rules/cost-guardrails.md（他2本と異なる値）
 

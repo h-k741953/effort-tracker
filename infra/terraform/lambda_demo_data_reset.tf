@@ -83,7 +83,8 @@ resource "aws_lambda_function_event_invoke_config" "demo_data_reset" {
   maximum_retry_attempts = 0
 }
 
-# AC-12-3: Scheduler が引き受けるロール。信頼は scheduler.amazonaws.com だけ。
+# AC-12-3・AC-12-3-b: Scheduler が引き受けるロール。信頼は scheduler.amazonaws.com だけで、
+# aws:SourceAccount と aws:SourceArn（既定スケジュールグループ）で呼び出し元を絞る。
 resource "aws_iam_role" "demo_data_reset_scheduler" {
   name = "${local.demo_data_reset_function_name}-scheduler-role"
 
@@ -94,6 +95,12 @@ resource "aws_iam_role" "demo_data_reset_scheduler" {
         Effect    = "Allow"
         Action    = "sts:AssumeRole"
         Principal = { Service = "scheduler.amazonaws.com" }
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+            "aws:SourceArn"     = "arn:aws:scheduler:${var.aws_region}:${data.aws_caller_identity.current.account_id}:schedule-group/default"
+          }
+        }
       }
     ]
   })
