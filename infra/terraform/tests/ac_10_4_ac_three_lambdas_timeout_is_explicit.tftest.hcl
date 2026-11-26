@@ -1,10 +1,10 @@
-# AC-10-4-ac・AC-4-10（docs/specs/infra-terraform.md）の検査。
+# AC-10（docs/specs/infra-terraform.md）10-4-ac・AC-4-10 の検査。
 #
 # 既存の3本の Lambda の timeout を、3本それぞれ別の assert で確かめる。
 #   BFF・SSR Lambda = 10 秒 / ドメイン API Lambda = 5 秒 / CloudFront 遮断 Lambda = 30 秒
 # 期待値は秒数のリテラルで書き、var.* と突き合わせない（12-36）。
 # timeout は変数でないため variables で上書きしない。未設定（既定 3 秒）では落ちる。
-# リセット用 Lambda（60 秒）は AC-12-10 ③が持つので、ここでは assert しない。
+# リセット用 Lambda（60 秒）は docs/specs/demo-data-reset.md AC-12-10 ③が持つので、ここでは assert しない。
 #
 # mock_provider を用い、実際の AWS API を呼ばない（AC-10-2）。
 # （aws_lambda_function.bff_ssr / domain_api / cloudfront_killswitch）
