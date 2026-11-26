@@ -180,7 +180,7 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
       {
         # D-15・AC-7-8（2026-11-25 追記・#162）: Cognito はユーザープール・
         # IdP・アプリクライアント・ドメインの管理と MFA 設定とタグの読み取りの19個に限る。
-        # cognito-idp:*・タグ操作・列挙外の Action を含めない。
+        # cognito-idp:*・タグの付け外し・列挙外の Action を含めない。
         Sid    = "DeployCognitoIdp"
         Effect = "Allow"
         Action = [
